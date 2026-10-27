@@ -14,6 +14,8 @@ All notable changes to amontillado are documented here. The format follows
   OKLCH, with its classes (dark, muted, busy, ...), as YAML.
 - `amo index [--check]`: gives every image in the library a YAML sidecar, heals broken or
   outdated ones, and rebuilds the SQLite index from them, keeping the usage history.
+- `amo list`: paths of indexed images by class (`--dark`, `--muted`, `--sparse`, `--hue blue`,
+  `--monochrome`, `--warm`, ...), `--random N`; NSFW images only with `--purity`.
 
 ### Fixed
 

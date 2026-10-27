@@ -116,3 +116,116 @@ def test_config_error_exits(home: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["index"])
     assert exc.value.code == "amontillado: library_roots must be a list of paths"
+
+
+@pytest.fixture
+def indexed(library: Path, home: Path) -> dict[str, Path]:
+    """An indexed library: black, white, red, grey noise, and a black image in the NSFW root."""
+    noise = np.random.default_rng(0).integers(0, 256, size=(36, 64), dtype=np.uint8)
+    nsfw = home / ".local/share/amontillado/library-nsfw"
+    nsfw.mkdir(parents=True)
+    paths = {
+        "black": _save(np.zeros((36, 64, 3), dtype=np.uint8), library / "black.png"),
+        "white": _save(np.full((36, 64, 3), 255, dtype=np.uint8), library / "white.png"),
+        "red": _save(np.full((36, 64, 3), (255, 0, 0), dtype=np.uint8), library / "red.png"),
+        "noise": _save(np.repeat(noise[..., None], 3, axis=2), library / "noise.png"),
+        "private": _save(np.zeros((36, 64, 3), dtype=np.uint8), nsfw / "private.png"),
+    }
+    main(["index"])
+    return paths
+
+
+def _list(capsys: pytest.CaptureFixture[str], *args: str) -> set[str]:
+    capsys.readouterr()
+    main(["list", *args])
+    return {Path(line).stem for line in capsys.readouterr().out.splitlines()}
+
+
+def test_list_all_excludes_nsfw(
+    indexed: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _list(capsys) == {"black", "white", "red", "noise"}
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        (["--dark"], {"black"}),
+        (["--light"], {"white"}),
+        (["--saturated"], {"red"}),
+        (["--muted", "--busy"], {"noise"}),
+        (["--hue", "red"], {"red"}),
+        (["--warm", "--monochrome"], {"red"}),
+        (["--purity", "nsfw"], {"private"}),
+        (["--purity", "sfw,nsfw", "--dark"], {"black", "private"}),
+    ],
+)
+def test_list_filters(
+    indexed: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+    flags: list[str],
+    expected: set[str],
+) -> None:
+    assert _list(capsys, *flags) == expected
+
+
+def test_list_random(indexed: dict[str, Path], capsys: pytest.CaptureFixture[str]) -> None:
+    picked = _list(capsys, "--random", "2")
+    assert len(picked) == 2
+    assert picked <= {"black", "white", "red", "noise"}
+    assert len(_list(capsys, "--random", "99")) == 4
+
+
+def test_list_no_match_fails(indexed: dict[str, Path]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["list", "--hue", "green"])
+    assert exc.value.code == "amontillado: no matching images"
+
+
+def test_list_skips_missing_files(
+    indexed: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    indexed["white"].unlink()
+    assert _list(capsys) == {"black", "red", "noise"}
+    assert "missing from disk: 1 image" in caplog.text
+
+
+def test_list_excludes_the_current_nsfw_root(
+    library: Path, home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Indexed while ~/walls was a library root; then the config makes it the NSFW root.
+    config = home / ".config/amontillado/config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(f"library_roots: [{home}/walls]\n")
+    _save(np.zeros((36, 64, 3), dtype=np.uint8), library / "plain.png")
+    (home / "walls").mkdir()
+    _save(np.zeros((36, 64, 3), dtype=np.uint8), home / "walls" / "private.png")
+    main(["index"])
+    assert _list(capsys) == {"plain", "private"}
+    config.write_text(f"nsfw_root: {home}/walls\n")
+    assert _list(capsys) == {"plain"}
+
+
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        (["--dark", "--light"], "not allowed with argument"),
+        (["--purity", "sfw,lewd"], "unknown purity: lewd"),
+        (["--random", "0"], "must be at least 1"),
+        (["--hue", "teal"], "invalid choice"),
+    ],
+)
+def test_list_bad_arguments(
+    indexed: dict[str, Path], capsys: pytest.CaptureFixture[str], flags: list[str], message: str
+) -> None:
+    with pytest.raises(SystemExit):
+        main(["list", *flags])
+    assert message in capsys.readouterr().err
+
+
+def test_list_without_an_index(library: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["list"])
+    assert "run `amo index` first" in exc.value.code

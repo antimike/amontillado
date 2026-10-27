@@ -212,7 +212,7 @@ apply. It is the input for comparing palette generators.
 ```text
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check]                  heal sidecars, rebuild the index; --check reports only
-amo list [FILTERS] [--random N]      matching paths, one per line
+amo list [FILTERS] [--purity LIST] [--random N]   matching paths, one per line
 amo fetch [FILTERS] [WALLHAVEN] [--count N] [--test-set] [--busy-from thumb|full] [--dry-run]
 amo shown PATH                       record that an image was shown (for the usage table)
 ```
@@ -220,6 +220,12 @@ amo shown PATH                       record that an image was shown (for the usa
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read
 or two images would share a sidecar. `--check` is its dry run: it measures and writes nothing,
 and fails if any sidecar needs healing or has no image.
+
+`amo list` prints sfw images outside the NSFW root unless `--purity` (comma-separated: `sfw`,
+`sketchy`, `nsfw`) asks for more; the NSFW-root test uses the current config and resolves
+symlinks, so a stale index cannot leak an image. Opposite class flags (`--dark --light`) are
+rejected. Indexed files that are gone are skipped with a warning. No match exits non-zero, so a
+pipeline into a wallpaper setter notices.
 
 FILTERS are the class flags above. WALLHAVEN: `--tags`, `--purity`, `--category`, `--atleast`,
 `--ratio`, `--color HEX`. `--dry-run` measures thumbnails and reports what it would keep.
