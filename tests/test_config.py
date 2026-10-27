@@ -8,14 +8,6 @@ import pytest
 from amontillado.config import ConfigError, load_config
 
 
-@pytest.fixture
-def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    for variable in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
-        monkeypatch.delenv(variable, raising=False)
-    return tmp_path
-
-
 def write_config(home: Path, text: str) -> None:
     path = home / ".config" / "amontillado" / "config.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)

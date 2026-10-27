@@ -10,9 +10,12 @@ Commands are added as they are built; see docs/design.md for the plan.
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
+from contextlib import closing
 from logging import getLogger
 from pathlib import Path
+from typing import NoReturn
 
 import yaml
 from PIL import Image
@@ -22,6 +25,9 @@ from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
 from amontillado.classes import classify
+from amontillado.config import Config, ConfigError, load_config
+from amontillado.index import IndexDatabaseError, connect, rebuild
+from amontillado.library import Report, heal_library
 from amontillado.metrics import measure_file
 
 logger = getLogger("amontillado")
@@ -67,6 +73,23 @@ def build_parser() -> argparse.ArgumentParser:
     measure.add_argument("files", nargs="+", type=Path, metavar="FILE", help="Image files.")
     measure.set_defaults(func=cmd_measure)
 
+    index = commands.add_parser(
+        "index",
+        help="Heal sidecars and rebuild the index.",
+        description="Give every image a sidecar, rewrite broken or outdated ones, and rebuild "
+        "the index from them (the usage history is kept). Searches the library roots and the "
+        "NSFW root.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(index, argparse.SUPPRESS)
+    index.add_argument(
+        "--check",
+        action="store_true",
+        help="Report what would be healed, and fail if anything would; write nothing (the "
+        "dry run of this command).",
+    )
+    index.set_defaults(func=cmd_index)
+
     return parser
 
 
@@ -97,6 +120,51 @@ def cmd_measure(args: argparse.Namespace) -> None:
         print(yaml.safe_dump(results, sort_keys=False, allow_unicode=True), end="")
     if failed:
         sys.exit(f"amontillado: {failed} of {len(args.files)} files could not be measured")
+
+
+def _load_config() -> Config:
+    try:
+        return load_config()
+    except ConfigError as exc:
+        sys.exit(f"amontillado: {exc}")
+
+
+def _index_error(config: Config, exc: Exception) -> NoReturn:
+    sys.exit(f"amontillado: index {config.index_path}: {exc}")
+
+
+def cmd_index(args: argparse.Namespace) -> None:
+    config = _load_config()
+    report = heal_library(config, check=args.check)
+    if not args.check:
+        try:
+            with closing(connect(config.index_path)) as conn:
+                count = rebuild(conn, report.entries)
+        except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+            _index_error(config, exc)
+        logger.info("indexed %d images", count)
+    problems = _problems(report, check=args.check)
+    if problems:
+        sys.exit(f"amontillado: {', '.join(problems)}")
+
+
+def _problems(report: Report, *, check: bool) -> list[str]:
+    """What makes `amo index` fail. Orphaned sidecars only fail a check: they are reported,
+    and a pass that leaves them alone has still done its job."""
+    problems = []
+    if check and report.healed:
+        problems.append(f"{_count(report.healed, 'sidecar')} to heal")
+    if check and report.orphans:
+        problems.append(f"{_count(report.orphans, 'sidecar')} without an image")
+    if report.conflicts:
+        problems.append(f"{_count(report.conflicts, 'sidecar name conflict')}")
+    if report.failed:
+        problems.append(f"{_count(report.failed, 'image')} could not be read")
+    return problems
+
+
+def _count(items: list[object], noun: str) -> str:
+    return f"{len(items)} {noun}{'' if len(items) == 1 else 's'}"
 
 
 def main(argv: list[str] | None = None) -> None:

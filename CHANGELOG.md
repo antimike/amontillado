@@ -12,6 +12,8 @@ All notable changes to amontillado are documented here. The format follows
   ruff, pytest, CI, gitleaks pre-commit hook.
 - `amo measure FILE...`: an image's lightness, chroma, hue, hue spread, warmth and detail in
   OKLCH, with its classes (dark, muted, busy, ...), as YAML.
+- `amo index [--check]`: gives every image in the library a YAML sidecar, heals broken or
+  outdated ones, and rebuilds the SQLite index from them, keeping the usage history.
 
 ### Fixed
 

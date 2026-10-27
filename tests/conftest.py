@@ -13,6 +13,15 @@ SaveImage = Callable[..., Path]
 
 
 @pytest.fixture
+def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """HOME at tmp_path, XDG variables unset: load_config() sees only this tree."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for variable in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
+        monkeypatch.delenv(variable, raising=False)
+    return tmp_path
+
+
+@pytest.fixture
 def config(tmp_path: Path) -> Config:
     """A library root, an NSFW root and an index, all under tmp_path."""
     (tmp_path / "library").mkdir()

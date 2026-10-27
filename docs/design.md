@@ -217,6 +217,10 @@ amo fetch [FILTERS] [WALLHAVEN] [--count N] [--test-set] [--busy-from thumb|full
 amo shown PATH                       record that an image was shown (for the usage table)
 ```
 
+`amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read
+or two images would share a sidecar. `--check` is its dry run: it measures and writes nothing,
+and fails if any sidecar needs healing or has no image.
+
 FILTERS are the class flags above. WALLHAVEN: `--tags`, `--purity`, `--category`, `--atleast`,
 `--ratio`, `--color HEX`. `--dry-run` measures thumbnails and reports what it would keep.
 
