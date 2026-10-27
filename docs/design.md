@@ -82,9 +82,11 @@ counts as `nsfw` and any other as `sfw`. A non-sfw image outside the NSFW root i
 One database, `$XDG_STATE_HOME/amontillado/index.sqlite` (state, not cache: the usage table
 cannot be rebuilt):
 
-- `images`: one row per image (id, path, root, purity, category, size, every metric, tags as
-  JSON, source id). **Rebuilt from the sidecars** by `amo index`: delete the database and
-  nothing is lost but the usage table.
+- `images`: one row per image (path, id, root, whether it is under the NSFW root, purity,
+  category, tags as JSON, source site and id, size, every metric). **Rebuilt from the sidecars**
+  by `amo index`, in one transaction (dropped and recreated, so its schema needs no
+  migrations): delete the database and nothing is lost but the usage table. The database's
+  `PRAGMA user_version` is its schema version; a newer one than the program knows is refused.
 - `usage`: `id` (content hash), `shown_count`, `last_shown`; later perhaps a rating. Kept across
   rebuilds. The only mutable data; never written to sidecars, which keeps them stable under
   git-annex or sync tools.
