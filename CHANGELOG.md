@@ -10,3 +10,9 @@ All notable changes to amontillado are documented here. The format follows
 
 - Package skeleton: `amontillado` and `amo` commands (`--version`, `--loglevel`), uv build,
   ruff, pytest, CI, gitleaks pre-commit hook.
+- `amo measure FILE...`: an image's lightness, chroma, hue, hue spread, warmth and detail in
+  OKLCH, with its classes (dark, muted, busy, ...), as YAML.
+
+### Fixed
+
+- Log messages go to stderr, not stdout.
