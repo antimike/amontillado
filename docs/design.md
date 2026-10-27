@@ -117,14 +117,20 @@ only, each weighted by its chroma, so a few vivid pixels count more than many ne
 | `hue_name`, `hue_share` | the named sector (below) with the largest chroma weight, and its share of all chromatic weight | "red-heavy" |
 | `hue_spread` | circular variance of the chroma-weighted hues, 1 − R (0 = one hue, 1 = all hues evenly) | monochrome vs multi-hued: does the generator find distinct accents when the image offers one hue? |
 | `warmth` | (warm weight − cool weight) / total chromatic weight, in −1..1 | warm vs cool; warm sectors are red, orange, yellow, pink |
-| `busy` | edge density: share of pixels whose Sobel gradient magnitude on L exceeds 0.08 (*initial*) | legibility of text over translucent, blurred windows |
+| `busy` | edge density: share of interior pixels whose Sobel gradient magnitude on L exceeds 0.08 (*initial*) | legibility of text over translucent, blurred windows |
 
-Hue sectors (degrees, OKLCH; boundaries halfway between the reference hues, *initial*):
-red 358-44, orange 44-80, yellow 80-125, green 125-170, cyan 170-230, blue 230-280,
-purple 280-310, pink 310-358.
+The Sobel kernels are divided by 8, so the gradient magnitude is the change in L per pixel: a
+hard black-to-white edge scores 0.5 on the pixels either side of it. The one-pixel border is
+left out.
 
-A greyscale image has no chromatic pixels: `hue`, `hue_name` are null, `hue_share` and
-`hue_spread` are 0. It is muted, never monochrome.
+Hue sectors (degrees, OKLCH; boundaries halfway between the reference hues, *initial*; each
+sector includes its lower bound): red 358-44, orange 44-80, yellow 80-125, green 125-170,
+cyan 170-230, blue 230-280, purple 280-310, pink 310-358.
+
+A greyscale image has no chromatic pixels: `hue`, `hue_name` are null, `hue_share`,
+`hue_spread` and `warmth` are 0. It is muted, never monochrome.
+
+Values are rounded when written: `hue` to 0.1°, the others to 3 decimals.
 
 ### Classes (query-time, *initial* thresholds)
 
