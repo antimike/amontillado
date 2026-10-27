@@ -19,3 +19,9 @@ build/
 # direnv, mise
 .envrc
 mise.local.toml
+
+# Beads: the issue database stays local (public repo); see CLAUDE.md, "Beads"
+.beads/
+.beads-credential-key
+.dolt/
+*.gate.lock*

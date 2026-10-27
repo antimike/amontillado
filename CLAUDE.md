@@ -22,10 +22,23 @@ is the source of truth for them in this repo.
   library for theming (that repo's `docs/plans/theming.md`). Machine-specific glue (wallpaper
   setters, timers, pickers) stays there, not here.
 
+## Beads
+
+Work items are tracked with `bd` (prefix `amo`, embedded mode). `.beads/` is gitignored: this
+repo is public, and bead notes are working notes. Settings: `dolt.auto-commit batch`, `no-push`,
+`no-git-ops` (so `bd` never commits to this repo; `bd init` did, before that was set). No Dolt
+remote: never add one pointing at this repo. bd-track's daily cleanup timer covers the project.
+
+- Use `bd ready` / `bd show` / `bd update` / `bd close` for the v0.1 work; no TODO lists in files.
+- **Interim backup** until bd-track's state repo exists (draft design:
+  `~/.local/src/bd-track/docs/dev/design-beads-state-repo.md`): at session end run
+  `bd dolt commit` and `bd export --output .beads/issues.jsonl`. That copy is local only.
+- Never `bd dolt push` (MH's rule: it stalls; Dolt-side pushes are MH's, by hand).
+
 ## Start prompt
 
 > Work in `~/.local/src/amontillado`. Read `CLAUDE.md`, `README.md`, `docs/design.md` and
-> `CONTRIBUTING.md`, then build v0.1 in the design's order: metrics (`amo measure`), sidecars and
+> `CONTRIBUTING.md`, then build v0.1 (epic `amo-3fg`; `bd ready` shows what is next) in the design's order: metrics (`amo measure`), sidecars and
 > the index (`amo index`, `amo list`), the Wallhaven fetcher (`amo fetch`, `--test-set`),
 > threshold calibration. One commit per layer, on a feature branch. Confirm with me before
 > pushing or creating the GitHub repo.
