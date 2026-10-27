@@ -1,8 +1,8 @@
-"""The SQLite index: one row per image, rebuilt from the sidecars.
+"""The SQLite index: one row per image, rebuilt from the sidecars, and the usage history.
 
 docs/design.md, "Index and usage". The `images` table holds nothing that is not in a sidecar
 (or implied by where the image lives), so `rebuild` drops and recreates it: a schema change to
-it needs no migration.
+it needs no migration. The `usage` table cannot be rebuilt and is never dropped.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from amontillado.library import Entry
@@ -41,6 +42,17 @@ CREATE TABLE images (
     warmth REAL NOT NULL,
     busy REAL NOT NULL
 )
+"""
+_CREATE_USAGE = """
+CREATE TABLE IF NOT EXISTS usage (
+    id TEXT PRIMARY KEY,
+    shown_count INTEGER NOT NULL,
+    last_shown TEXT NOT NULL
+)
+"""
+_RECORD_SHOWN = """
+INSERT INTO usage (id, shown_count, last_shown) VALUES (?, 1, ?)
+ON CONFLICT (id) DO UPDATE SET shown_count = shown_count + 1, last_shown = excluded.last_shown
 """
 _INSERT_IMAGE = """
 INSERT INTO images VALUES (
@@ -86,6 +98,7 @@ def connect(path: Path) -> sqlite3.Connection:
         conn.execute("BEGIN")
         if not _has_table(conn, "images"):
             conn.execute(_CREATE_IMAGES)
+        conn.execute(_CREATE_USAGE)
         # PRAGMA takes no parameters; the value is a constant.
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.execute("COMMIT")
@@ -154,3 +167,15 @@ def images(conn: sqlite3.Connection) -> list[IndexedImage]:
         )
         for path, image_id, purity, nsfw_root, *metrics in conn.execute(_SELECT_IMAGES)
     ]
+
+
+def record_shown(conn: sqlite3.Connection, image_id: str, when: datetime | None = None) -> None:
+    """Count one showing of the image with `image_id`, at `when` (default now, UTC)."""
+    when = when or datetime.now(timezone.utc)
+    conn.execute("BEGIN")
+    try:
+        conn.execute(_RECORD_SHOWN, (image_id, when.isoformat(timespec="seconds")))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise

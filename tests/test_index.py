@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import replace
+from datetime import datetime, timezone
 
 import pytest
 from conftest import SaveImage
@@ -14,6 +15,7 @@ from amontillado.index import (
     connect,
     images,
     rebuild,
+    record_shown,
 )
 from amontillado.library import heal_library
 from amontillado.metrics import Metrics
@@ -88,3 +90,34 @@ def test_metric_columns_follow_the_dataclass(config: Config) -> None:
     columns = [row[1] for row in conn.execute("PRAGMA table_info(images)")]
     metric_columns = columns[columns.index("lightness") :]
     assert metric_columns == list(Metrics.__dataclass_fields__)
+
+
+def _usage(conn: sqlite3.Connection) -> list[tuple[str, int, str]]:
+    return conn.execute("SELECT id, shown_count, last_shown FROM usage").fetchall()
+
+
+def test_record_shown_counts_and_keeps_the_latest(config: Config) -> None:
+    conn = connect(config.index_path)
+    record_shown(conn, "sha256:aa", datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc))
+    record_shown(conn, "sha256:aa", datetime(2026, 10, 28, 9, 30, tzinfo=timezone.utc))
+    record_shown(conn, "sha256:bb", datetime(2026, 10, 28, 9, 31, tzinfo=timezone.utc))
+    assert sorted(_usage(conn)) == [
+        ("sha256:aa", 2, "2026-10-28T09:30:00+00:00"),
+        ("sha256:bb", 1, "2026-10-28T09:31:00+00:00"),
+    ]
+
+
+def test_record_shown_defaults_to_now(config: Config) -> None:
+    conn = connect(config.index_path)
+    before = datetime.now(timezone.utc).replace(microsecond=0)
+    record_shown(conn, "sha256:aa")
+    assert datetime.fromisoformat(_usage(conn)[0][2]) >= before
+
+
+def test_usage_survives_rebuild_and_reconnect(config: Config, save_image: SaveImage) -> None:
+    save_image(config.library_roots[0] / "a.png")
+    conn = connect(config.index_path)
+    record_shown(conn, "sha256:aa")
+    rebuild(conn, heal_library(config).entries)
+    conn.close()
+    assert len(_usage(connect(config.index_path))) == 1

@@ -87,7 +87,8 @@ cannot be rebuilt):
   by `amo index`, in one transaction (dropped and recreated, so its schema needs no
   migrations): delete the database and nothing is lost but the usage table. The database's
   `PRAGMA user_version` is its schema version; a newer one than the program knows is refused.
-- `usage`: `id` (content hash), `shown_count`, `last_shown`; later perhaps a rating. Kept across
+- `usage`: `id` (content hash), `shown_count`, `last_shown` (ISO 8601, UTC); later perhaps a
+  rating. Keyed by content, so it follows an image through renames and moves. Kept across
   rebuilds. The only mutable data; never written to sidecars, which keeps them stable under
   git-annex or sync tools.
 
