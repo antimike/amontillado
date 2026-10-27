@@ -214,7 +214,7 @@ amo measure FILE...                  metrics and classes for any image, as YAML 
 amo index [--check]                  heal sidecars, rebuild the index; --check reports only
 amo list [FILTERS] [--purity LIST] [--random N]   matching paths, one per line
 amo fetch [FILTERS] [WALLHAVEN] [--count N] [--test-set] [--busy-from thumb|full] [--dry-run]
-amo shown PATH                       record that an image was shown (for the usage table)
+amo shown PATH... [--dry-run]        record that images were shown (for the usage table)
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read

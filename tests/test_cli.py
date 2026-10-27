@@ -10,6 +10,7 @@ from PIL import Image
 
 from amontillado import __version__
 from amontillado.cli import get_cli_arguments, main
+from amontillado.sidecar import content_id
 
 
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:
@@ -229,3 +230,34 @@ def test_list_without_an_index(library: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["list"])
     assert "run `amo index` first" in exc.value.code
+
+
+def _usage(home: Path) -> list[tuple[str, int]]:
+    with sqlite3.connect(home / ".local/state/amontillado/index.sqlite") as conn:
+        return conn.execute("SELECT id, shown_count FROM usage ORDER BY id").fetchall()
+
+
+def test_shown_records_by_content(indexed: dict[str, Path], home: Path) -> None:
+    main(["shown", str(indexed["black"]), str(indexed["red"])])
+    moved = indexed["black"].rename(home / "elsewhere.png")
+    main(["shown", str(moved)])
+    usage = dict(_usage(home))
+    assert usage == {content_id(moved): 2, content_id(indexed["red"]): 1}
+
+
+def test_shown_dry_run_records_nothing(indexed: dict[str, Path], home: Path) -> None:
+    main(["shown", "--dry-run", str(indexed["black"])])
+    assert _usage(home) == []
+
+
+def test_shown_missing_file_records_nothing(indexed: dict[str, Path], home: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["shown", str(indexed["black"]), str(home / "missing.png")])
+    assert exc.value.code == f"amontillado: {home / 'missing.png'}: No such file or directory"
+    assert _usage(home) == []
+
+
+def test_usage_survives_reindexing(indexed: dict[str, Path], home: Path) -> None:
+    main(["shown", str(indexed["red"])])
+    main(["index"])
+    assert len(_usage(home)) == 1

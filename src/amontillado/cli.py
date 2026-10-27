@@ -27,9 +27,17 @@ from rich_argparse import RawDescriptionRichHelpFormatter
 from amontillado import __version__
 from amontillado.classes import CLASSES, classify, has_hue
 from amontillado.config import Config, ConfigError, load_config
-from amontillado.index import IndexDatabaseError, IndexedImage, connect, images, rebuild
+from amontillado.index import (
+    IndexDatabaseError,
+    IndexedImage,
+    connect,
+    images,
+    rebuild,
+    record_shown,
+)
 from amontillado.library import PURITIES, Report, heal_library
 from amontillado.metrics import HUE_NAMES, measure_file
+from amontillado.sidecar import content_id
 
 logger = getLogger("amontillado")
 
@@ -128,6 +136,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--random", type=_positive, metavar="N", help="Print N matches chosen at random."
     )
     list_.set_defaults(func=cmd_list)
+
+    shown = commands.add_parser(
+        "shown",
+        help="Record that images were shown.",
+        description="Count one showing of each image in the usage history, now. Images are "
+        "identified by content, so the record follows them through renames and moves.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(shown, argparse.SUPPRESS)
+    shown.add_argument("paths", nargs="+", type=Path, metavar="PATH", help="Image files.")
+    shown.add_argument(
+        "--dry-run", action="store_true", help="Log what would be recorded; record nothing."
+    )
+    shown.set_defaults(func=cmd_shown)
 
     return parser
 
@@ -240,6 +262,26 @@ def _matches(
     if not all(CLASSES[name](row.metrics) for name in wanted):
         return False
     return args.hue is None or has_hue(row.metrics, args.hue)
+
+
+def cmd_shown(args: argparse.Namespace) -> None:
+    config = _load_config()
+    ids = []
+    for path in args.paths:
+        try:
+            ids.append(content_id(path))
+        except OSError as exc:
+            sys.exit(f"amontillado: {path}: {exc.strerror or exc}")
+    if args.dry_run:
+        for path, image_id in zip(args.paths, ids, strict=True):
+            logger.info("would record %s as shown (%s)", path, image_id)
+        return
+    try:
+        with closing(connect(config.index_path)) as conn:
+            for image_id in ids:
+                record_shown(conn, image_id)
+    except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+        _index_error(config, exc)
 
 
 def _problems(report: Report, *, check: bool) -> list[str]:

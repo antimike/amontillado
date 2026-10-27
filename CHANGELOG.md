@@ -16,6 +16,7 @@ All notable changes to amontillado are documented here. The format follows
   outdated ones, and rebuilds the SQLite index from them, keeping the usage history.
 - `amo list`: paths of indexed images by class (`--dark`, `--muted`, `--sparse`, `--hue blue`,
   `--monochrome`, `--warm`, ...), `--random N`; NSFW images only with `--purity`.
+- `amo shown PATH...`: records that images were shown, by content, in the usage history.
 
 ### Fixed
 
