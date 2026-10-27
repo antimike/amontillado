@@ -1,0 +1,10 @@
+# Block commits that stage secrets. `system` hook: uses the gitleaks on PATH.
+# Install per clone: `pre-commit install`.
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (staged)
+        entry: gitleaks git --pre-commit --staged --redact --no-banner
+        language: system
+        pass_filenames: false

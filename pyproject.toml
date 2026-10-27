@@ -1,0 +1,65 @@
+[project]
+name = "amontillado"
+version = "0.1.0"
+description = "A local wallpaper library: fetch from Wallhaven, measure each image's colour and detail, and query the collection by how it looks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE.md"]
+authors = [{ name = "Michael Haynes" }]
+keywords = ["wallpaper", "wallhaven", "desktop", "theming", "oklch"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Desktop Environment",
+    "Topic :: Multimedia :: Graphics",
+]
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "rich-argparse>=1.4",
+]
+
+[project.scripts]
+amontillado = "amontillado.cli:main"
+amo = "amontillado.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/antimike/amontillado"
+Repository = "https://github.com/antimike/amontillado"
+Issues = "https://github.com/antimike/amontillado/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["uv_build>=0.7"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "amontillado"
+module-root = "src"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
