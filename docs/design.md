@@ -140,7 +140,7 @@ Values are rounded when written: `hue` to 0.1°, the others to 3 decimals.
 | `--muted` / `--saturated` | `chroma` < 0.03 / > 0.08 |
 | `--sparse` / `--busy` | `busy` < 0.04 / > 0.12 |
 | `--hue NAME` | `hue_name` = NAME and `hue_share` ≥ 0.40, and not muted |
-| `--monochrome` / `--multi-hue` | chromatic and `hue_spread` < 0.30 / `hue_spread` > 0.60 |
+| `--monochrome` / `--multi-hue` | has chromatic pixels and `hue_spread` < 0.30 / `hue_spread` > 0.60 |
 | `--warm` / `--cool` | `warmth` > 0.3 / < −0.3 |
 
 Calibrate before v0.1: measure a few hundred thumbnails from a random Wallhaven sample, look at
