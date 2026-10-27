@@ -86,8 +86,17 @@ time, so retuning a threshold needs no recomputation.
 
 ### Config
 
-`$XDG_CONFIG_HOME/amontillado/config.yaml`, all keys optional: library roots, the NSFW root,
-`api_key_command` (e.g. `pass show wallhaven/api-key`). The API key comes from
+`$XDG_CONFIG_HOME/amontillado/config.yaml`, all keys optional:
+
+```yaml
+library_roots: [~/Pictures/wallpapers]   # searched in addition to the default root
+nsfw_root: ~/private/wallpapers-nsfw     # replaces the default NSFW root
+api_key_command: pass show wallhaven/api-key
+```
+
+Paths must be absolute (`~` is expanded). The NSFW root may not be, contain, or lie inside a
+library root, symlinks resolved; that is a config error, since a recursive search would then
+reach NSFW images. Unknown keys are warned about and ignored. The API key comes from
 `WALLHAVEN_API_KEY` first, then `api_key_command`; it is never written anywhere and never logged.
 
 ## Metrics
