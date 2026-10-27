@@ -8,6 +8,7 @@ are measured at the same scale.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -31,6 +32,8 @@ HUE_NAMES = ("red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink
 WARM_HUES = frozenset({"red", "orange", "yellow", "pink"})
 
 _ALPHA_MODES = frozenset({"RGBA", "RGBa", "LA", "La", "PA"})
+# EXIF orientations that swap width and height for display.
+_TRANSPOSED = frozenset({5, 6, 7, 8})
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,40 @@ class Metrics:
             values[name] = value
         return values
 
+    @classmethod
+    def from_dict(cls, values: Mapping[str, object]) -> Metrics:
+        """Metrics from a sidecar `metrics` block; the version is the caller's to check.
+
+        Raises ValueError naming the first field that is missing or of the wrong type.
+        """
+        fields: dict[str, object] = {}
+        for name in cls.__dataclass_fields__:
+            value = values.get(name)
+            if name == "hue_name":
+                ok = value is None or value in HUE_NAMES
+            else:
+                # bool is an int subclass, and never a measurement.
+                number = isinstance(value, (int, float)) and not isinstance(value, bool)
+                ok = number or (name == "hue" and value is None)
+                if number:
+                    value = float(value)
+            if not ok:
+                raise ValueError(f"metrics.{name} is missing or invalid")
+            fields[name] = value
+        return cls(**fields)
+
+
+def image_size(path: Path) -> tuple[int, int]:
+    """Width and height as displayed, after EXIF orientation; reads the header only."""
+    with Image.open(path) as image:
+        if _orientation(image) in _TRANSPOSED:
+            return image.height, image.width
+        return image.width, image.height
+
+
+def _orientation(image: Image.Image) -> int:
+    return image.getexif().get(0x0112, 1)
+
 
 def load_rgb(path: Path) -> np.ndarray:
     """Open an image and return it as 8-bit sRGB, MEASURE_WIDTH wide, shape (h, w, 3).
@@ -74,8 +111,7 @@ def load_rgb(path: Path) -> np.ndarray:
 
 def _request_draft(image: Image.Image) -> None:
     # The scale is the same along both axes, so this holds whatever the EXIF rotation is.
-    orientation = image.getexif().get(0x0112, 1)
-    displayed_width = image.height if orientation in (5, 6, 7, 8) else image.width
+    displayed_width = image.height if _orientation(image) in _TRANSPOSED else image.width
     scale = MEASURE_WIDTH / displayed_width
     if scale < 1:
         image.draft("RGB", (math.ceil(image.width * scale), math.ceil(image.height * scale)))

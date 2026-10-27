@@ -6,7 +6,15 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from amontillado.metrics import MEASURE_WIDTH, METRICS_VERSION, load_rgb, measure, measure_file
+from amontillado.metrics import (
+    MEASURE_WIDTH,
+    METRICS_VERSION,
+    Metrics,
+    image_size,
+    load_rgb,
+    measure,
+    measure_file,
+)
 
 
 def solid(rgb: tuple[int, int, int], size: tuple[int, int] = (64, 36)) -> np.ndarray:
@@ -188,3 +196,36 @@ def test_palette_and_cmyk(tmp_path: Path) -> None:
     red.convert("CMYK").save(tmp_path / "c.jpg")
     assert measure_file(tmp_path / "p.png").hue_name == "red"
     assert measure_file(tmp_path / "c.jpg").hue_name == "red"
+
+
+def test_from_dict_round_trips_to_dict() -> None:
+    m = measure(hue_wheel())
+    restored = Metrics.from_dict(m.to_dict())
+    assert restored == Metrics.from_dict(restored.to_dict())
+    assert restored.hue == pytest.approx(m.hue, abs=0.05)
+
+
+def test_from_dict_accepts_greyscale_and_ints() -> None:
+    d = measure(solid((128, 128, 128))).to_dict()
+    d["busy"] = 0
+    m = Metrics.from_dict(d)
+    assert (m.hue, m.hue_name, m.busy) == (None, None, 0.0)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), [("lightness", None), ("chroma", True), ("hue_name", "teal")]
+)
+def test_from_dict_rejects(field: str, value: object) -> None:
+    d = measure(solid((255, 0, 0))).to_dict()
+    d[field] = value
+    with pytest.raises(ValueError, match=f"metrics.{field}"):
+        Metrics.from_dict(d)
+
+
+def test_image_size_follows_exif_orientation(tmp_path: Path) -> None:
+    image = Image.fromarray(solid((0, 0, 0), size=(80, 40)))
+    assert image_size(_save(solid((0, 0, 0), size=(80, 40)), tmp_path / "a.png")) == (80, 40)
+    exif = image.getexif()
+    exif[0x0112] = 6
+    image.save(tmp_path / "rotated.jpg", exif=exif)
+    assert image_size(tmp_path / "rotated.jpg") == (40, 80)
