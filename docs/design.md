@@ -64,10 +64,18 @@ metrics:
 
 Read with `yaml.safe_load` only. Written atomically (temporary file, then rename).
 
-**Healing** (`amo index`): an image without a sidecar gets one (`source: null`); a sidecar that
-does not parse, lacks fields, or has an older `metrics.version` is rewritten, keeping whatever
-`source` block still parses; a changed content hash updates `id`. Sidecars without an image are
-reported, not deleted.
+**Healing** (`amo index`): an image without a sidecar gets one (`source: null`, `fetched: null`);
+a sidecar that does not parse, lacks fields, or has an older `metrics.version` is rewritten,
+keeping whatever `source` block still parses. A sidecar that is not valid YAML is first kept as
+`<name>.yaml.bad`, so a typo in a hand edit loses nothing. A changed content hash means new
+content: `id`, size and metrics are all recomputed. A renamed image (sidecar renamed with it)
+only has `file` updated. Sidecars without an image are reported, not deleted. Two images that
+would share a sidecar (`a.jpg`, `a.png`) are reported and neither is indexed until one is
+renamed.
+
+Images are `.jpg`, `.jpeg`, `.png` and `.webp` files; directory symlinks under a root are not
+followed. **Purity** is the sidecar's `source.purity`; without one, an image under the NSFW root
+counts as `nsfw` and any other as `sfw`. A non-sfw image outside the NSFW root is warned about.
 
 ### Index and usage (SQLite)
 
