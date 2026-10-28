@@ -5,11 +5,14 @@ Locations follow the XDG base directory spec; docs/design.md, "Storage", has the
 
     library_roots: [~/Pictures/wallpapers]   # searched in addition to the default root
     nsfw_root: ~/private/wallpapers-nsfw     # replaces the default NSFW root
+    api_key_command: pass show wallhaven/api-key   # prints the Wallhaven API key
 """
 
 from __future__ import annotations
 
 import os
+import shlex
+import subprocess
 from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
@@ -19,7 +22,8 @@ import yaml
 logger = getLogger(__name__)
 
 APP = "amontillado"
-_KNOWN_KEYS = frozenset({"library_roots", "nsfw_root"})
+_KNOWN_KEYS = frozenset({"library_roots", "nsfw_root", "api_key_command"})
+API_KEY_VARIABLE = "WALLHAVEN_API_KEY"
 
 
 class ConfigError(Exception):
@@ -33,6 +37,7 @@ class Config:
     library_roots: tuple[Path, ...]
     nsfw_root: Path
     index_path: Path
+    api_key_command: str | None = None
 
 
 def xdg_dir(variable: str, fallback: str) -> Path:
@@ -66,11 +71,45 @@ def load_config() -> Config:
         if nsfw_root == root or nsfw_root.is_relative_to(root) or root.is_relative_to(nsfw_root):
             raise ConfigError(f"nsfw_root {nsfw_root} overlaps library root {root}")
 
+    command = settings.get("api_key_command")
+    if command is not None and not (isinstance(command, str) and command.strip()):
+        raise ConfigError("api_key_command must be a command line")
+
     return Config(
         library_roots=tuple(roots),
         nsfw_root=nsfw_root,
         index_path=xdg_dir("XDG_STATE_HOME", ".local/state") / APP / "index.sqlite",
+        api_key_command=command,
     )
+
+
+def api_key(config: Config) -> str | None:
+    """The Wallhaven API key: WALLHAVEN_API_KEY if set, else the first line printed by
+    `api_key_command`, else None. Raises ConfigError if the command fails.
+
+    The key is never logged and never written; neither are the command's output or errors,
+    which could contain it.
+    """
+    key = os.environ.get(API_KEY_VARIABLE, "").strip()
+    if key:
+        return key
+    if config.api_key_command is None:
+        return None
+    try:
+        result = subprocess.run(
+            shlex.split(config.api_key_command),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"api_key_command cannot run: {exc}") from exc
+    if result.returncode != 0:
+        raise ConfigError(f"api_key_command failed with exit status {result.returncode}")
+    lines = result.stdout.strip().splitlines()
+    if not lines or not lines[0].strip():
+        raise ConfigError("api_key_command printed nothing")
+    return lines[0].strip()
 
 
 def _read_settings(path: Path) -> dict[str, object]:
