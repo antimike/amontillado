@@ -82,6 +82,57 @@ Images are `.jpg`, `.jpeg`, `.png` and `.webp` files; directory symlinks under a
 followed. **Purity** is the sidecar's `source.purity`; without one, an image under the NSFW root
 counts as `nsfw` and any other as `sfw`. A non-sfw image outside the NSFW root is warned about.
 
+### Records (agreed 2026-10-27, not yet implemented)
+
+Replaces "Sidecars" above in bead `amo-3fg.9`, before the fetcher writes any library; until
+then the code follows "Sidecars". Breaking changes like this are expected in 0.x.
+
+A **record** is one picture: a directory holding `info.yaml` (or `info.yml`) and the picture's
+files, all inside the directory: formats of the same image, crops per aspect ratio, and later
+generated theme files. The directory name carries no meaning to the tool; `amo` names the ones
+it creates after the record's `name` or Wallhaven id.
+
+```yaml
+schema: 2
+id: 3f2a9c1e0b7d4e8f9a6b5c4d3e2f1a0b   # generated once (uuid4), never changes; usage keys off it
+name: night-city                    # optional; unique in the library; [a-z0-9][a-z0-9._-]*
+default_file: night-city.png        # optional; see below
+source: {...}                       # as in "Sidecars"; null for pictures added by hand
+fetched: 2026-10-27T18:00:00+00:00
+files:
+  night-city.png:
+    sha256: <hex>                   # required: content lookups, duplicates, re-pairing
+    width: 3840
+    height: 2160
+    metrics: {version: 1, lightness: 0.31, ...}   # per file: a crop measures differently
+  night-city-21x9.png:
+    sha256: <hex>
+    width: 3840
+    height: 1646
+    derived_from: night-city.png    # crops say how to regenerate them
+    crop: [0, 257, 3840, 1646]      # x, y, width, height in the original
+    metrics: {...}
+```
+
+- **Lookup**: any command that takes a picture accepts its `name`, its `id`, a unique prefix
+  of the id, or a file path. A duplicate `name` is reported by `amo index`, and neither record
+  answers to it until fixed; `amo` commands that set a name refuse duplicates.
+- **Content addressing** comes from the per-file `sha256`, indexed: adding a file whose hash
+  is already in the library warns (with a `--force` escape hatch), with or without git-annex
+  (whose default keys carry the same hash, but whose backend is configurable).
+- **Default file** (what `amo list` prints without `--aspect`): `default_file` if set, else the
+  largest non-derived file by pixel count, ties broken by name.
+- Aspect ratio and format are derived at query time, not stored; `--aspect W:H` matches within
+  a tolerance and uses the matching file's metrics for the class filters.
+- **Prompts**: commands may ask (e.g. "no 21:9 file; create a crop?") only when stdin and
+  stderr are terminals (stdout may be a pipe: `amo list` output is data) and
+  `--non-interactive` is not given; otherwise they take the documented fallback (for
+  `--aspect`: the default file, with a warning) and never block.
+- `info.yaml` is loaded with a loader that rejects duplicate keys: `yaml.safe_load` silently
+  keeps the last, which would drop a file listed twice.
+- Still open: what `amo index` does with loose images outside a record (an `amo add` command,
+  or wrapping them in a new record), and how re-pairing works per file.
+
 ### Index and usage (SQLite)
 
 One database, `$XDG_STATE_HOME/amontillado/index.sqlite` (state, not cache: the usage table
@@ -262,12 +313,6 @@ FILTERS are the class flags above. WALLHAVEN: `--tags`, `--purity`, `--category`
 
 - Thresholds: calibrate (above).
 - Whether `amo list` should prefer images shown least recently (it has the usage table).
-- **Sidecar layout** (decided 2026-10-27, schema not yet agreed; bead `amo-3fg.9`): replace
-  name-paired sidecars with papis-style **records** before the fetcher writes any library: a
-  directory per picture holding `info.yaml` (or `info.yml`) and its files (formats, crops per
-  aspect ratio, later generated theme files). Files live inside the record directory. An
-  optional, unique, human-readable `name` beside the id. Each file's SHA-256 is recorded and
-  indexed, so content lookups and duplicate warnings do not depend on git-annex. Open: the
-  record id, metrics per file or per record, how `--aspect` picks a file.
+- Records (see "Records"): loose images outside a record, and per-file re-pairing.
 - Index staleness: `amo list` trusts the index; whether it should detect changes since the last
   `amo index` (a stat walk of the roots) and warn or refresh.
