@@ -260,8 +260,7 @@ here.
    purity that was asked for: fetch the `large` thumbnail and measure it. Skip it if it fails a
    look filter.
 3. `--busy-from thumb` (default) judges busy/sparse on the thumbnail. `--busy-from full` leaves
-   that filter until after the full download (thumbnail JPEG artefacts add edges), and deletes
-   the download if it fails.
+   that filter for the full image (thumbnail JPEG artefacts add edges).
 4. Download the full image to a temporary `.part` file in its root (not an image suffix, so a
    scan never takes it for a loose image), refuse it if its content is already in the index,
    call `/w/<id>` for tags, then move it into a new record directory `wallhaven-<id>` (sfw: the
@@ -269,7 +268,12 @@ here.
    measured on the **full** image (so stored metrics never come from a thumbnail); add it to
    the index. The record has no `name`. A failure at any step leaves nothing behind; an
    existing `wallhaven-<id>` directory is refused (the index is stale: run `amo index`).
-5. Stop at `--count` (default 1) images kept, or at `--max-candidates` (default 100, *initial*)
+   **Every look filter is judged again on the full image**, so that `amo list` with the same
+   filters finds what `amo fetch` kept. A full image that no longer matches (a borderline
+   thumbnail) is still kept as a record by default, since the download has been paid for, but
+   is not printed and does not count towards `--count`; `--discard-mismatches` deletes it
+   instead (decided 2026-10-28).
+5. Stop at `--count` (default 1) matching images kept, or at `--max-candidates` (default 100, *initial*)
    thumbnails examined (results already in the library do not count).
 6. API calls keep 1.5 s apart (40 a minute, under the limit of 45); thumbnail and image
    downloads are not paced. On HTTP 429 from any host, wait `Retry-After` if given, else 10 s
@@ -292,7 +296,7 @@ amo measure FILE...                  metrics and classes for any image, as YAML 
 amo index [--check]                  heal records, rebuild the index; --check reports only
 amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N]   matching paths, one per line
 amo fetch [FILTERS] [WALLHAVEN] [--count N] [--max-candidates N] [--test-set]
-          [--busy-from thumb|full] [--dry-run]
+          [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run]   make each file a record of its own
 ```

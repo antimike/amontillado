@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
@@ -479,3 +480,24 @@ def test_fetch_exits_when_the_search_fails(library: Path, web: FakeWeb) -> None:
         main(["fetch"])
     assert str(exc.value.code).startswith("amontillado: https://wallhaven.cc/api/v1/search?")
     assert str(exc.value.code).endswith("HTTP 404")
+
+
+def test_fetch_keeps_mismatches_without_printing_them(
+    library: Path, web: FakeWeb, capsys: pytest.CaptureFixture[str]
+) -> None:
+    noise = np.random.default_rng(0).integers(0, 256, size=(243, 432, 3), dtype=np.uint8)
+    web.add("https://th.wallhaven.cc/lg/aa/aaa111.jpg", _encode(noise))
+    with pytest.raises(SystemExit):
+        main(["fetch", "--busy", "--max-candidates", "1", "--discard-mismatches"])
+    assert list(library.iterdir()) == []
+    with pytest.raises(SystemExit) as exc:
+        main(["fetch", "--busy", "--max-candidates", "1"])
+    assert exc.value.code == "amontillado: 0 of 1 wanted"
+    assert capsys.readouterr().out == ""
+    assert (library / "wallhaven-aaa111" / "wallhaven-aaa111.jpg").is_file()
+
+
+def _encode(array: np.ndarray) -> bytes:
+    buffer = io.BytesIO()
+    Image.fromarray(array).save(buffer, "PNG")
+    return buffer.getvalue()

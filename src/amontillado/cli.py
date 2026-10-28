@@ -205,8 +205,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch wallpapers from Wallhaven.",
         description="Search Wallhaven in random order, measure each result's thumbnail, and "
         "keep the ones that match every filter: download each, make it a record (sfw ones in "
-        "the first library root, others in the NSFW root), and index it. Prints the path of "
-        "each file kept. Results already in the index are passed over. Fails if fewer than "
+        "the first library root, others in the NSFW root), and index it. The full image is "
+        "judged again; see --discard-mismatches. Prints the path of each file kept that "
+        "matches. Results already in the library are passed over. Fails if fewer than "
         "--count are kept.",
         formatter_class=HelpFormatter,
     )
@@ -259,8 +260,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--busy-from",
         choices=("thumb", "full"),
         default="thumb",
-        help="Judge --busy and --sparse on the thumbnail, or on the full image after "
-        "downloading it (thumbnail JPEG artefacts add edges; a rejected download is deleted).",
+        help="Judge --busy and --sparse on the thumbnail, or only on the full image "
+        "(thumbnail JPEG artefacts add edges).",
+    )
+    fetch.add_argument(
+        "--discard-mismatches",
+        action="store_true",
+        help="Delete a download whose full image does not match the look filters. By default "
+        "it is kept as a record, but not printed or counted towards --count.",
     )
     fetch.add_argument(
         "--dry-run",
@@ -536,7 +543,9 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         ratios=args.ratio,
         color=args.color,
     )
-    options = FetchOptions(args.count, args.max_candidates, args.busy_from, args.dry_run)
+    options = FetchOptions(
+        args.count, args.max_candidates, args.busy_from, args.discard_mismatches, args.dry_run
+    )
     # Only NSFW needs the key, and its command may ask for a passphrase: no lookup otherwise.
     key = None
     if "nsfw" in args.purity:
@@ -569,6 +578,12 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         len(report.failed),
         report.known,
     )
+    if report.mismatched or report.discarded:
+        logger.info(
+            "full images that did not match: %d kept anyway, %d discarded",
+            len(report.mismatched),
+            report.discarded,
+        )
     if report.count < args.count:
         sys.exit(f"amontillado: {report.count} of {args.count} wanted")
 

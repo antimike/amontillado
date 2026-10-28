@@ -5,6 +5,10 @@ docs/design.md, "Fetcher (Wallhaven)". For each search result not already in the
 downloaded (to a temporary file in its root, then renamed into a new record directory), given
 its tags, and recorded with metrics measured on the full image, never the thumbnail. Sfw
 images go to the first library root, sketchy and nsfw ones to the NSFW root.
+
+The full image is judged again. One that no longer matches (a borderline thumbnail) is still
+kept by default, since it has been downloaded, but does not count towards `count`;
+`discard_mismatches` deletes it instead.
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ from amontillado.wallhaven import Client, Search, WallhavenError, Wallpaper
 logger = getLogger(__name__)
 
 SITE = "wallhaven"
-# Judged on the full image with --busy-from full: thumbnail JPEG artefacts add edges.
+# Not judged on the thumbnail with --busy-from full: thumbnail JPEG artefacts add edges.
 BUSY_CLASSES = ("busy", "sparse")
 
 
@@ -46,6 +50,7 @@ class Options:
     count: int = 1
     max_candidates: int = 100
     busy_from: str = "thumb"
+    discard_mismatches: bool = False
     dry_run: bool = False
 
 
@@ -54,10 +59,13 @@ class FetchReport:
     """What a fetch kept (or, in a dry run, would have kept) and passed over."""
 
     kept: list[Path] = field(default_factory=list)
+    # Kept, but the full image does not match: not counted towards Options.count.
+    mismatched: list[Path] = field(default_factory=list)
     would_keep: list[Wallpaper] = field(default_factory=list)
     examined: int = 0
     known: int = 0
     rejected: int = 0
+    discarded: int = 0
     failed: list[tuple[str, str]] = field(default_factory=list)
 
     @property
@@ -106,15 +114,16 @@ def fetch(
             logger.info("would keep %s (%s)", wallpaper.url, _classes(thumbnail))
             continue
         try:
-            path = _keep(config, conn, client, wallpaper, look, late)
+            kept = _keep(config, conn, client, wallpaper, look, options.discard_mismatches)
         except (FetchError, WallhavenError, OSError, Image.DecompressionBombError) as exc:
             _failed(report, wallpaper, str(exc))
             continue
-        if path is None:
-            report.rejected += 1
+        if kept is None:
+            report.discarded += 1
             continue
+        path, matches = kept
         known.add(wallpaper.id)
-        report.kept.append(path)
+        (report.kept if matches else report.mismatched).append(path)
     return report
 
 
@@ -133,10 +142,11 @@ def _keep(
     client: Client,
     wallpaper: Wallpaper,
     look: Look,
-    late: tuple[str, ...],
-) -> Path | None:
-    """Download a wallpaper and make it a record; returns its file, or None if the full image
-    fails a look filter left until now. Nothing is left behind on failure."""
+    discard_mismatches: bool,
+) -> tuple[Path, bool] | None:
+    """Download a wallpaper and make it a record; returns its file and whether the full image
+    matches `look`, or None if it does not and `discard_mismatches` deleted it. Nothing is
+    left behind on failure."""
     root = config.library_roots[0] if wallpaper.purity == "sfw" else config.nsfw_root
     directory = root / f"wallhaven-{wallpaper.id}"
     if directory.exists():
@@ -152,8 +162,11 @@ def _keep(
             stream.write(data)
         width, height = image_size(temporary)
         metrics = measure_file(temporary)
-        if late and not look.matches(metrics):
-            logger.debug("%s: rejected on the full image (%s)", wallpaper.id, _classes(metrics))
+        matches = look.matches(metrics)
+        if not matches and discard_mismatches:
+            logger.info(
+                "%s: discarded: the full image does not match (%s)", wallpaper.id, _classes(metrics)
+            )
             return None
         sha256 = sha256_file(temporary)
         duplicates = files_with_hash(conn, sha256)
@@ -178,8 +191,11 @@ def _keep(
         temporary.unlink(missing_ok=True)
     nsfw = directory.resolve().is_relative_to(config.nsfw_root)
     add_to_index(conn, Entry(directory, root, nsfw, record, (file.name,), file.name, None))
-    logger.info("kept %s (%s)", file, _classes(metrics))
-    return file
+    if matches:
+        logger.info("kept %s (%s)", file, _classes(metrics))
+    else:
+        logger.info("kept %s, but the full image does not match (%s)", file, _classes(metrics))
+    return file, matches
 
 
 def _source(wallpaper: Wallpaper, tags: list[str]) -> dict[str, object]:
