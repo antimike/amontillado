@@ -280,7 +280,7 @@ def cmd_index(args: argparse.Namespace) -> None:
                 count = rebuild(conn, report.entries)
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             _index_error(config, exc)
-        logger.info("indexed %d records", count)
+        logger.info("indexed %s", _count(count, "record"))
     problems = _problems(report, check=args.check)
     if problems:
         sys.exit(f"amontillado: {', '.join(problems)}")
