@@ -502,3 +502,38 @@ def _encode(array: np.ndarray) -> bytes:
     buffer = io.BytesIO()
     Image.fromarray(array).save(buffer, "PNG")
     return buffer.getvalue()
+
+
+def test_fetch_test_set_prints_buckets_and_fails_when_one_is_empty(
+    library: Path, web: FakeWeb, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["fetch", "--test-set"])
+    assert exc.value.code == (
+        "amontillado: empty buckets: muted, saturated, busy, sparse, monochrome, multi-hue"
+    )
+    assert capsys.readouterr().out.splitlines() == [
+        f"dark\t{library / 'wallhaven-aaa111' / 'wallhaven-aaa111.jpg'}",
+        f"light\t{library / 'wallhaven-bbb222' / 'wallhaven-bbb222.png'}",
+    ]
+
+
+def test_fetch_test_set_dry_run_prints_pages(
+    library: Path, web: FakeWeb, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        main(["fetch", "--test-set", "--dry-run"])
+    assert capsys.readouterr().out.splitlines() == [
+        "dark\thttps://wallhaven.cc/w/aaa111",
+        "light\thttps://wallhaven.cc/w/bbb222",
+    ]
+
+
+@pytest.mark.parametrize("args", [["--dark"], ["--hue", "red"], ["--count", "2"]])
+def test_fetch_test_set_takes_no_look_filters_or_count(
+    library: Path, web: FakeWeb, args: list[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["fetch", "--test-set", *args])
+    assert exc.value.code == "amontillado: --test-set takes no look filters or --count"
+    assert web.requests == []

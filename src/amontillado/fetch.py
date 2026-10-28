@@ -9,6 +9,10 @@ images go to the first library root, sketchy and nsfw ones to the NSFW root.
 The full image is judged again. One that no longer matches (a borderline thumbnail) is still
 kept by default, since it has been downloaded, but does not count towards `count`;
 `discard_mismatches` deletes it instead.
+
+A test set (`Options.test_set`) keeps one image per bucket in TEST_SET instead of `count`
+images of one look: an image fills the first bucket still open that it belongs to, judged on
+the full image, so it fills one bucket only.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import os
 import sqlite3
 import tempfile
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from logging import getLogger
@@ -39,6 +44,8 @@ logger = getLogger(__name__)
 SITE = "wallhaven"
 # Not judged on the thumbnail with --busy-from full: thumbnail JPEG artefacts add edges.
 BUSY_CLASSES = ("busy", "sparse")
+# The visual extremes a palette generator is compared on (docs/design.md, "Test set").
+TEST_SET = ("dark", "light", "muted", "saturated", "busy", "sparse", "monochrome", "multi-hue")
 
 
 class FetchError(Exception):
@@ -52,6 +59,7 @@ class Options:
     busy_from: str = "thumb"
     discard_mismatches: bool = False
     dry_run: bool = False
+    test_set: bool = False
 
 
 @dataclass
@@ -67,6 +75,8 @@ class FetchReport:
     rejected: int = 0
     discarded: int = 0
     failed: list[tuple[str, str]] = field(default_factory=list)
+    # With Options.test_set: what fills each bucket, a path or, in a dry run, a wallpaper.
+    buckets: dict[str, Path | Wallpaper] = field(default_factory=dict)
 
     @property
     def count(self) -> int:
@@ -81,9 +91,19 @@ def fetch(
     look: Look,
     options: Options,
 ) -> FetchReport:
-    """Keep up to `options.count` search results that look as asked, examining at most
+    """Keep up to `options.count` search results that look as asked (with `options.test_set`,
+    one per TEST_SET bucket, and `look` must be empty), examining at most
     `options.max_candidates` thumbnails. WallhavenError if the search itself fails."""
     report = FetchReport()
+    late = BUSY_CLASSES if options.busy_from == "full" else ()
+    if options.test_set:
+        if look != Look():
+            raise ValueError("a test set takes no look filters")
+        # A dry run never sees the full image: buckets judged only there cannot be filled.
+        names = [n for n in TEST_SET if not (options.dry_run and n in late)]
+        slots: list[tuple[str | None, Look]] = [(name, Look((name,))) for name in names]
+    else:
+        slots = [(None, look)] * options.count
     known = source_ids(conn, SITE)
     unindexed = source_ids_on_disk(config, SITE) - known
     if unindexed:
@@ -92,11 +112,10 @@ def fetch(
             len(unindexed),
         )
     known |= unindexed
-    late = BUSY_CLASSES if options.busy_from == "full" else ()
-    if late and options.dry_run and any(name in look.classes for name in late):
+    if late and options.dry_run and (options.test_set or any(n in look.classes for n in late)):
         logger.warning("dry run with --busy-from full: busy and sparse are not judged")
     for wallpaper in client.search(search):
-        if report.count >= options.count or report.examined >= options.max_candidates:
+        if not slots or report.examined >= options.max_candidates:
             break
         if wallpaper.id in known:
             report.known += 1
@@ -112,26 +131,61 @@ def fetch(
         except (WallhavenError, OSError, Image.DecompressionBombError) as exc:
             _failed(report, wallpaper, f"thumbnail: {exc}")
             continue
-        if not look.matches(thumbnail, ignore=late):
+        slot = _slot(slots, thumbnail, late)
+        if slot is None:
             report.rejected += 1
             logger.debug("%s: rejected (%s)", wallpaper.id, _classes(thumbnail))
             continue
         if options.dry_run:
+            _fill(report, slots, slot, wallpaper)
             report.would_keep.append(wallpaper)
             logger.info("would keep %s (%s)", wallpaper.url, _classes(thumbnail))
             continue
         try:
-            kept = _keep(config, conn, client, wallpaper, look, options.discard_mismatches)
+            kept = _keep(
+                config,
+                conn,
+                client,
+                wallpaper,
+                lambda m: _slot(slots, m) is not None,
+                options.discard_mismatches,
+            )
         except (FetchError, WallhavenError, OSError, Image.DecompressionBombError) as exc:
             _failed(report, wallpaper, str(exc))
             continue
         if kept is None:
             report.discarded += 1
             continue
-        path, matches = kept
+        path, metrics = kept
         known.add(wallpaper.id)
-        (report.kept if matches else report.mismatched).append(path)
+        slot = _slot(slots, metrics)
+        if slot is None:
+            report.mismatched.append(path)
+            continue
+        _fill(report, slots, slot, path)
+        report.kept.append(path)
     return report
+
+
+def _slot(
+    slots: list[tuple[str | None, Look]], metrics: Metrics, late: tuple[str, ...] = ()
+) -> int | None:
+    """The index of the first open slot whose look `metrics` matches, or None."""
+    return next(
+        (i for i, (_, look) in enumerate(slots) if look.matches(metrics, ignore=late)), None
+    )
+
+
+def _fill(
+    report: FetchReport,
+    slots: list[tuple[str | None, Look]],
+    slot: int,
+    kept: Path | Wallpaper,
+) -> None:
+    """Close `slot`, filled by `kept`."""
+    name, _ = slots.pop(slot)
+    if name is not None:
+        report.buckets[name] = kept
 
 
 def _failed(report: FetchReport, wallpaper: Wallpaper, message: str) -> None:
@@ -148,11 +202,11 @@ def _keep(
     conn: sqlite3.Connection,
     client: Client,
     wallpaper: Wallpaper,
-    look: Look,
+    accept: Callable[[Metrics], bool],
     discard_mismatches: bool,
-) -> tuple[Path, bool] | None:
-    """Download a wallpaper and make it a record; returns its file and whether the full image
-    matches `look`, or None if it does not and `discard_mismatches` deleted it. Nothing is
+) -> tuple[Path, Metrics] | None:
+    """Download a wallpaper and make it a record; returns its file and the full image's
+    metrics, or None if `accept` refuses them and `discard_mismatches` deleted it. Nothing is
     left behind on failure."""
     root = config.library_roots[0] if wallpaper.purity == "sfw" else config.nsfw_root
     directory = root / f"wallhaven-{wallpaper.id}"
@@ -169,7 +223,7 @@ def _keep(
             stream.write(data)
         width, height = image_size(temporary)
         metrics = measure_file(temporary)
-        matches = look.matches(metrics)
+        matches = accept(metrics)
         if not matches and discard_mismatches:
             logger.info(
                 "%s: discarded: the full image does not match (%s)", wallpaper.id, _classes(metrics)
@@ -202,7 +256,7 @@ def _keep(
         logger.info("kept %s (%s)", file, _classes(metrics))
     else:
         logger.info("kept %s, but the full image does not match (%s)", file, _classes(metrics))
-    return file, matches
+    return file, metrics
 
 
 def _source(wallpaper: Wallpaper, tags: list[str]) -> dict[str, object]:

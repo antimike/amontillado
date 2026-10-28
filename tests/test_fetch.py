@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import yaml
-from conftest import FakeClock, FakeWeb
+from conftest import FakeClock, FakeWeb, image_bytes
 from PIL import Image
 
 from amontillado.classes import Look
@@ -234,3 +234,51 @@ def test_skips_wallhaven_ids_on_disk_but_not_indexed(
     assert report.kept == []
     assert "https://th.wallhaven.cc/lg/aa/aaa111.jpg" not in web.urls()
     assert "not in the index (passed over anyway; run `amo index`): 1" in caplog.text
+
+
+def test_test_set_fills_one_bucket_per_image(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb
+) -> None:
+    # Black is dark, muted and sparse, but fills dark only; white then fills light.
+    report = _fetch(config, conn, web, test_set=True)
+    root = config.library_roots[0]
+    assert report.buckets == {
+        "dark": root / "wallhaven-aaa111" / "wallhaven-aaa111.jpg",
+        "light": root / "wallhaven-bbb222" / "wallhaven-bbb222.png",
+    }
+    assert report.kept == list(report.buckets.values())
+
+
+def test_test_set_buckets_by_the_full_image(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb
+) -> None:
+    # aaa111's thumbnail is black but its full image white: it fills light, not dark, and
+    # bbb222 (white too) the next bucket open to it.
+    web.add(
+        "https://w.wallhaven.cc/full/aa/wallhaven-aaa111.jpg",
+        image_bytes((255, 255, 255), (128, 72), "JPEG"),
+    )
+    report = _fetch(config, conn, web, test_set=True)
+    assert {name: path.name for name, path in report.buckets.items()} == {
+        "light": "wallhaven-aaa111.jpg",
+        "muted": "wallhaven-bbb222.png",
+    }
+
+
+def test_test_set_dry_run_cannot_fill_buckets_judged_on_the_full_image(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Black and white, each muted and sparse: with --busy-from full, sparse is never filled.
+    report = _fetch(config, conn, web, test_set=True, dry_run=True, busy_from="full")
+    assert {name: w.id for name, w in report.buckets.items()} == {
+        "dark": "aaa111",
+        "light": "bbb222",
+    }
+    assert "busy and sparse are not judged" in caplog.text
+
+
+def test_test_set_takes_no_look_filters(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb
+) -> None:
+    with pytest.raises(ValueError, match="no look filters"):
+        _fetch(config, conn, web, Look(("dark",)), test_set=True)
