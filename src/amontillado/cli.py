@@ -29,15 +29,16 @@ from amontillado.classes import CLASSES, classify, has_hue
 from amontillado.config import Config, ConfigError, load_config
 from amontillado.index import (
     IndexDatabaseError,
-    IndexedImage,
+    IndexedFile,
+    LookupFailed,
     connect,
-    images,
+    files,
+    find_record,
     rebuild,
     record_shown,
 )
 from amontillado.library import PURITIES, Report, heal_library
 from amontillado.metrics import HUE_NAMES, measure_file
-from amontillado.sidecar import content_id
 
 logger = getLogger("amontillado")
 
@@ -94,10 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     index = commands.add_parser(
         "index",
-        help="Heal sidecars and rebuild the index.",
-        description="Give every image a sidecar, rewrite broken or outdated ones, and rebuild "
-        "the index from them (the usage history is kept). Searches the library roots and the "
-        "NSFW root.",
+        help="Heal records and rebuild the index.",
+        description="Fill in and update the derived fields of every record's info.yaml "
+        "(ids, hashes, sizes, metrics), and rebuild the index from them (the usage history is "
+        "kept). Reports images outside a record, missing files, and info files that need a "
+        "fix by hand. Searches the library roots and the NSFW root.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(index, argparse.SUPPRESS)
@@ -111,10 +113,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_ = commands.add_parser(
         "list",
-        help="Print the paths of matching images.",
-        description="Print the paths of indexed images that match every filter, one per line. "
-        "Images from the NSFW root, and any not marked sfw, are left out unless --purity asks "
-        'for them. Class thresholds are in docs/design.md, "Classes".',
+        help="Print the paths of matching pictures.",
+        description="Print the default file of every indexed record that matches every "
+        "filter, one per line. Records from the NSFW root, and any not marked sfw, are left "
+        'out unless --purity asks for them. Class thresholds are in docs/design.md, "Classes".',
         formatter_class=HelpFormatter,
     )
     _add_loglevel(list_, argparse.SUPPRESS)
@@ -139,13 +141,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     shown = commands.add_parser(
         "shown",
-        help="Record that images were shown.",
-        description="Count one showing of each image in the usage history, now. Images are "
-        "identified by content, so the record follows them through renames and moves.",
+        help="Record that pictures were shown.",
+        description="Count one showing of each picture in the usage history, now. Usage is "
+        "kept by record id, so it follows a picture through renames and moves.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(shown, argparse.SUPPRESS)
-    shown.add_argument("paths", nargs="+", type=Path, metavar="PATH", help="Image files.")
+    shown.add_argument(
+        "pictures",
+        nargs="+",
+        metavar="PICTURE",
+        help="A file or record directory, a record name, an id, or a unique prefix of an id.",
+    )
     shown.add_argument(
         "--dry-run", action="store_true", help="Log what would be recorded; record nothing."
     )
@@ -218,7 +225,7 @@ def cmd_index(args: argparse.Namespace) -> None:
                 count = rebuild(conn, report.entries)
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             _index_error(config, exc)
-        logger.info("indexed %d images", count)
+        logger.info("indexed %d records", count)
     problems = _problems(report, check=args.check)
     if problems:
         sys.exit(f"amontillado: {', '.join(problems)}")
@@ -230,7 +237,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
     try:
         with closing(connect(config.index_path)) as conn:
-            rows = images(conn)
+            rows = [row for row in files(conn) if row.is_default]
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
     wanted = [name for name in CLASSES if getattr(args, name.replace("-", "_"))]
@@ -238,19 +245,17 @@ def cmd_list(args: argparse.Namespace) -> None:
     present = [row for row in matches if row.path.is_file()]
     if len(present) < len(matches):
         gone = len(matches) - len(present)
-        logger.warning("missing from disk: %s; run `amo index`", _count(gone, "image"))
+        logger.warning("missing from disk: %s; run `amo index`", _count(gone, "file"))
     matches = present
     if args.random is not None:
         matches = random.sample(matches, min(args.random, len(matches)))
     if not matches:
-        sys.exit("amontillado: no matching images")
+        sys.exit("amontillado: no matching pictures")
     for row in matches:
         print(row.path)
 
 
-def _matches(
-    row: IndexedImage, args: argparse.Namespace, wanted: list[str], config: Config
-) -> bool:
+def _matches(row: IndexedFile, args: argparse.Namespace, wanted: list[str], config: Config) -> bool:
     if row.purity not in (args.purity or {"sfw"}):
         return False
     # Checked against the current config too, and through symlinks: the index may predate a
@@ -266,36 +271,39 @@ def _matches(
 
 def cmd_shown(args: argparse.Namespace) -> None:
     config = _load_config()
-    ids = []
-    for path in args.paths:
-        try:
-            ids.append(content_id(path))
-        except OSError as exc:
-            sys.exit(f"amontillado: {path}: {exc.strerror or exc}")
-    if args.dry_run:
-        for path, image_id in zip(args.paths, ids, strict=True):
-            logger.info("would record %s as shown (%s)", path, image_id)
-        return
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
     try:
         with closing(connect(config.index_path)) as conn:
-            for image_id in ids:
-                record_shown(conn, image_id)
+            ids = []
+            for picture in args.pictures:
+                try:
+                    ids.append(find_record(conn, picture))
+                except LookupFailed as exc:
+                    sys.exit(f"amontillado: {exc}")
+            for picture, record_id in zip(args.pictures, ids, strict=True):
+                if args.dry_run:
+                    logger.info("would record %s as shown (%s)", picture, record_id)
+                else:
+                    record_shown(conn, record_id)
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
 
 
 def _problems(report: Report, *, check: bool) -> list[str]:
-    """What makes `amo index` fail. Orphaned sidecars only fail a check: they are reported,
-    and a pass that leaves them alone has still done its job."""
+    """What makes `amo index` fail. Loose images and missing files only fail a check: they
+    are reported, and a pass that leaves them alone has still done its job."""
     problems = []
     if check and report.healed:
-        problems.append(f"{_count(len(report.healed), 'sidecar')} to heal")
-    if check and report.orphans:
-        problems.append(f"{_count(len(report.orphans), 'sidecar')} without an image")
+        problems.append(f"{_count(len(report.healed), 'record')} to heal")
+    if check and report.loose:
+        problems.append(f"{_count(len(report.loose), 'image')} outside a record")
+    if check and report.missing:
+        problems.append(f"{_count(len(report.missing), 'file')} missing")
     if report.conflicts:
-        problems.append(f"{_count(len(report.conflicts), 'sidecar name conflict')}")
+        problems.append(_count(len(report.conflicts), "conflict"))
     if report.failed:
-        problems.append(f"{_count(len(report.failed), 'image')} could not be read")
+        problems.append(f"{_count(len(report.failed), 'file')} could not be read or used")
     return problems
 
 

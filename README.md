@@ -12,10 +12,11 @@ not too busy behind it. amontillado aims to make those properties something you 
 - **Measure** every image once, in a perceptual colour space (OKLCH): how light it is, how
   colourful, its dominant hue and how much of the image it covers, how many hues it has, and
   how much fine detail.
-- **Keep the metadata with the image.** Each image gets a YAML sidecar file (in the style of
-  [papis](https://github.com/papis/papis)): readable, editable, and still valid when the files
-  are moved or synced. A SQLite index is rebuilt from the sidecars for fast queries; usage
-  history (when an image was last shown) is kept separately, so the sidecars stay stable.
+- **Keep the metadata with the image.** Each picture is a directory holding its files and an
+  `info.yaml` (in the style of [papis](https://github.com/papis/papis)): readable, editable, and
+  still valid when the directory is moved or synced. A SQLite index is rebuilt from the info
+  files for fast queries; usage history (when a picture was last shown) is kept separately, so
+  the info files stay stable.
 - **Fetch** from [Wallhaven](https://wallhaven.cc) by tags, purity, category and resolution,
   and by look: `--dark`, `--muted`, `--sparse`, `--hue blue`, `--monochrome`. Thumbnails are
   measured before anything is downloaded.
