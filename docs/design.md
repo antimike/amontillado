@@ -262,8 +262,12 @@ FILTERS are the class flags above. WALLHAVEN: `--tags`, `--purity`, `--category`
 
 - Thresholds: calibrate (above).
 - Whether `amo list` should prefer images shown least recently (it has the usage table).
-- **Sidecar layout**: one sidecar per image file, paired by name (v0.1), or papis-style records
-  (a directory per image holding one `info.yaml` that lists its files, e.g. the same wallpaper
-  as JPEG and PNG). Decide before the fetcher writes libraries in the v0.1 layout.
+- **Sidecar layout** (decided 2026-10-27, schema not yet agreed; bead `amo-3fg.9`): replace
+  name-paired sidecars with papis-style **records** before the fetcher writes any library: a
+  directory per picture holding `info.yaml` (or `info.yml`) and its files (formats, crops per
+  aspect ratio, later generated theme files). Files live inside the record directory. An
+  optional, unique, human-readable `name` beside the id. Each file's SHA-256 is recorded and
+  indexed, so content lookups and duplicate warnings do not depend on git-annex. Open: the
+  record id, metrics per file or per record, how `--aspect` picks a file.
 - Index staleness: `amo list` trusts the index; whether it should detect changes since the last
   `amo index` (a stat walk of the roots) and warn or refresh.
