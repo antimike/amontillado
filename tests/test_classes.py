@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from amontillado.classes import CLASSES, classify, has_aspect, has_hue
+from amontillado.classes import CLASSES, Look, classify, has_aspect, has_hue
 from amontillado.metrics import Metrics
 
 # A mid-grey-ish, mildly coloured, moderately detailed image: in no class at all.
@@ -75,3 +75,12 @@ def test_hue_is_only_the_dominant_one() -> None:
 )
 def test_has_aspect(size: tuple[int, int], ratio: float, expected: bool) -> None:
     assert has_aspect(*size, ratio) is expected
+
+
+def test_look_matches_every_class_and_the_hue() -> None:
+    red = replace(NEUTRAL, chroma=0.2, hue_name="red", hue_share=0.9, busy=0.2)
+    assert Look().matches(red)
+    assert Look(("saturated", "busy"), "red").matches(red)
+    assert not Look(("saturated", "sparse")).matches(red)
+    assert Look(("saturated", "sparse")).matches(red, ignore={"sparse"})
+    assert not Look(hue="blue").matches(red)

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from amontillado.config import ConfigError, load_config
+from amontillado.config import ConfigError, api_key, load_config
 
 
 def write_config(home: Path, text: str) -> None:
@@ -66,6 +66,8 @@ def test_empty_config_file(home: Path) -> None:
         ("nsfw_root: ~/.local/share/amontillado/library/nsfw\n", "overlaps library root"),
         ("library_roots: [~/walls]\nnsfw_root: ~/walls\n", "overlaps library root"),
         ("library_roots: [~/walls/sfw]\nnsfw_root: ~/walls\n", "overlaps library root"),
+        ("api_key_command: [pass, show]\n", "must be a command line"),
+        ("api_key_command: ' '\n", "must be a command line"),
     ],
 )
 def test_bad_config(home: Path, text: str, message: str) -> None:
@@ -88,3 +90,47 @@ def test_unknown_setting_warns(home: Path, caplog: pytest.LogCaptureFixture) -> 
         config = load_config()
     assert "unknown setting 'libary_roots'" in caplog.text
     assert len(config.library_roots) == 1
+
+
+@pytest.fixture
+def no_key_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WALLHAVEN_API_KEY", raising=False)
+
+
+def test_api_key_none_without_a_source(home: Path, no_key_variable: None) -> None:
+    assert api_key(load_config()) is None
+
+
+def test_api_key_from_the_environment_first(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WALLHAVEN_API_KEY", " env-key\n")
+    write_config(home, "api_key_command: printf command-key\n")
+    assert api_key(load_config()) == "env-key"
+
+
+def test_api_key_from_the_command(home: Path, no_key_variable: None) -> None:
+    write_config(home, "api_key_command: printf '%s\\n%s\\n' 'command key' second-line\n")
+    assert api_key(load_config()) == "command key"
+
+
+@pytest.mark.parametrize(
+    ("command", "message"),
+    [
+        ("false", "failed with exit status 1"),
+        ("true", "printed nothing"),
+        ("/nonexistent/key-command", "cannot run"),
+        ("printf 'unclosed", "cannot run"),
+    ],
+)
+def test_api_key_command_errors(
+    home: Path, no_key_variable: None, command: str, message: str
+) -> None:
+    write_config(home, f"api_key_command: {command!r}\n")
+    with pytest.raises(ConfigError, match=message):
+        api_key(load_config())
+
+
+def test_api_key_command_output_never_in_errors(home: Path, no_key_variable: None) -> None:
+    write_config(home, "api_key_command: sh -c 'echo secret-key; echo secret-err >&2; exit 2'\n")
+    with pytest.raises(ConfigError) as exc:
+        api_key(load_config())
+    assert "secret" not in str(exc.value)

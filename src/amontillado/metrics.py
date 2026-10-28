@@ -11,6 +11,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import IO
 
 import numpy as np
 from PIL import Image, ImageOps
@@ -94,8 +95,9 @@ def _orientation(image: Image.Image) -> int:
     return image.getexif().get(0x0112, 1)
 
 
-def load_rgb(path: Path) -> np.ndarray:
-    """Open an image and return it as 8-bit sRGB, MEASURE_WIDTH wide, shape (h, w, 3).
+def load_rgb(path: Path | IO[bytes]) -> np.ndarray:
+    """Open an image (a path or a binary file object) and return it as 8-bit sRGB,
+    MEASURE_WIDTH wide, shape (h, w, 3).
 
     EXIF orientation is applied, alpha is composited on black, and JPEGs are decoded at a
     reduced scale where that still leaves at least MEASURE_WIDTH pixels.
@@ -141,8 +143,8 @@ def measure(rgb: np.ndarray) -> Metrics:
     )
 
 
-def measure_file(path: Path) -> Metrics:
-    """Measure the image at `path`."""
+def measure_file(path: Path | IO[bytes]) -> Metrics:
+    """Measure the image at `path`, or in a binary file object."""
     return measure(load_rgb(path))
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import math
 import random
+import re
 import sqlite3
 import sys
 from contextlib import closing
@@ -26,8 +27,10 @@ from rich.logging import RichHandler
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
-from amontillado.classes import CLASSES, classify, has_aspect, has_hue
-from amontillado.config import Config, ConfigError, load_config
+from amontillado.classes import CLASSES, Look, classify, has_aspect
+from amontillado.config import API_KEY_VARIABLE, Config, ConfigError, api_key, load_config
+from amontillado.fetch import Options as FetchOptions
+from amontillado.fetch import fetch
 from amontillado.index import (
     IndexDatabaseError,
     IndexedFile,
@@ -46,6 +49,7 @@ from amontillado.index import (
 from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
 from amontillado.metrics import HUE_NAMES, measure_file
 from amontillado.record import sha256_file
+from amontillado.wallhaven import CATEGORY_FLAGS, Client, Search, WallhavenError
 
 logger = getLogger("amontillado")
 
@@ -127,13 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=HelpFormatter,
     )
     _add_loglevel(list_, argparse.SUPPRESS)
-    for pair in _CLASS_PAIRS:
-        group = list_.add_mutually_exclusive_group()
-        for name in pair:
-            group.add_argument(f"--{name}", action="store_true", help=f"Only {name} images.")
-    list_.add_argument(
-        "--hue", choices=HUE_NAMES, metavar="NAME", help=f"Dominant hue: {', '.join(HUE_NAMES)}."
-    )
+    _add_look(list_)
     list_.add_argument(
         "--purity",
         type=_purities,
@@ -202,7 +200,89 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add.set_defaults(func=cmd_add)
 
+    fetch = commands.add_parser(
+        "fetch",
+        help="Fetch wallpapers from Wallhaven.",
+        description="Search Wallhaven in random order, measure each result's thumbnail, and "
+        "keep the ones that match every filter: download each, make it a record (sfw ones in "
+        "the first library root, others in the NSFW root), and index it. Prints the path of "
+        "each file kept. Results already in the index are passed over. Fails if fewer than "
+        "--count are kept.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(fetch, argparse.SUPPRESS)
+    _add_look(fetch)
+    wallhaven = fetch.add_argument_group("Wallhaven filters")
+    wallhaven.add_argument(
+        "--tags", metavar="QUERY", help="Wallhaven search query: tags, +tag, -tag."
+    )
+    wallhaven.add_argument(
+        "--purity",
+        type=_purities,
+        default="sfw",
+        metavar="LIST",
+        help="Comma-separated purities (sfw, sketchy, nsfw); nsfw needs an API key "
+        "(WALLHAVEN_API_KEY or api_key_command).",
+    )
+    wallhaven.add_argument(
+        "--category",
+        type=_categories,
+        metavar="LIST",
+        help="Comma-separated categories (general, anime, people). Default: all.",
+    )
+    wallhaven.add_argument(
+        "--atleast", type=_resolution, metavar="WxH", help="Minimum resolution, e.g. 2560x1440."
+    )
+    wallhaven.add_argument(
+        "--ratio",
+        type=_ratios,
+        metavar="LIST",
+        help="Comma-separated aspect ratios, e.g. 16:9,21:9.",
+    )
+    wallhaven.add_argument(
+        "--color",
+        type=_color,
+        metavar="HEX",
+        help="One of Wallhaven's colour swatches, e.g. 424153.",
+    )
+    fetch.add_argument(
+        "--count", type=_positive, default=1, metavar="N", help="Stop after keeping N images."
+    )
+    fetch.add_argument(
+        "--max-candidates",
+        type=_positive,
+        default=100,
+        metavar="N",
+        help="Stop after examining N thumbnails.",
+    )
+    fetch.add_argument(
+        "--busy-from",
+        choices=("thumb", "full"),
+        default="thumb",
+        help="Judge --busy and --sparse on the thumbnail, or on the full image after "
+        "downloading it (thumbnail JPEG artefacts add edges; a rejected download is deleted).",
+    )
+    fetch.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Measure thumbnails and print the pages of the wallpapers that would be kept; "
+        "download and write nothing.",
+    )
+    fetch.set_defaults(func=cmd_fetch)
+
     return parser
+
+
+def _add_look(parser: argparse.ArgumentParser) -> None:
+    """The class flags and --hue (docs/design.md, "Classes")."""
+    group = parser.add_argument_group("look filters")
+    for pair in _CLASS_PAIRS:
+        exclusive = group.add_mutually_exclusive_group()
+        for name in pair:
+            exclusive.add_argument(f"--{name}", action="store_true", help=f"Only {name} images.")
+    group.add_argument(
+        "--hue", choices=HUE_NAMES, metavar="NAME", help=f"Dominant hue: {', '.join(HUE_NAMES)}."
+    )
 
 
 def _purities(value: str) -> frozenset[str]:
@@ -211,6 +291,36 @@ def _purities(value: str) -> frozenset[str]:
     if unknown:
         raise argparse.ArgumentTypeError(f"unknown purity: {', '.join(sorted(unknown))}")
     return names
+
+
+def _categories(value: str) -> frozenset[str]:
+    names = frozenset(name.strip() for name in value.split(","))
+    unknown = names - set(CATEGORY_FLAGS)
+    if unknown:
+        raise argparse.ArgumentTypeError(f"unknown category: {', '.join(sorted(unknown))}")
+    return names
+
+
+def _resolution(value: str) -> str:
+    if not re.fullmatch(r"[1-9]\d*x[1-9]\d*", value):
+        raise argparse.ArgumentTypeError("must be WxH, for example 2560x1440")
+    return value
+
+
+def _ratios(value: str) -> tuple[str, ...]:
+    ratios = []
+    for ratio in value.split(","):
+        match = re.fullmatch(r"([1-9]\d*)[:x]([1-9]\d*)", ratio.strip())
+        if not match:
+            raise argparse.ArgumentTypeError("must be W:H, for example 21:9")
+        ratios.append(f"{match[1]}x{match[2]}")
+    return tuple(ratios)
+
+
+def _color(value: str) -> str:
+    if not re.fullmatch(r"#?[0-9a-fA-F]{6}", value):
+        raise argparse.ArgumentTypeError("must be a hex colour, for example 424153")
+    return value.removeprefix("#").lower()
 
 
 def _aspect(value: str) -> float:
@@ -298,8 +408,8 @@ def cmd_list(args: argparse.Namespace) -> None:
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
     rows = [_pick(group, args.aspect) for group in by_record.values()]
-    wanted = [name for name in CLASSES if getattr(args, name.replace("-", "_"))]
-    matches = [row for row in rows if _matches(row, args, wanted, config)]
+    look = _look(args)
+    matches = [row for row in rows if _matches(row, args, look, config)]
     if args.aspect is not None:
         fallbacks = sum(not has_aspect(row.width, row.height, args.aspect) for row in matches)
         if fallbacks:
@@ -332,7 +442,12 @@ def _pick(group: list[IndexedFile], aspect: float | None) -> IndexedFile:
     return max(matching, key=lambda row: row.width * row.height, default=default)
 
 
-def _matches(row: IndexedFile, args: argparse.Namespace, wanted: list[str], config: Config) -> bool:
+def _look(args: argparse.Namespace) -> Look:
+    classes = tuple(name for name in CLASSES if getattr(args, name.replace("-", "_")))
+    return Look(classes, args.hue)
+
+
+def _matches(row: IndexedFile, args: argparse.Namespace, look: Look, config: Config) -> bool:
     if row.purity not in (args.purity or {"sfw"}):
         return False
     # Checked against the current config too, and through symlinks: the index may predate a
@@ -341,9 +456,7 @@ def _matches(row: IndexedFile, args: argparse.Namespace, wanted: list[str], conf
         row.nsfw_root or row.path.resolve().is_relative_to(config.nsfw_root)
     ):
         return False
-    if not all(CLASSES[name](row.metrics) for name in wanted):
-        return False
-    return args.hue is None or has_hue(row.metrics, args.hue)
+    return look.matches(row.metrics)
 
 
 def cmd_shown(args: argparse.Namespace) -> None:
@@ -411,6 +524,53 @@ def _add_one(
     entry = add_picture(config, placement, name=args.name)
     add_to_index(conn, entry)
     logger.info("added %s as %s", file, entry.directory)
+
+
+def cmd_fetch(args: argparse.Namespace) -> None:
+    config = _load_config()
+    search = Search(
+        query=args.tags,
+        purity=args.purity,
+        categories=args.category,
+        atleast=args.atleast,
+        ratios=args.ratio,
+        color=args.color,
+    )
+    options = FetchOptions(args.count, args.max_candidates, args.busy_from, args.dry_run)
+    # Only NSFW needs the key, and its command may ask for a passphrase: no lookup otherwise.
+    key = None
+    if "nsfw" in args.purity:
+        try:
+            key = api_key(config)
+        except ConfigError as exc:
+            sys.exit(f"amontillado: {exc}")
+        if key is None:
+            sys.exit(
+                f"amontillado: nsfw needs a Wallhaven API key: set {API_KEY_VARIABLE} or "
+                "api_key_command"
+            )
+    try:
+        with closing(connect(config.index_path)) as conn:
+            report = fetch(config, conn, Client(key), search, _look(args), options)
+    except WallhavenError as exc:
+        sys.exit(f"amontillado: {exc}")
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    for path in report.kept:
+        print(path)
+    for wallpaper in report.would_keep:
+        print(wallpaper.url)
+    logger.info(
+        "%s %d, examined %s: %d rejected, %d failed; %d already in the library",
+        "would keep" if args.dry_run else "kept",
+        report.count,
+        _count(report.examined, "thumbnail"),
+        report.rejected,
+        len(report.failed),
+        report.known,
+    )
+    if report.count < args.count:
+        sys.exit(f"amontillado: {report.count} of {args.count} wanted")
 
 
 def _problems(report: Report, *, check: bool) -> list[str]:
