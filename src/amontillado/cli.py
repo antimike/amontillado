@@ -4,7 +4,9 @@ Fetches wallpapers from Wallhaven, measures each image's lightness, colourfulnes
 dominant hue and detail, keeps that next to the image, and answers queries such as
 "a dark, muted, sparse wallpaper" from a local index.
 
-Commands are added as they are built; see docs/design.md for the plan.
+Each picture is a directory (a record) holding its files and an info.yaml; the index is
+rebuilt from those by `amo index`. `amo COMMAND --help` documents each command;
+docs/design.md has the record format, the metric and class definitions, and the fetcher.
 """
 
 from __future__ import annotations
@@ -49,7 +51,13 @@ from amontillado.index import (
 from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
 from amontillado.metrics import HUE_NAMES, measure_file
 from amontillado.record import sha256_file
-from amontillado.wallhaven import CATEGORY_FLAGS, Client, Search, WallhavenError
+from amontillado.wallhaven import (
+    CATEGORY_FLAGS,
+    Client,
+    Search,
+    WallhavenError,
+    nearest_swatch,
+)
 
 logger = getLogger("amontillado")
 
@@ -205,8 +213,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch wallpapers from Wallhaven.",
         description="Search Wallhaven in random order, measure each result's thumbnail, and "
         "keep the ones that match every filter: download each, make it a record (sfw ones in "
-        "the first library root, others in the NSFW root), and index it. Prints the path of "
-        "each file kept. Results already in the index are passed over. Fails if fewer than "
+        "the first library root, others in the NSFW root), and index it. The full image is "
+        "judged again; see --discard-mismatches. Prints the path of each file kept that "
+        "matches. Results already in the library are passed over. Fails if fewer than "
         "--count are kept.",
         formatter_class=HelpFormatter,
     )
@@ -243,7 +252,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--color",
         type=_color,
         metavar="HEX",
-        help="One of Wallhaven's colour swatches, e.g. 424153.",
+        help="A colour, as hex; Wallhaven searches by one of 29 fixed swatches, so any other "
+        "colour is replaced by the nearest swatch (in OKLab), e.g. 424153.",
     )
     fetch.add_argument(
         "--count", type=_positive, default=1, metavar="N", help="Stop after keeping N images."
@@ -259,8 +269,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--busy-from",
         choices=("thumb", "full"),
         default="thumb",
-        help="Judge --busy and --sparse on the thumbnail, or on the full image after "
-        "downloading it (thumbnail JPEG artefacts add edges; a rejected download is deleted).",
+        help="Judge --busy and --sparse on the thumbnail, or only on the full image "
+        "(thumbnail JPEG artefacts add edges).",
+    )
+    fetch.add_argument(
+        "--discard-mismatches",
+        action="store_true",
+        help="Delete a download whose full image does not match the look filters. By default "
+        "it is kept as a record, but not printed or counted towards --count.",
     )
     fetch.add_argument(
         "--dry-run",
@@ -528,15 +544,22 @@ def _add_one(
 
 def cmd_fetch(args: argparse.Namespace) -> None:
     config = _load_config()
+    color = args.color and nearest_swatch(args.color)
+    if color != args.color:
+        logger.info(
+            "--color %s is not a Wallhaven swatch; using the nearest, %s", args.color, color
+        )
     search = Search(
         query=args.tags,
         purity=args.purity,
         categories=args.category,
         atleast=args.atleast,
         ratios=args.ratio,
-        color=args.color,
+        color=color,
     )
-    options = FetchOptions(args.count, args.max_candidates, args.busy_from, args.dry_run)
+    options = FetchOptions(
+        args.count, args.max_candidates, args.busy_from, args.discard_mismatches, args.dry_run
+    )
     # Only NSFW needs the key, and its command may ask for a passphrase: no lookup otherwise.
     key = None
     if "nsfw" in args.purity:
@@ -569,6 +592,12 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         len(report.failed),
         report.known,
     )
+    if report.mismatched or report.discarded:
+        logger.info(
+            "full images that did not match: %d kept anyway, %d discarded",
+            len(report.mismatched),
+            report.discarded,
+        )
     if report.count < args.count:
         sys.exit(f"amontillado: {report.count} of {args.count} wanted")
 

@@ -20,6 +20,7 @@ from amontillado.library import add_picture, place
 from amontillado.wallhaven import API, Client, Response, Search
 
 NOISE = np.random.default_rng(0).integers(0, 256, size=(72, 128), dtype=np.uint8)
+NOISE_RGB = np.repeat(NOISE[..., None], 3, axis=2)
 
 
 @pytest.fixture
@@ -120,24 +121,48 @@ def test_dry_run_downloads_thumbnails_only(
     assert files(conn) == []
 
 
-@pytest.mark.parametrize(("busy_from", "kept"), [("thumb", 1), ("full", 0)])
+@pytest.mark.parametrize(("busy_from", "kept"), [("thumb", 0), ("full", 1)])
 def test_busy_from(
     config: Config, conn: sqlite3.Connection, web: FakeWeb, busy_from: str, kept: int
 ) -> None:
-    # A busy thumbnail of a full image that is not busy at all.
-    noise = np.repeat(NOISE[..., None], 3, axis=2)
-    web.add("https://th.wallhaven.cc/lg/aa/aaa111.jpg", _encode(noise))
+    # A smooth thumbnail of a busy full image: only --busy-from full looks past it.
+    web.add("https://w.wallhaven.cc/full/aa/wallhaven-aaa111.jpg", _encode(NOISE_RGB, "JPEG"))
     report = _fetch(config, conn, web, Look(("busy",)), busy_from=busy_from, max_candidates=1)
     assert len(report.kept) == kept
     assert report.rejected == 1 - kept
-    assert _leftovers(config.library_roots[0]) == []
-    if not kept:
-        assert list(config.library_roots[0].iterdir()) == []
+    assert report.mismatched == []
 
 
-def _encode(array: np.ndarray) -> bytes:
+@pytest.fixture
+def borderline(web: FakeWeb) -> FakeWeb:
+    """aaa111's thumbnail is busy; its full image is not."""
+    web.add("https://th.wallhaven.cc/lg/aa/aaa111.jpg", _encode(NOISE_RGB))
+    return web
+
+
+def test_a_mismatch_on_the_full_image_is_kept_but_not_counted(
+    config: Config, conn: sqlite3.Connection, borderline: FakeWeb
+) -> None:
+    report = _fetch(config, conn, borderline, Look(("busy",)), max_candidates=1)
+    path = config.library_roots[0] / "wallhaven-aaa111" / "wallhaven-aaa111.jpg"
+    assert report.kept == []
+    assert report.mismatched == [path]
+    assert report.count == 0
+    assert [row.path for row in files(conn)] == [path]
+
+
+def test_discard_mismatches(config: Config, conn: sqlite3.Connection, borderline: FakeWeb) -> None:
+    report = _fetch(
+        config, conn, borderline, Look(("busy",)), max_candidates=1, discard_mismatches=True
+    )
+    assert (report.kept, report.mismatched, report.discarded) == ([], [], 1)
+    assert list(config.library_roots[0].iterdir()) == []
+    assert files(conn) == []
+
+
+def _encode(array: np.ndarray, fmt: str = "PNG") -> bytes:
     buffer = io.BytesIO()
-    Image.fromarray(array).save(buffer, "PNG")
+    Image.fromarray(array).save(buffer, fmt)
     return buffer.getvalue()
 
 
@@ -192,3 +217,20 @@ def test_a_failure_after_the_move_leaves_nothing_behind(
     report = _fetch(config, conn, web, Look(("dark",)), max_candidates=1)
     assert report.failed == [("aaa111", "disk full")]
     assert list(config.library_roots[0].iterdir()) == []
+
+
+def test_skips_wallhaven_ids_on_disk_but_not_indexed(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, caplog: pytest.LogCaptureFixture
+) -> None:
+    # As a record synced in from another machine, before `amo index`.
+    record = config.nsfw_root / "elsewhere" / "synced"
+    record.mkdir(parents=True)
+    (record / "info.yaml").write_text("source: {site: wallhaven, id: aaa111}\n")
+    broken = config.library_roots[0] / "broken"
+    broken.mkdir()
+    (broken / "info.yaml").write_text("source: [\n")
+    report = _fetch(config, conn, web, Look(("dark",)))
+    assert report.known == 1
+    assert report.kept == []
+    assert "https://th.wallhaven.cc/lg/aa/aaa111.jpg" not in web.urls()
+    assert "not in the index (passed over anyway; run `amo index`): 1" in caplog.text

@@ -8,11 +8,13 @@ from conftest import FakeClock, FakeWeb, fixture_json
 from amontillado.wallhaven import (
     API,
     API_INTERVAL,
+    SWATCHES,
     Client,
     Response,
     Search,
     WallhavenError,
     Wallpaper,
+    nearest_swatch,
 )
 
 PAGE_1 = f"{API}/search?sorting=random&purity=100&page=1"
@@ -153,3 +155,19 @@ def test_wallpaper_from_api_rejects_unknown_purity() -> None:
     assert isinstance(page, dict)
     with pytest.raises(WallhavenError, match="unknown purity"):
         Wallpaper.from_api({**page["data"][0], "purity": "nsfl"})
+
+
+@pytest.mark.parametrize(
+    ("color", "swatch"),
+    [
+        ("424153", "424153"),
+        ("010101", "000000"),
+        ("fefefe", "ffffff"),
+        ("cd0203", "cc0000"),
+        ("0068ce", "0066cc"),
+        ("3a3a4a", "424153"),
+    ],
+)
+def test_nearest_swatch(color: str, swatch: str) -> None:
+    assert nearest_swatch(color) == swatch
+    assert swatch in SWATCHES

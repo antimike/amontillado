@@ -31,6 +31,7 @@ from amontillado.record import (
     FileEntry,
     Record,
     RecordError,
+    load_raw,
     read_record,
     sha256_file,
     write_record,
@@ -303,6 +304,37 @@ def _heal_record(
     if reasons:
         write_record(path, record)
     return record, hashes
+
+
+def source_ids_on_disk(config: Config, site: str) -> set[str]:
+    """The ids, at `site`, named in the `source` of every info file under the roots.
+
+    Read from the files, not the index, which can be stale: a record synced in from another
+    machine is not indexed until the next `amo index`. Every info file is parsed on each call;
+    docs/design.md, "Flow", says when to revisit that. An info file that cannot be read is
+    skipped here: `amo index` reports it.
+    """
+    ids: set[str] = set()
+    for root in (*config.library_roots, config.nsfw_root):
+        # os.walk does not follow directory symlinks, as in _scan.
+        for dirpath, dirnames, filenames in os.walk(root):
+            directory = Path(dirpath)
+            info = [name for name in INFO_NAMES if name in filenames]
+            if not info or directory == root:
+                continue
+            dirnames.clear()
+            for name in info:
+                try:
+                    source = load_raw(directory / name).get("source")
+                except (RecordError, OSError) as exc:
+                    logger.debug("%s: %s", directory / name, exc)
+                    continue
+                if isinstance(source, dict) and source.get("site") == site:
+                    source_id = source.get("id")
+                    # A hand-edited id of digits only loads as an int.
+                    if isinstance(source_id, (str, int)) and not isinstance(source_id, bool):
+                        ids.add(str(source_id))
+    return ids
 
 
 class AddError(Exception):
