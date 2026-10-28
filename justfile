@@ -18,6 +18,10 @@ fmt:
     uv run ruff format .
     uv run ruff check --fix .
 
+# Sample Wallhaven and report metric distributions (tools/calibrate.py; needs the network).
+calibrate *args:
+    uv run tools/calibrate.py {{args}}
+
 # Install from this checkout into a pipx venv (a snapshot).
 install:
     -pipx uninstall amontillado
