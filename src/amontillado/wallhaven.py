@@ -19,7 +19,10 @@ from datetime import datetime
 from logging import getLogger
 from urllib.parse import urlencode
 
+import numpy as np
+
 from amontillado import __version__
+from amontillado.colour import srgb_to_oklab
 
 logger = getLogger(__name__)
 
@@ -34,6 +37,13 @@ BACKOFF = 10.0
 RETRIES = 5
 TIMEOUT = 60.0
 _EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png"}
+# The only values the `colors` search parameter takes (https://wallhaven.cc/help/api).
+SWATCHES = (
+    "660000", "990000", "cc0000", "cc3333", "ea4c88", "993399", "663399", "333399", "0066cc",
+    "0099cc", "66cccc", "77cc33", "669900", "336600", "666600", "999900", "cccc33", "ffff00",
+    "ffcc33", "ff9900", "ff6600", "cc6633", "996633", "663300", "000000", "999999", "cccccc",
+    "ffffff", "424153",
+)  # fmt: skip
 
 
 class WallhavenError(Exception):
@@ -85,6 +95,21 @@ class Search:
         if self.color:
             params["colors"] = self.color
         return params
+
+
+def nearest_swatch(color: str) -> str:
+    """The swatch closest to `color` (six lowercase hex digits) in OKLab; a swatch itself if
+    `color` is one."""
+    if color in SWATCHES:
+        return color
+    rgb = np.array([_rgb(c) for c in (color, *SWATCHES)], dtype=np.uint8)
+    lab = srgb_to_oklab(rgb)
+    distances = np.linalg.norm(lab[1:] - lab[0], axis=1)
+    return SWATCHES[int(distances.argmin())]
+
+
+def _rgb(color: str) -> tuple[int, int, int]:
+    return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
 
 
 def _flags(names: tuple[str, ...], chosen: frozenset[str]) -> str:

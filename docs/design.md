@@ -330,8 +330,9 @@ the new record to the index itself.
 
 FILTERS are the class flags above, and `--hue`. WALLHAVEN: `--tags QUERY` (Wallhaven's `q`),
 `--purity LIST` (default sfw), `--category LIST` (general, anime, people; default all),
-`--atleast WxH`, `--ratio LIST` (`W:H` or `WxH`), `--color HEX` (one of Wallhaven's swatches;
-not checked against the list). `amo fetch` prints the path of each file kept, one per line,
+`--atleast WxH`, `--ratio LIST` (`W:H` or `WxH`), `--color HEX`. Wallhaven's `colors`
+parameter takes only its 29 fixed swatches (`SWATCHES` in `wallhaven.py`), which have no names;
+any other colour is replaced by the nearest swatch by OKLab distance, with a log line. `amo fetch` prints the path of each file kept, one per line,
 and exits non-zero if it kept fewer than `--count`. `--dry-run` measures thumbnails, downloads
 nothing, and prints the page URL of each wallpaper it would keep.
 

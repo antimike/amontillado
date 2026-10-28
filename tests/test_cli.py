@@ -428,7 +428,8 @@ def test_fetch_passes_wallhaven_filters(library: Path, web: FakeWeb) -> None:
         "categories": "101",
         "atleast": "2560x1440",
         "ratios": "16x9,21x9",
-        "colors": "42415a",
+        # Not a swatch: replaced by the nearest one.
+        "colors": "424153",
         "page": "1",
     }
 

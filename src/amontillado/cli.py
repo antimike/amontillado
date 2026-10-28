@@ -49,7 +49,13 @@ from amontillado.index import (
 from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
 from amontillado.metrics import HUE_NAMES, measure_file
 from amontillado.record import sha256_file
-from amontillado.wallhaven import CATEGORY_FLAGS, Client, Search, WallhavenError
+from amontillado.wallhaven import (
+    CATEGORY_FLAGS,
+    Client,
+    Search,
+    WallhavenError,
+    nearest_swatch,
+)
 
 logger = getLogger("amontillado")
 
@@ -244,7 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--color",
         type=_color,
         metavar="HEX",
-        help="One of Wallhaven's colour swatches, e.g. 424153.",
+        help="A colour, as hex; Wallhaven searches by one of 29 fixed swatches, so any other "
+        "colour is replaced by the nearest swatch (in OKLab), e.g. 424153.",
     )
     fetch.add_argument(
         "--count", type=_positive, default=1, metavar="N", help="Stop after keeping N images."
@@ -535,13 +542,18 @@ def _add_one(
 
 def cmd_fetch(args: argparse.Namespace) -> None:
     config = _load_config()
+    color = args.color and nearest_swatch(args.color)
+    if color != args.color:
+        logger.info(
+            "--color %s is not a Wallhaven swatch; using the nearest, %s", args.color, color
+        )
     search = Search(
         query=args.tags,
         purity=args.purity,
         categories=args.category,
         atleast=args.atleast,
         ratios=args.ratio,
-        color=args.color,
+        color=color,
     )
     options = FetchOptions(
         args.count, args.max_candidates, args.busy_from, args.discard_mismatches, args.dry_run
