@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 import numpy as np
 import pytest
 import yaml
-from conftest import mark_record
+from conftest import FakeClock, FakeWeb, mark_record
 from PIL import Image
 
 from amontillado import __version__
 from amontillado.cli import get_cli_arguments, main
+from amontillado.wallhaven import Client
 
 
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:
@@ -373,3 +375,107 @@ def test_add_name_takes_one_file(library: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["add", "--name", "x", "a.png", "b.png"])
     assert exc.value.code == "amontillado: --name takes one FILE"
+
+
+@pytest.fixture
+def web(wallhaven: FakeWeb, monkeypatch: pytest.MonkeyPatch) -> FakeWeb:
+    """`amo fetch` talks to the fake Wallhaven, and never sleeps."""
+    clock = FakeClock()
+
+    def client(api_key: str | None) -> Client:
+        return Client(api_key, get=wallhaven.get, sleep=clock.sleep, clock=clock)
+
+    monkeypatch.setattr("amontillado.cli.Client", client)
+    monkeypatch.delenv("WALLHAVEN_API_KEY", raising=False)
+    return wallhaven
+
+
+def test_fetch_prints_and_indexes_what_it_keeps(
+    library: Path, web: FakeWeb, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["fetch", "--dark"])
+    kept = library / "wallhaven-aaa111" / "wallhaven-aaa111.jpg"
+    assert capsys.readouterr().out.splitlines() == [str(kept)]
+    assert _list(capsys, "--dark") == {"wallhaven-aaa111"}
+    main(["index", "--check"])
+
+
+def test_fetch_fails_when_short_of_count(library: Path, web: FakeWeb) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["fetch", "--dark", "--count", "3"])
+    assert exc.value.code == "amontillado: 1 of 3 wanted"
+
+
+def test_fetch_dry_run_prints_pages(
+    library: Path, web: FakeWeb, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["fetch", "--light", "--dry-run"])
+    assert capsys.readouterr().out.splitlines() == ["https://wallhaven.cc/w/bbb222"]
+    assert list(library.iterdir()) == []
+
+
+def test_fetch_passes_wallhaven_filters(library: Path, web: FakeWeb) -> None:
+    args = ["--tags", "+night", "--category", "general,people", "--atleast", "2560x1440"]
+    args += ["--ratio", "16:9,21x9", "--color", "#42415A", "--dry-run"]
+    with pytest.raises(SystemExit):
+        main(["fetch", *args])
+    query = dict(parse_qsl(urlsplit(web.urls()[0]).query))
+    assert query == {
+        "sorting": "random",
+        "purity": "100",
+        "q": "+night",
+        "categories": "101",
+        "atleast": "2560x1440",
+        "ratios": "16x9,21x9",
+        "colors": "42415a",
+        "page": "1",
+    }
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--ratio", "21/9"],
+        ["--atleast", "2560"],
+        ["--color", "red"],
+        ["--category", "cats"],
+        ["--purity", "sfw,lewd"],
+        ["--busy-from", "both"],
+        ["--dark", "--light"],
+    ],
+)
+def test_fetch_rejects_bad_arguments(args: list[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        get_cli_arguments(["fetch", *args])
+    assert exc.value.code == 2
+
+
+def test_fetch_nsfw_needs_an_api_key(library: Path, web: FakeWeb) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["fetch", "--purity", "sfw,nsfw"])
+    assert "nsfw needs a Wallhaven API key" in str(exc.value.code)
+    assert web.requests == []
+
+
+def test_fetch_nsfw_sends_the_api_key(
+    library: Path, web: FakeWeb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WALLHAVEN_API_KEY", "secret-key")
+    main(["fetch", "--purity", "sfw,nsfw"])
+    assert all(headers.get("X-API-Key") == "secret-key" for _, headers in web.requests)
+
+
+def test_fetch_sfw_never_looks_up_the_key(
+    library: Path, web: FakeWeb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WALLHAVEN_API_KEY", "secret-key")
+    main(["fetch"])
+    assert all("X-API-Key" not in headers for _, headers in web.requests)
+
+
+def test_fetch_exits_when_the_search_fails(library: Path, web: FakeWeb) -> None:
+    web.routes.clear()
+    with pytest.raises(SystemExit) as exc:
+        main(["fetch"])
+    assert str(exc.value.code).startswith("amontillado: https://wallhaven.cc/api/v1/search?")
+    assert str(exc.value.code).endswith("HTTP 404")

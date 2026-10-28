@@ -25,6 +25,13 @@ All notable changes to amontillado are documented here. The format follows
   a picture is a file, a record directory, a name, an id or a unique id prefix.
 - `amo add FILE... [--name N] [--nsfw] [--force]`: makes each image file a record of its own
   and indexes it; refuses content already in the library unless `--force`.
+- `amo fetch`: searches Wallhaven in random order (`--tags`, `--purity`, `--category`,
+  `--atleast`, `--ratio`, `--color`), measures each thumbnail, and keeps the ones that match the
+  look filters (`--dark`, `--hue blue`, ...) as indexed records, up to `--count`, examining at
+  most `--max-candidates`; `--busy-from full` judges busy and sparse on the full image;
+  `--dry-run` downloads nothing. Paced under Wallhaven's rate limit, with back-off on HTTP 429.
+- `api_key_command` in `config.yaml`, or `WALLHAVEN_API_KEY`: the Wallhaven API key, needed for
+  nsfw results, never logged or stored.
 
 ### Fixed
 

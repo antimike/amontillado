@@ -11,7 +11,7 @@ import pytest
 from PIL import Image
 
 from amontillado.config import Config
-from amontillado.wallhaven import Response
+from amontillado.wallhaven import API, Response
 
 SaveImage = Callable[..., Path]
 
@@ -127,3 +127,31 @@ class FakeClock:
     def sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
         self.now += seconds
+
+
+def _search_url(purity: str, page: int) -> str:
+    seed = "&seed=XyZ987" if page > 1 else ""
+    return f"{API}/search?sorting=random&purity={purity}&page={page}{seed}"
+
+
+@pytest.fixture
+def wallhaven() -> FakeWeb:
+    """Wallhaven with three wallpapers: aaa111 black (sfw, JPEG), bbb222 white (sfw, PNG),
+    ccc333 near-black (sketchy, JPEG); each search answers with all three, as the fixtures do."""
+    web = FakeWeb()
+    for purity in ("100", "110", "101", "111"):
+        web.add(_search_url(purity, 1), fixture_json("wallhaven-search-1.json"))
+        web.add(_search_url(purity, 2), fixture_json("wallhaven-search-2.json"))
+    for wallpaper_id, rgb, fmt in (
+        ("aaa111", (0, 0, 0), "JPEG"),
+        ("bbb222", (255, 255, 255), "PNG"),
+        ("ccc333", (8, 8, 8), "JPEG"),
+    ):
+        prefix = wallpaper_id[:2]
+        ext = ".png" if fmt == "PNG" else ".jpg"
+        thumb = f"https://th.wallhaven.cc/lg/{prefix}/{wallpaper_id}.jpg"
+        web.add(thumb, image_bytes(rgb, (432, 243), "JPEG"))
+        full = f"https://w.wallhaven.cc/full/{prefix}/wallhaven-{wallpaper_id}{ext}"
+        web.add(full, image_bytes(rgb, (128, 72), fmt))
+        web.add(f"{API}/w/{wallpaper_id}", {"data": {"tags": [{"name": f"tag-{wallpaper_id}"}]}})
+    return web

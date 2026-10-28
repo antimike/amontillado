@@ -1,8 +1,8 @@
 # Design
 
-Status: agreed for v0.1 (2026-10-27); the library, index and query commands are implemented,
-the fetcher is not. Values marked *initial* are starting
-points to calibrate on real images; change them here when they change in code.
+Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
+implemented; `--test-set` is not. Values marked *initial* are starting points to calibrate on
+real images; change them here when they change in code.
 
 ## Scope
 
@@ -172,7 +172,8 @@ api_key_command: pass show wallhaven/api-key
 Paths must be absolute (`~` is expanded). The NSFW root may not be, contain, or lie inside a
 library root, symlinks resolved; that is a config error, since a recursive search would then
 reach NSFW images. Unknown keys are warned about and ignored. The API key comes from
-`WALLHAVEN_API_KEY` first, then `api_key_command`; it is never written anywhere and never logged.
+`WALLHAVEN_API_KEY` first, then the first line printed by `api_key_command` (split into words
+as a shell would, and run without one); it is never written anywhere and never logged.
 
 ## Metrics
 
@@ -253,17 +254,30 @@ here.
 
 ### Flow
 
-1. Search with the server-side filters (tags, purity, category, size, swatch), `sorting=random`.
-2. For each result not already in the library (by Wallhaven id): fetch the `large` thumbnail and
-   measure it. Skip it if it fails a look filter.
+1. Search with the server-side filters (tags, purity, category, size, swatch), `sorting=random`;
+   later pages pass the first page's `meta.seed`.
+2. For each result not already in the library (by Wallhaven id, from the index), and of a
+   purity that was asked for: fetch the `large` thumbnail and measure it. Skip it if it fails a
+   look filter.
 3. `--busy-from thumb` (default) judges busy/sparse on the thumbnail. `--busy-from full` leaves
    that filter until after the full download (thumbnail JPEG artefacts add edges), and deletes
    the download if it fails.
-4. Download the full image atomically, call `/w/<id>` for tags, write the record with metrics
-   measured on the **full** image (so stored metrics never come from a thumbnail), update the
-   index.
-5. Stop at `--count` images kept, or at `--max-candidates` (default 100, *initial*) examined.
-   Pace API calls to stay under the rate limit; on HTTP 429, back off and retry.
+4. Download the full image to a temporary `.part` file in its root (not an image suffix, so a
+   scan never takes it for a loose image), refuse it if its content is already in the index,
+   call `/w/<id>` for tags, then move it into a new record directory `wallhaven-<id>` (sfw: the
+   first library root; sketchy and nsfw: the NSFW root) and write the record with metrics
+   measured on the **full** image (so stored metrics never come from a thumbnail); add it to
+   the index. The record has no `name`. A failure at any step leaves nothing behind; an
+   existing `wallhaven-<id>` directory is refused (the index is stale: run `amo index`).
+5. Stop at `--count` (default 1) images kept, or at `--max-candidates` (default 100, *initial*)
+   thumbnails examined (results already in the library do not count).
+6. API calls keep 1.5 s apart (40 a minute, under the limit of 45); thumbnail and image
+   downloads are not paced. On HTTP 429 from any host, wait `Retry-After` if given, else 10 s
+   doubling, up to 5 retries.
+
+The API key travels in the `X-API-Key` header, never in a URL, so URLs can be logged. It is
+looked up only when `--purity` includes `nsfw` (its command may ask for a passphrase), and the
+command's output and errors are never shown.
 
 ### Test set
 
@@ -277,7 +291,8 @@ apply. It is the input for comparing palette generators.
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check]                  heal records, rebuild the index; --check reports only
 amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N]   matching paths, one per line
-amo fetch [FILTERS] [WALLHAVEN] [--count N] [--test-set] [--busy-from thumb|full] [--dry-run]
+amo fetch [FILTERS] [WALLHAVEN] [--count N] [--max-candidates N] [--test-set]
+          [--busy-from thumb|full] [--dry-run]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run]   make each file a record of its own
 ```
@@ -304,8 +319,12 @@ directory that already exists, a `--name` that is invalid or taken, and, without
 file whose content the index already holds. It measures before it moves anything, and adds
 the new record to the index itself.
 
-FILTERS are the class flags above. WALLHAVEN: `--tags`, `--purity`, `--category`, `--atleast`,
-`--ratio`, `--color HEX`. `--dry-run` measures thumbnails and reports what it would keep.
+FILTERS are the class flags above, and `--hue`. WALLHAVEN: `--tags QUERY` (Wallhaven's `q`),
+`--purity LIST` (default sfw), `--category LIST` (general, anime, people; default all),
+`--atleast WxH`, `--ratio LIST` (`W:H` or `WxH`), `--color HEX` (one of Wallhaven's swatches;
+not checked against the list). `amo fetch` prints the path of each file kept, one per line,
+and exits non-zero if it kept fewer than `--count`. `--dry-run` measures thumbnails, downloads
+nothing, and prints the page URL of each wallpaper it would keep.
 
 ## Testing
 
