@@ -1,8 +1,10 @@
-"""The SQLite index: one row per image, rebuilt from the sidecars, and the usage history.
+"""The SQLite index: records and their files, rebuilt from the info files, and the usage history.
 
-docs/design.md, "Index and usage". The `images` table holds nothing that is not in a sidecar
-(or implied by where the image lives), so `rebuild` drops and recreates it: a schema change to
-it needs no migration. The `usage` table cannot be rebuilt and is never dropped.
+docs/design.md, "Index and usage". The `records` and `files` tables hold nothing that is not in
+an info file (or implied by where a record lives), so `rebuild` drops and recreates them: a
+schema change to them needs no migration. The `usage` table, keyed by record id, cannot be
+rebuilt and is never dropped, except once when upgrading from schema 1, whose usage rows were
+keyed by content hash.
 """
 
 from __future__ import annotations
@@ -12,24 +14,37 @@ import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from logging import getLogger
 from pathlib import Path
 
 from amontillado.library import Entry
 from amontillado.metrics import Metrics
+from amontillado.record import ID_PATTERN, sha256_file
 
-SCHEMA_VERSION = 1
+logger = getLogger(__name__)
 
-_CREATE_IMAGES = """
-CREATE TABLE images (
-    path TEXT PRIMARY KEY,
-    id TEXT NOT NULL,
+SCHEMA_VERSION = 2
+
+_CREATE_RECORDS = """
+CREATE TABLE records (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE,
+    directory TEXT NOT NULL,
     root TEXT NOT NULL,
     nsfw_root INTEGER NOT NULL,
     purity TEXT NOT NULL,
     category TEXT,
     tags TEXT NOT NULL,
     source_site TEXT,
-    source_id TEXT,
+    source_id TEXT
+)
+"""
+_CREATE_FILES = """
+CREATE TABLE files (
+    path TEXT PRIMARY KEY,
+    record_id TEXT NOT NULL REFERENCES records (id),
+    sha256 TEXT NOT NULL,
+    is_default INTEGER NOT NULL,
     width INTEGER NOT NULL,
     height INTEGER NOT NULL,
     lightness REAL NOT NULL,
@@ -43,6 +58,7 @@ CREATE TABLE images (
     busy REAL NOT NULL
 )
 """
+_CREATE_FILES_SHA256 = "CREATE INDEX files_sha256 ON files (sha256)"
 _CREATE_USAGE = """
 CREATE TABLE IF NOT EXISTS usage (
     id TEXT PRIMARY KEY,
@@ -54,18 +70,25 @@ _RECORD_SHOWN = """
 INSERT INTO usage (id, shown_count, last_shown) VALUES (?, 1, ?)
 ON CONFLICT (id) DO UPDATE SET shown_count = shown_count + 1, last_shown = excluded.last_shown
 """
-_INSERT_IMAGE = """
-INSERT INTO images VALUES (
-    :path, :id, :root, :nsfw_root, :purity, :category, :tags, :source_site, :source_id,
-    :width, :height, :lightness, :chroma, :colourful_share, :hue, :hue_name, :hue_share,
-    :hue_spread, :warmth, :busy
+_INSERT_RECORD = """
+INSERT INTO records VALUES (
+    :id, :name, :directory, :root, :nsfw_root, :purity, :category, :tags, :source_site,
+    :source_id
+)
+"""
+_INSERT_FILE = """
+INSERT INTO files VALUES (
+    :path, :record_id, :sha256, :is_default, :width, :height, :lightness, :chroma,
+    :colourful_share, :hue, :hue_name, :hue_share, :hue_spread, :warmth, :busy
 )
 """
 # The metric columns in Metrics field order, so that a row unpacks into Metrics.
-_SELECT_IMAGES = """
-SELECT path, id, purity, nsfw_root,
-    lightness, chroma, colourful_share, hue, hue_name, hue_share, hue_spread, warmth, busy
-FROM images ORDER BY path
+_SELECT_FILES = """
+SELECT f.path, f.record_id, r.purity, r.nsfw_root, f.is_default, f.width, f.height,
+    f.lightness, f.chroma, f.colourful_share, f.hue, f.hue_name, f.hue_share, f.hue_spread,
+    f.warmth, f.busy
+FROM files f JOIN records r ON r.id = f.record_id
+ORDER BY f.path
 """
 
 
@@ -73,14 +96,21 @@ class IndexDatabaseError(Exception):
     """The index cannot be used; the message says why."""
 
 
+class LookupFailed(Exception):
+    """No single record answers to a name, id, prefix or path; the message says why."""
+
+
 @dataclass(frozen=True)
-class IndexedImage:
-    """An image as the index knows it."""
+class IndexedFile:
+    """A file of a record, as the index knows it."""
 
     path: Path
-    id: str
+    record_id: str
     purity: str
     nsfw_root: bool
+    is_default: bool
+    width: int
+    height: int
     metrics: Metrics
 
 
@@ -96,8 +126,13 @@ def connect(path: Path) -> sqlite3.Connection:
                 f"{path} has schema {version}; this amontillado knows {SCHEMA_VERSION}"
             )
         conn.execute("BEGIN")
-        if not _has_table(conn, "images"):
-            conn.execute(_CREATE_IMAGES)
+        if version == 1:
+            # Schema 1 keyed usage by content hash; records are keyed by id now.
+            logger.warning("%s: upgrading from schema 1; the usage history is discarded", path)
+            conn.execute("DROP TABLE IF EXISTS images")
+            conn.execute("DROP TABLE IF EXISTS usage")
+        if not _has_table(conn, "records"):
+            _create_tables(conn)
         conn.execute(_CREATE_USAGE)
         # PRAGMA takes no parameters; the value is a constant.
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -113,28 +148,53 @@ def _has_table(conn: sqlite3.Connection, name: str) -> bool:
     return conn.execute(query, (name,)).fetchone() is not None
 
 
+def _create_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(_CREATE_RECORDS)
+    conn.execute(_CREATE_FILES)
+    conn.execute(_CREATE_FILES_SHA256)
+
+
 def rebuild(conn: sqlite3.Connection, entries: Iterable[Entry]) -> int:
-    """Replace the images table with `entries`, in one transaction; returns the row count."""
-    rows = [_row(entry) for entry in entries]
+    """Replace the records and files tables with `entries`, in one transaction; returns the
+    record count."""
+    entries = list(entries)
     conn.execute("BEGIN")
     try:
-        conn.execute("DROP TABLE IF EXISTS images")
-        conn.execute(_CREATE_IMAGES)
-        conn.executemany(_INSERT_IMAGE, rows)
+        conn.execute("DROP TABLE IF EXISTS files")
+        conn.execute("DROP TABLE IF EXISTS records")
+        _create_tables(conn)
+        _insert(conn, entries)
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    return len(rows)
+    return len(entries)
 
 
-def _row(entry: Entry) -> dict[str, object]:
-    source = entry.sidecar.source or {}
+def add(conn: sqlite3.Connection, entry: Entry) -> None:
+    """Add one record to the index, in one transaction."""
+    conn.execute("BEGIN")
+    try:
+        _insert(conn, [entry])
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _insert(conn: sqlite3.Connection, entries: list[Entry]) -> None:
+    conn.executemany(_INSERT_RECORD, [_record_row(entry) for entry in entries])
+    conn.executemany(_INSERT_FILE, [row for entry in entries for row in _file_rows(entry)])
+
+
+def _record_row(entry: Entry) -> dict[str, object]:
+    source = entry.record.source or {}
     tags = source.get("tags")
     tags = [str(tag) for tag in tags] if isinstance(tags, list) else []
     return {
-        "path": str(entry.path),
-        "id": entry.sidecar.id,
+        "id": entry.id,
+        "name": entry.name,
+        "directory": str(entry.directory),
         "root": str(entry.root),
         "nsfw_root": entry.nsfw_root,
         "purity": entry.purity,
@@ -142,10 +202,26 @@ def _row(entry: Entry) -> dict[str, object]:
         "tags": json.dumps(tags),
         "source_site": _text(source.get("site")),
         "source_id": _text(source.get("id")),
-        "width": entry.sidecar.width,
-        "height": entry.sidecar.height,
-        **{name: getattr(entry.sidecar.metrics, name) for name in Metrics.__dataclass_fields__},
     }
+
+
+def _file_rows(entry: Entry) -> list[dict[str, object]]:
+    rows = []
+    for name in entry.present:
+        file = entry.record.files[name]
+        assert file.metrics is not None
+        rows.append(
+            {
+                "path": str(entry.directory / name),
+                "record_id": entry.id,
+                "sha256": file.sha256,
+                "is_default": name == entry.default,
+                "width": file.width,
+                "height": file.height,
+                **{key: getattr(file.metrics, key) for key in Metrics.__dataclass_fields__},
+            }
+        )
+    return rows
 
 
 def _text(value: object) -> str | None:
@@ -155,26 +231,91 @@ def _text(value: object) -> str | None:
     return str(value)
 
 
-def images(conn: sqlite3.Connection) -> list[IndexedImage]:
-    """Every indexed image, by path."""
+def files(conn: sqlite3.Connection) -> list[IndexedFile]:
+    """Every indexed file, by path."""
     return [
-        IndexedImage(
+        IndexedFile(
             path=Path(path),
-            id=image_id,
+            record_id=record_id,
             purity=purity,
             nsfw_root=bool(nsfw_root),
+            is_default=bool(is_default),
+            width=width,
+            height=height,
             metrics=Metrics(*metrics),
         )
-        for path, image_id, purity, nsfw_root, *metrics in conn.execute(_SELECT_IMAGES)
+        for path, record_id, purity, nsfw_root, is_default, width, height, *metrics in (
+            conn.execute(_SELECT_FILES)
+        )
     ]
 
 
-def record_shown(conn: sqlite3.Connection, image_id: str, when: datetime | None = None) -> None:
-    """Count one showing of the image with `image_id`, at `when` (default now, UTC)."""
+def names(conn: sqlite3.Connection) -> set[str]:
+    """The names records answer to."""
+    return {name for (name,) in conn.execute("SELECT name FROM records WHERE name IS NOT NULL")}
+
+
+def files_with_hash(conn: sqlite3.Connection, sha256: str) -> list[Path]:
+    """The indexed files with this content, by path."""
+    query = "SELECT path FROM files WHERE sha256 = ? ORDER BY path"
+    return [Path(path) for (path,) in conn.execute(query, (sha256,))]
+
+
+def find_record(conn: sqlite3.Connection, query: str) -> str:
+    """The id of the record that `query` names: an existing file or record directory, else a
+    name, an id, or a unique prefix of an id. Raises LookupFailed."""
+    path = Path(query)
+    if path.exists():
+        return _record_at(conn, path)
+    row = conn.execute(
+        "SELECT id FROM records WHERE name = ? UNION ALL SELECT id FROM records WHERE id = ?",
+        (query, query),
+    ).fetchone()
+    if row:
+        return row[0]
+    if query and ID_PATTERN.fullmatch(query.ljust(32, "0")):
+        found = conn.execute(
+            "SELECT id FROM records WHERE substr(id, 1, ?) = ? ORDER BY id LIMIT 2",
+            (len(query), query),
+        ).fetchall()
+        if len(found) == 1:
+            return found[0][0]
+        if found:
+            raise LookupFailed(f"{query}: more than one record id starts with it")
+    raise LookupFailed(f"{query}: no such file, and no record has that name or id")
+
+
+def _record_at(conn: sqlite3.Connection, path: Path) -> str:
+    absolute = str(path.absolute())
+    row = conn.execute(
+        "SELECT record_id FROM files WHERE path = ? "
+        "UNION ALL SELECT id FROM records WHERE directory = ?",
+        (absolute, absolute),
+    ).fetchone()
+    if row:
+        return row[0]
+    if path.is_dir():
+        raise LookupFailed(f"{path}: not an indexed record; run `amo index`")
+    # Not where the index saw it: a move or a copy since, or a symlink; the content says.
+    ids = {
+        record_id
+        for (record_id,) in conn.execute(
+            "SELECT DISTINCT record_id FROM files WHERE sha256 = ?", (sha256_file(path),)
+        )
+    }
+    if len(ids) == 1:
+        return ids.pop()
+    if ids:
+        raise LookupFailed(f"{path}: its content is in more than one record")
+    raise LookupFailed(f"{path}: not in the index; run `amo index`")
+
+
+def record_shown(conn: sqlite3.Connection, record_id: str, when: datetime | None = None) -> None:
+    """Count one showing of the record with `record_id`, at `when` (default now, UTC)."""
     when = when or datetime.now(timezone.utc)
     conn.execute("BEGIN")
     try:
-        conn.execute(_RECORD_SHOWN, (image_id, when.isoformat(timespec="seconds")))
+        conn.execute(_RECORD_SHOWN, (record_id, when.isoformat(timespec="seconds")))
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")

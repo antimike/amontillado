@@ -10,6 +10,7 @@ Commands are added as they are built; see docs/design.md for the plan.
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import sqlite3
 import sys
@@ -25,19 +26,26 @@ from rich.logging import RichHandler
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
-from amontillado.classes import CLASSES, classify, has_hue
+from amontillado.classes import CLASSES, classify, has_aspect, has_hue
 from amontillado.config import Config, ConfigError, load_config
 from amontillado.index import (
     IndexDatabaseError,
-    IndexedImage,
+    IndexedFile,
+    LookupFailed,
     connect,
-    images,
+    files,
+    files_with_hash,
+    find_record,
+    names,
     rebuild,
     record_shown,
 )
-from amontillado.library import PURITIES, Report, heal_library
+from amontillado.index import (
+    add as add_to_index,
+)
+from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
 from amontillado.metrics import HUE_NAMES, measure_file
-from amontillado.sidecar import content_id
+from amontillado.record import sha256_file
 
 logger = getLogger("amontillado")
 
@@ -94,10 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     index = commands.add_parser(
         "index",
-        help="Heal sidecars and rebuild the index.",
-        description="Give every image a sidecar, rewrite broken or outdated ones, and rebuild "
-        "the index from them (the usage history is kept). Searches the library roots and the "
-        "NSFW root.",
+        help="Heal records and rebuild the index.",
+        description="Fill in and update the derived fields of every record's info.yaml "
+        "(ids, hashes, sizes, metrics), and rebuild the index from them (the usage history is "
+        "kept). Reports images outside a record, missing files, and info files that need a "
+        "fix by hand. Searches the library roots and the NSFW root.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(index, argparse.SUPPRESS)
@@ -111,10 +120,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_ = commands.add_parser(
         "list",
-        help="Print the paths of matching images.",
-        description="Print the paths of indexed images that match every filter, one per line. "
-        "Images from the NSFW root, and any not marked sfw, are left out unless --purity asks "
-        'for them. Class thresholds are in docs/design.md, "Classes".',
+        help="Print the paths of matching pictures.",
+        description="Print the default file of every indexed record that matches every "
+        "filter, one per line. Records from the NSFW root, and any not marked sfw, are left "
+        'out unless --purity asks for them. Class thresholds are in docs/design.md, "Classes".',
         formatter_class=HelpFormatter,
     )
     _add_loglevel(list_, argparse.SUPPRESS)
@@ -133,23 +142,65 @@ def build_parser() -> argparse.ArgumentParser:
         "NSFW root. Default: sfw only, NSFW root excluded.",
     )
     list_.add_argument(
+        "--aspect",
+        type=_aspect,
+        metavar="W:H",
+        help="Print each record's file of this aspect ratio (within 3%%), filtering on its "
+        "metrics; records without one fall back to their default file, with a warning.",
+    )
+    list_.add_argument(
         "--random", type=_positive, metavar="N", help="Print N matches chosen at random."
     )
     list_.set_defaults(func=cmd_list)
 
     shown = commands.add_parser(
         "shown",
-        help="Record that images were shown.",
-        description="Count one showing of each image in the usage history, now. Images are "
-        "identified by content, so the record follows them through renames and moves.",
+        help="Record that pictures were shown.",
+        description="Count one showing of each picture in the usage history, now. Usage is "
+        "kept by record id, so it follows a picture through renames and moves.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(shown, argparse.SUPPRESS)
-    shown.add_argument("paths", nargs="+", type=Path, metavar="PATH", help="Image files.")
+    shown.add_argument(
+        "pictures",
+        nargs="+",
+        metavar="PICTURE",
+        help="A file or record directory, a record name, an id, or a unique prefix of an id.",
+    )
     shown.add_argument(
         "--dry-run", action="store_true", help="Log what would be recorded; record nothing."
     )
     shown.set_defaults(func=cmd_shown)
+
+    add = commands.add_parser(
+        "add",
+        help="Make records of image files.",
+        description="Make each file a record of its own: create a directory beside it (or, "
+        "for a file outside the roots, in the first library root), move the file in, write "
+        "its info.yaml, and add it to the index. Refuses a file whose content is already in "
+        "the library, and a name another record has.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(add, argparse.SUPPRESS)
+    add.add_argument("files", nargs="+", type=Path, metavar="FILE", help="Image files.")
+    add.add_argument(
+        "--name",
+        type=str,
+        help="The record's name (one FILE only), also used for its directory; default: no "
+        "name, and the file's stem for the directory.",
+    )
+    add.add_argument(
+        "--nsfw",
+        action="store_true",
+        help="Put files from outside the roots in the NSFW root.",
+    )
+    add.add_argument(
+        "--force", action="store_true", help="Add files whose content is already in the library."
+    )
+    add.add_argument(
+        "--dry-run", action="store_true", help="Log what would be added; change nothing."
+    )
+    add.set_defaults(func=cmd_add)
 
     return parser
 
@@ -160,6 +211,17 @@ def _purities(value: str) -> frozenset[str]:
     if unknown:
         raise argparse.ArgumentTypeError(f"unknown purity: {', '.join(sorted(unknown))}")
     return names
+
+
+def _aspect(value: str) -> float:
+    width, _, height = value.partition(":")
+    try:
+        ratio = float(width) / float(height)
+    except (ValueError, ZeroDivisionError):
+        raise argparse.ArgumentTypeError("must be W:H, for example 21:9") from None
+    if not (math.isfinite(ratio) and ratio > 0):
+        raise argparse.ArgumentTypeError("must be W:H, for example 21:9")
+    return ratio
 
 
 def _positive(value: str) -> int:
@@ -218,7 +280,7 @@ def cmd_index(args: argparse.Namespace) -> None:
                 count = rebuild(conn, report.entries)
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             _index_error(config, exc)
-        logger.info("indexed %d images", count)
+        logger.info("indexed %s", _count(count, "record"))
     problems = _problems(report, check=args.check)
     if problems:
         sys.exit(f"amontillado: {', '.join(problems)}")
@@ -230,27 +292,47 @@ def cmd_list(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
     try:
         with closing(connect(config.index_path)) as conn:
-            rows = images(conn)
+            by_record: dict[str, list[IndexedFile]] = {}
+            for row in files(conn):
+                by_record.setdefault(row.record_id, []).append(row)
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
+    rows = [_pick(group, args.aspect) for group in by_record.values()]
     wanted = [name for name in CLASSES if getattr(args, name.replace("-", "_"))]
     matches = [row for row in rows if _matches(row, args, wanted, config)]
+    if args.aspect is not None:
+        fallbacks = sum(not has_aspect(row.width, row.height, args.aspect) for row in matches)
+        if fallbacks:
+            logger.warning(
+                "no file of that aspect ratio for %s; using the default file",
+                _count(fallbacks, "picture"),
+            )
     present = [row for row in matches if row.path.is_file()]
     if len(present) < len(matches):
         gone = len(matches) - len(present)
-        logger.warning("missing from disk: %s; run `amo index`", _count(gone, "image"))
+        logger.warning("missing from disk: %s; run `amo index`", _count(gone, "file"))
     matches = present
     if args.random is not None:
         matches = random.sample(matches, min(args.random, len(matches)))
     if not matches:
-        sys.exit("amontillado: no matching images")
+        sys.exit("amontillado: no matching pictures")
     for row in matches:
         print(row.path)
 
 
-def _matches(
-    row: IndexedImage, args: argparse.Namespace, wanted: list[str], config: Config
-) -> bool:
+def _pick(group: list[IndexedFile], aspect: float | None) -> IndexedFile:
+    """The file of a record that `amo list` prints: the default file, or with an aspect ratio
+    the default file if it matches, else the largest matching file (ties broken by path), else
+    the default file anyway."""
+    default = next(row for row in group if row.is_default)
+    if aspect is None or has_aspect(default.width, default.height, aspect):
+        return default
+    matching = [row for row in group if has_aspect(row.width, row.height, aspect)]
+    # max keeps the first of equals, and the group is in path order.
+    return max(matching, key=lambda row: row.width * row.height, default=default)
+
+
+def _matches(row: IndexedFile, args: argparse.Namespace, wanted: list[str], config: Config) -> bool:
     if row.purity not in (args.purity or {"sfw"}):
         return False
     # Checked against the current config too, and through symlinks: the index may predate a
@@ -266,36 +348,85 @@ def _matches(
 
 def cmd_shown(args: argparse.Namespace) -> None:
     config = _load_config()
-    ids = []
-    for path in args.paths:
-        try:
-            ids.append(content_id(path))
-        except OSError as exc:
-            sys.exit(f"amontillado: {path}: {exc.strerror or exc}")
-    if args.dry_run:
-        for path, image_id in zip(args.paths, ids, strict=True):
-            logger.info("would record %s as shown (%s)", path, image_id)
-        return
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
     try:
         with closing(connect(config.index_path)) as conn:
-            for image_id in ids:
-                record_shown(conn, image_id)
+            ids = []
+            for picture in args.pictures:
+                try:
+                    ids.append(find_record(conn, picture))
+                except LookupFailed as exc:
+                    sys.exit(f"amontillado: {exc}")
+            for picture, record_id in zip(args.pictures, ids, strict=True):
+                if args.dry_run:
+                    logger.info("would record %s as shown (%s)", picture, record_id)
+                else:
+                    record_shown(conn, record_id)
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
 
 
+def cmd_add(args: argparse.Namespace) -> None:
+    if args.name is not None and len(args.files) > 1:
+        sys.exit("amontillado: --name takes one FILE")
+    config = _load_config()
+    failed = 0
+    try:
+        with closing(connect(config.index_path)) as conn:
+            taken = names(conn)
+            for file in args.files:
+                try:
+                    _add_one(conn, config, file, args, taken)
+                except AddError as exc:
+                    logger.error("%s", exc)
+                    failed += 1
+                except (OSError, Image.DecompressionBombError) as exc:
+                    logger.error("%s: %s", file, exc)
+                    failed += 1
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    if failed:
+        sys.exit(f"amontillado: {failed} of {len(args.files)} files could not be added")
+
+
+def _add_one(
+    conn: sqlite3.Connection,
+    config: Config,
+    file: Path,
+    args: argparse.Namespace,
+    taken: set[str],
+) -> None:
+    placement = place(config, file, name=args.name, nsfw=args.nsfw)
+    if args.name in taken:
+        raise AddError(f"name {args.name!r} is taken")
+    duplicates = files_with_hash(conn, sha256_file(file))
+    if duplicates and not args.force:
+        raise AddError(f"{file}: same content as {duplicates[0]}; --force adds it anyway")
+    if duplicates:
+        logger.warning("%s: same content as %s", file, duplicates[0])
+    if args.dry_run:
+        logger.info("would add %s as %s", file, placement.directory)
+        return
+    entry = add_picture(config, placement, name=args.name)
+    add_to_index(conn, entry)
+    logger.info("added %s as %s", file, entry.directory)
+
+
 def _problems(report: Report, *, check: bool) -> list[str]:
-    """What makes `amo index` fail. Orphaned sidecars only fail a check: they are reported,
-    and a pass that leaves them alone has still done its job."""
+    """What makes `amo index` fail. Loose images and missing files only fail a check: they
+    are reported, and a pass that leaves them alone has still done its job."""
     problems = []
     if check and report.healed:
-        problems.append(f"{_count(len(report.healed), 'sidecar')} to heal")
-    if check and report.orphans:
-        problems.append(f"{_count(len(report.orphans), 'sidecar')} without an image")
+        problems.append(f"{_count(len(report.healed), 'record')} to heal")
+    if check and report.loose:
+        problems.append(f"{_count(len(report.loose), 'image')} outside a record")
+    if check and report.missing:
+        problems.append(f"{_count(len(report.missing), 'file')} missing")
     if report.conflicts:
-        problems.append(f"{_count(len(report.conflicts), 'sidecar name conflict')}")
+        problems.append(_count(len(report.conflicts), "conflict"))
     if report.failed:
-        problems.append(f"{_count(len(report.failed), 'image')} could not be read")
+        problems.append(f"{_count(len(report.failed), 'file')} could not be read or used")
     return problems
 
 

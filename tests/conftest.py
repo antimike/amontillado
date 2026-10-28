@@ -33,6 +33,14 @@ def config(tmp_path: Path) -> Config:
     )
 
 
+def mark_record(directory: Path) -> Path:
+    """Make `directory` a record with an empty info.yaml, as by hand; returns that file."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "info.yaml"
+    path.write_text("")
+    return path
+
+
 @pytest.fixture
 def save_image() -> SaveImage:
     """Write a solid-colour image: save_image(path, rgb=(0, 0, 0), size=(64, 36))."""

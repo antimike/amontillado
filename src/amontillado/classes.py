@@ -21,6 +21,8 @@ MONOCHROME_MAX = 0.30
 MULTI_HUE_MIN = 0.60
 WARM_MIN = 0.3
 COOL_MAX = -0.3
+# Relative: 3440x1440 and 2560x1080 both count as 21:9.
+ASPECT_TOLERANCE = 0.03
 
 
 def _is_muted(m: Metrics) -> bool:
@@ -45,6 +47,11 @@ CLASSES: dict[str, Callable[[Metrics], bool]] = {
 def has_hue(m: Metrics, name: str) -> bool:
     """Whether `name` (one of HUE_NAMES) is the image's dominant hue, as `--hue NAME` means."""
     return m.hue_name == name and m.hue_share >= HUE_SHARE_MIN and not _is_muted(m)
+
+
+def has_aspect(width: int, height: int, ratio: float) -> bool:
+    """Whether width / height is within ASPECT_TOLERANCE of `ratio`, as `--aspect W:H` means."""
+    return abs(width / height - ratio) <= ASPECT_TOLERANCE * ratio
 
 
 def classify(m: Metrics) -> list[str]:
