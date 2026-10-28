@@ -255,6 +255,12 @@ def names(conn: sqlite3.Connection) -> set[str]:
     return {name for (name,) in conn.execute("SELECT name FROM records WHERE name IS NOT NULL")}
 
 
+def source_ids(conn: sqlite3.Connection, site: str) -> set[str]:
+    """The ids, at `site`, of the indexed records fetched from it."""
+    query = "SELECT source_id FROM records WHERE source_site = ? AND source_id IS NOT NULL"
+    return {source_id for (source_id,) in conn.execute(query, (site,))}
+
+
 def files_with_hash(conn: sqlite3.Connection, sha256: str) -> list[Path]:
     """The indexed files with this content, by path."""
     query = "SELECT path FROM files WHERE sha256 = ? ORDER BY path"
