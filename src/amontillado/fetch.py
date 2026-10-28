@@ -29,7 +29,7 @@ from amontillado.classes import Look, classify
 from amontillado.config import Config
 from amontillado.index import add as add_to_index
 from amontillado.index import files_with_hash, source_ids
-from amontillado.library import Entry
+from amontillado.library import Entry, source_ids_on_disk
 from amontillado.metrics import Metrics, image_size, measure_file
 from amontillado.record import INFO_NAMES, FileEntry, Record, sha256_file, write_record
 from amontillado.wallhaven import Client, Search, WallhavenError, Wallpaper
@@ -85,6 +85,13 @@ def fetch(
     `options.max_candidates` thumbnails. WallhavenError if the search itself fails."""
     report = FetchReport()
     known = source_ids(conn, SITE)
+    unindexed = source_ids_on_disk(config, SITE) - known
+    if unindexed:
+        logger.warning(
+            "Wallhaven records not in the index (passed over anyway; run `amo index`): %d",
+            len(unindexed),
+        )
+    known |= unindexed
     late = BUSY_CLASSES if options.busy_from == "full" else ()
     if late and options.dry_run and any(name in look.classes for name in late):
         logger.warning("dry run with --busy-from full: busy and sparse are not judged")

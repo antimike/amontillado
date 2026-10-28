@@ -217,3 +217,20 @@ def test_a_failure_after_the_move_leaves_nothing_behind(
     report = _fetch(config, conn, web, Look(("dark",)), max_candidates=1)
     assert report.failed == [("aaa111", "disk full")]
     assert list(config.library_roots[0].iterdir()) == []
+
+
+def test_skips_wallhaven_ids_on_disk_but_not_indexed(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, caplog: pytest.LogCaptureFixture
+) -> None:
+    # As a record synced in from another machine, before `amo index`.
+    record = config.nsfw_root / "elsewhere" / "synced"
+    record.mkdir(parents=True)
+    (record / "info.yaml").write_text("source: {site: wallhaven, id: aaa111}\n")
+    broken = config.library_roots[0] / "broken"
+    broken.mkdir()
+    (broken / "info.yaml").write_text("source: [\n")
+    report = _fetch(config, conn, web, Look(("dark",)))
+    assert report.known == 1
+    assert report.kept == []
+    assert "https://th.wallhaven.cc/lg/aa/aaa111.jpg" not in web.urls()
+    assert "not in the index (passed over anyway; run `amo index`): 1" in caplog.text

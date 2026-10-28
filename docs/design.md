@@ -256,8 +256,9 @@ here.
 
 1. Search with the server-side filters (tags, purity, category, size, swatch), `sorting=random`;
    later pages pass the first page's `meta.seed`.
-2. For each result not already in the library (by Wallhaven id, from the index), and of a
-   purity that was asked for: fetch the `large` thumbnail and measure it. Skip it if it fails a
+2. For each result not already in the library (by Wallhaven id: from the index, and from the
+   `source` of every info file under the roots, so a record synced in before `amo index` is
+   not fetched twice), and of a purity that was asked for: fetch the `large` thumbnail and measure it. Skip it if it fails a
    look filter.
 3. `--busy-from thumb` (default) judges busy/sparse on the thumbnail. `--busy-from full` leaves
    that filter for the full image (thumbnail JPEG artefacts add edges).
@@ -278,6 +279,10 @@ here.
 6. API calls keep 1.5 s apart (40 a minute, under the limit of 45); thumbnail and image
    downloads are not paced. On HTTP 429 from any host, wait `Retry-After` if given, else 10 s
    doubling, up to 5 retries.
+
+**Revisit:** the info-file scan in step 2 parses every info file on each `amo fetch`
+(decided 2026-10-28). If that makes fetching noticeably slow on a large library, drop it and
+rely on the index (with `amo index` after a sync), or cache the scan keyed on directory mtimes.
 
 The API key travels in the `X-API-Key` header, never in a URL, so URLs can be logged. It is
 looked up only when `--purity` includes `nsfw` (its command may ask for a passphrase), and the
