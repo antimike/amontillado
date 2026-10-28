@@ -31,8 +31,8 @@ from rich_argparse import RawDescriptionRichHelpFormatter
 from amontillado import __version__
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import API_KEY_VARIABLE, Config, ConfigError, api_key, load_config
+from amontillado.fetch import TEST_SET, fetch
 from amontillado.fetch import Options as FetchOptions
-from amontillado.fetch import fetch
 from amontillado.index import (
     IndexDatabaseError,
     IndexedFile,
@@ -56,6 +56,7 @@ from amontillado.wallhaven import (
     Client,
     Search,
     WallhavenError,
+    Wallpaper,
     nearest_swatch,
 )
 
@@ -216,7 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
         "the first library root, others in the NSFW root), and index it. The full image is "
         "judged again; see --discard-mismatches. Prints the path of each file kept that "
         "matches. Results already in the library are passed over. Fails if fewer than "
-        "--count are kept.",
+        "--count are kept. With --test-set, keeps one image per bucket instead.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(fetch, argparse.SUPPRESS)
@@ -256,7 +257,18 @@ def build_parser() -> argparse.ArgumentParser:
         "colour is replaced by the nearest swatch (in OKLab), e.g. 424153.",
     )
     fetch.add_argument(
-        "--count", type=_positive, default=1, metavar="N", help="Stop after keeping N images."
+        "--count",
+        type=_positive,
+        metavar="N",
+        help="Stop after keeping N images. Default: 1.",
+    )
+    fetch.add_argument(
+        "--test-set",
+        action="store_true",
+        help=f"Keep one image per bucket ({', '.join(TEST_SET)}); an image fills the first "
+        "bucket still open that its full image belongs to, and no other. Takes no look "
+        "filters or --count. Prints BUCKET<TAB>PATH lines, in that order; fails if a bucket "
+        "stays empty.",
     )
     fetch.add_argument(
         "--max-candidates",
@@ -543,6 +555,10 @@ def _add_one(
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:
+    look = _look(args)
+    if args.test_set and (look != Look() or args.count is not None):
+        sys.exit("amontillado: --test-set takes no look filters or --count")
+    wanted = len(TEST_SET) if args.test_set else args.count or 1
     config = _load_config()
     color = args.color and nearest_swatch(args.color)
     if color != args.color:
@@ -558,7 +574,12 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         color=color,
     )
     options = FetchOptions(
-        args.count, args.max_candidates, args.busy_from, args.discard_mismatches, args.dry_run
+        args.count or 1,
+        args.max_candidates,
+        args.busy_from,
+        args.discard_mismatches,
+        args.dry_run,
+        args.test_set,
     )
     # Only NSFW needs the key, and its command may ask for a passphrase: no lookup otherwise.
     key = None
@@ -574,15 +595,21 @@ def cmd_fetch(args: argparse.Namespace) -> None:
             )
     try:
         with closing(connect(config.index_path)) as conn:
-            report = fetch(config, conn, Client(key), search, _look(args), options)
+            report = fetch(config, conn, Client(key), search, look, options)
     except WallhavenError as exc:
         sys.exit(f"amontillado: {exc}")
     except (sqlite3.Error, IndexDatabaseError) as exc:
         _index_error(config, exc)
-    for path in report.kept:
-        print(path)
-    for wallpaper in report.would_keep:
-        print(wallpaper.url)
+    if args.test_set:
+        for name in TEST_SET:
+            kept = report.buckets.get(name)
+            if kept is not None:
+                print(f"{name}\t{kept.url if isinstance(kept, Wallpaper) else kept}")
+    else:
+        for path in report.kept:
+            print(path)
+        for wallpaper in report.would_keep:
+            print(wallpaper.url)
     logger.info(
         "%s %d, examined %s: %d rejected, %d failed; %d already in the library",
         "would keep" if args.dry_run else "kept",
@@ -598,8 +625,11 @@ def cmd_fetch(args: argparse.Namespace) -> None:
             len(report.mismatched),
             report.discarded,
         )
-    if report.count < args.count:
-        sys.exit(f"amontillado: {report.count} of {args.count} wanted")
+    if args.test_set and report.count < wanted:
+        empty = [name for name in TEST_SET if name not in report.buckets]
+        sys.exit(f"amontillado: empty buckets: {', '.join(empty)}")
+    if report.count < wanted:
+        sys.exit(f"amontillado: {report.count} of {wanted} wanted")
 
 
 def _problems(report: Report, *, check: bool) -> list[str]:

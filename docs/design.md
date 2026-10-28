@@ -1,7 +1,7 @@
 # Design
 
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
-implemented; `--test-set` is not. Values marked *initial* are starting points to calibrate on
+implemented, test sets included. Values marked *initial* are starting points to calibrate on
 real images; change them here when they change in code.
 
 ## Scope
@@ -292,7 +292,16 @@ command's output and errors are never shown.
 
 `amo fetch --test-set` keeps one image per bucket: dark, light, muted, saturated, busy, sparse,
 monochrome, multi-hue; one image fills one bucket only. Other filters (size, category) still
-apply. It is the input for comparing palette generators.
+apply. It is the input for comparing palette generators. Decided 2026-10-28:
+
+- A thumbnail is downloaded if it belongs to any bucket still open. The full image then fills
+  the **first** open bucket it belongs to, in the order above (greedy; a black image fills
+  dark, not muted or sparse). A full image in no open bucket is a mismatch, as in step 4.
+- Look filters and `--count` are refused with `--test-set`: they would contradict buckets.
+- Output is one `BUCKET<TAB>PATH` line per filled bucket, in bucket order (page URLs with
+  `--dry-run`); exit non-zero, naming the empty buckets, if any bucket stays empty.
+- A dry run with `--busy-from full` cannot fill busy or sparse (the full image is never seen).
+- Rare buckets (multi-hue, monochrome) may need `--max-candidates` above its default.
 
 ## CLI (v0.1)
 
@@ -300,7 +309,7 @@ apply. It is the input for comparing palette generators.
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check]                  heal records, rebuild the index; --check reports only
 amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N]   matching paths, one per line
-amo fetch [FILTERS] [WALLHAVEN] [--count N] [--max-candidates N] [--test-set]
+amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run]   make each file a record of its own

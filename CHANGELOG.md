@@ -32,6 +32,9 @@ All notable changes to amontillado are documented here. The format follows
   but not counted, or deleted with `--discard-mismatches`. `--busy-from full` judges busy and
   sparse only on the full image; `--dry-run` downloads nothing.
   `--color` takes any hex colour and searches by the nearest of Wallhaven's 29 swatches. Paced under Wallhaven's rate limit, with back-off on HTTP 429.
+- `amo fetch --test-set`: keeps one wallpaper per bucket (dark, light, muted, saturated, busy,
+  sparse, monochrome, multi-hue), each filling one bucket only, and prints `BUCKET<TAB>PATH`
+  lines; fails if a bucket stays empty.
 - `api_key_command` in `config.yaml`, or `WALLHAVEN_API_KEY`: the Wallhaven API key, needed for
   nsfw results, never logged or stored.
 
