@@ -20,7 +20,7 @@ All notable changes to amontillado are documented here. The format follows
   keeping the usage history.
 - `amo list`: the default file of each indexed record by class (`--dark`, `--muted`,
   `--sparse`, `--hue blue`, `--monochrome`, `--warm`, ...), `--random N`; NSFW records only
-  with `--purity`.
+  with `--purity`. `--aspect 21:9` prints each record's file of that aspect ratio instead.
 - `amo shown PICTURE...`: records that pictures were shown, by record id, in the usage history;
   a picture is a file, a record directory, a name, an id or a unique id prefix.
 

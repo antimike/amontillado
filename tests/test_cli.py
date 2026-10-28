@@ -196,6 +196,26 @@ def test_list_prints_the_default_file(
     assert _list(capsys, "--dark") == {"small"}
 
 
+def test_list_aspect(
+    indexed: dict[str, Path],
+    library: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # black: a 64x36 default (16:9), a white 64x27 crop (21:9) and a smaller 21:9 copy.
+    black = library / "black"
+    _save(np.full((27, 64, 3), 255, dtype=np.uint8), black / "wide.png")
+    _save(np.full((18, 42, 3), 255, dtype=np.uint8), black / "wide-small.png")
+    main(["index"])
+    assert _list(capsys, "--aspect", "16:9", "--dark") == {"black"}
+    caplog.clear()
+    assert _list(capsys, "--aspect", "21:9", "--light") == {"wide", "white"}
+    assert "no file of that aspect ratio for 1 picture" in caplog.text
+    # Filtered on the crop's metrics: black's 21:9 file is white.
+    with pytest.raises(SystemExit):
+        _list(capsys, "--aspect", "21:9", "--dark")
+
+
 def test_list_random(indexed: dict[str, Path], capsys: pytest.CaptureFixture[str]) -> None:
     picked = _list(capsys, "--random", "2")
     assert len(picked) == 2
@@ -241,6 +261,8 @@ def test_list_excludes_the_current_nsfw_root(
         (["--purity", "sfw,lewd"], "unknown purity: lewd"),
         (["--random", "0"], "must be at least 1"),
         (["--hue", "teal"], "invalid choice"),
+        (["--aspect", "21"], "must be W:H"),
+        (["--aspect", "21:0"], "must be W:H"),
     ],
 )
 def test_list_bad_arguments(

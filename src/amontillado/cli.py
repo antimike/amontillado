@@ -10,6 +10,7 @@ Commands are added as they are built; see docs/design.md for the plan.
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import sqlite3
 import sys
@@ -25,7 +26,7 @@ from rich.logging import RichHandler
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
-from amontillado.classes import CLASSES, classify, has_hue
+from amontillado.classes import CLASSES, classify, has_aspect, has_hue
 from amontillado.config import Config, ConfigError, load_config
 from amontillado.index import (
     IndexDatabaseError,
@@ -135,6 +136,13 @@ def build_parser() -> argparse.ArgumentParser:
         "NSFW root. Default: sfw only, NSFW root excluded.",
     )
     list_.add_argument(
+        "--aspect",
+        type=_aspect,
+        metavar="W:H",
+        help="Print each record's file of this aspect ratio (within 3%%), filtering on its "
+        "metrics; records without one fall back to their default file, with a warning.",
+    )
+    list_.add_argument(
         "--random", type=_positive, metavar="N", help="Print N matches chosen at random."
     )
     list_.set_defaults(func=cmd_list)
@@ -167,6 +175,17 @@ def _purities(value: str) -> frozenset[str]:
     if unknown:
         raise argparse.ArgumentTypeError(f"unknown purity: {', '.join(sorted(unknown))}")
     return names
+
+
+def _aspect(value: str) -> float:
+    width, _, height = value.partition(":")
+    try:
+        ratio = float(width) / float(height)
+    except (ValueError, ZeroDivisionError):
+        raise argparse.ArgumentTypeError("must be W:H, for example 21:9") from None
+    if not (math.isfinite(ratio) and ratio > 0):
+        raise argparse.ArgumentTypeError("must be W:H, for example 21:9")
+    return ratio
 
 
 def _positive(value: str) -> int:
@@ -237,11 +256,21 @@ def cmd_list(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
     try:
         with closing(connect(config.index_path)) as conn:
-            rows = [row for row in files(conn) if row.is_default]
+            by_record: dict[str, list[IndexedFile]] = {}
+            for row in files(conn):
+                by_record.setdefault(row.record_id, []).append(row)
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
+    rows = [_pick(group, args.aspect) for group in by_record.values()]
     wanted = [name for name in CLASSES if getattr(args, name.replace("-", "_"))]
     matches = [row for row in rows if _matches(row, args, wanted, config)]
+    if args.aspect is not None:
+        fallbacks = sum(not has_aspect(row.width, row.height, args.aspect) for row in matches)
+        if fallbacks:
+            logger.warning(
+                "no file of that aspect ratio for %s; using the default file",
+                _count(fallbacks, "picture"),
+            )
     present = [row for row in matches if row.path.is_file()]
     if len(present) < len(matches):
         gone = len(matches) - len(present)
@@ -253,6 +282,18 @@ def cmd_list(args: argparse.Namespace) -> None:
         sys.exit("amontillado: no matching pictures")
     for row in matches:
         print(row.path)
+
+
+def _pick(group: list[IndexedFile], aspect: float | None) -> IndexedFile:
+    """The file of a record that `amo list` prints: the default file, or with an aspect ratio
+    the default file if it matches, else the largest matching file (ties broken by path), else
+    the default file anyway."""
+    default = next(row for row in group if row.is_default)
+    if aspect is None or has_aspect(default.width, default.height, aspect):
+        return default
+    matching = [row for row in group if has_aspect(row.width, row.height, aspect)]
+    # max keeps the first of equals, and the group is in path order.
+    return max(matching, key=lambda row: row.width * row.height, default=default)
 
 
 def _matches(row: IndexedFile, args: argparse.Namespace, wanted: list[str], config: Config) -> bool:

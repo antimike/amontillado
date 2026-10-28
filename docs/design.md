@@ -276,7 +276,7 @@ apply. It is the input for comparing palette generators.
 ```text
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check]                  heal records, rebuild the index; --check reports only
-amo list [FILTERS] [--purity LIST] [--random N]   matching paths, one per line
+amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N]   matching paths, one per line
 amo fetch [FILTERS] [WALLHAVEN] [--count N] [--test-set] [--busy-from thumb|full] [--dry-run]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 ```
@@ -291,6 +291,8 @@ only unless `--purity` (comma-separated: `sfw`, `sketchy`, `nsfw`) asks for more
 test uses the current config and resolves symlinks, so a stale index cannot leak an image.
 Opposite class flags (`--dark --light`) are rejected. Indexed files that are gone are skipped
 with a warning. No match exits non-zero, so a pipeline into a wallpaper setter notices.
+`--aspect W:H` picks each record's file as in "Records"; no prompt to create a crop yet, so
+records without a matching file always take the fallback (the default file, one warning).
 
 `amo shown` takes any PICTURE form under "Lookup" (a file found nowhere in the index is looked
 up by content); one that matches no record, or more than one, exits non-zero before anything is
