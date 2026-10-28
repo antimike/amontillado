@@ -274,7 +274,8 @@ here.
    thumbnail) is still kept as a record by default, since the download has been paid for, but
    is not printed and does not count towards `--count`; `--discard-mismatches` deletes it
    instead (decided 2026-10-28).
-5. Stop at `--count` (default 1) matching images kept, or at `--max-candidates` (default 100, *initial*)
+5. Stop at `--count` (default 1) matching images kept (with `--test-set`, when every bucket is
+   filled), or at `--max-candidates` (default 100, *initial*)
    thumbnails examined (results already in the library do not count).
 6. API calls keep 1.5 s apart (40 a minute, under the limit of 45); thumbnail and image
    downloads are not paced. On HTTP 429 from any host, wait `Retry-After` if given, else 10 s
@@ -342,7 +343,8 @@ FILTERS are the class flags above, and `--hue`. WALLHAVEN: `--tags QUERY` (Wallh
 `--atleast WxH`, `--ratio LIST` (`W:H` or `WxH`), `--color HEX`. Wallhaven's `colors`
 parameter takes only its 29 fixed swatches (`SWATCHES` in `wallhaven.py`), which have no names;
 any other colour is replaced by the nearest swatch by OKLab distance, with a log line. `amo fetch` prints the path of each file kept, one per line,
-and exits non-zero if it kept fewer than `--count`. `--dry-run` measures thumbnails, downloads
+and exits non-zero if it kept fewer than `--count` (`--test-set` prints and fails as under
+"Test set"). `--dry-run` measures thumbnails, downloads
 nothing, and prints the page URL of each wallpaper it would keep.
 
 ## Testing
