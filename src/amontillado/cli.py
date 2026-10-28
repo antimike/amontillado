@@ -4,7 +4,9 @@ Fetches wallpapers from Wallhaven, measures each image's lightness, colourfulnes
 dominant hue and detail, keeps that next to the image, and answers queries such as
 "a dark, muted, sparse wallpaper" from a local index.
 
-Commands are added as they are built; see docs/design.md for the plan.
+Each picture is a directory (a record) holding its files and an info.yaml; the index is
+rebuilt from those by `amo index`. `amo COMMAND --help` documents each command;
+docs/design.md has the record format, the metric and class definitions, and the fetcher.
 """
 
 from __future__ import annotations

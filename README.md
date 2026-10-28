@@ -31,8 +31,9 @@ colours go together, so that several monitors show a coherent set. See
 
 ## Status
 
-Pre-alpha. The package skeleton exists; the commands described above are being built.
-`amontillado` and its short alias `amo` are the same command.
+Pre-alpha, not yet released. Measuring, the library, the index, queries and the Wallhaven
+fetcher work; test sets and calibrated class thresholds are still to come. `amontillado` and
+its short alias `amo` are the same command.
 
 ## Install
 
@@ -44,6 +45,21 @@ pipx install git+https://github.com/antimike/amontillado@v0.1.0
 
 From a checkout, for development: `just install-dev` (an editable pipx install), or
 `uv run amo …` without installing.
+
+## Usage
+
+```sh
+amo fetch --dark --sparse --count 3        # keep 3 dark, uncluttered wallpapers from Wallhaven
+amo fetch --hue blue --ratio 21:9 --dry-run   # show what would be kept; download nothing
+amo add ~/Downloads/forest.jpg             # make your own image a record
+amo index                                  # heal records and rebuild the index
+amo list --dark --muted --random 1         # a path, for a wallpaper setter
+amo shown "$(amo list --dark --random 1)"  # count a showing in the usage history
+amo measure some.png                       # metrics and classes of any image, as YAML
+```
+
+`amo COMMAND --help` documents every option. The class thresholds (what counts as dark, busy,
+...), the record format and the fetcher's behaviour are in [docs/design.md](docs/design.md).
 
 ## Images and their licences
 
