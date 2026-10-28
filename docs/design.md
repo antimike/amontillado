@@ -122,16 +122,53 @@ files:
   (whose default keys carry the same hash, but whose backend is configurable).
 - **Default file** (what `amo list` prints without `--aspect`): `default_file` if set, else the
   largest non-derived file by pixel count, ties broken by name.
-- Aspect ratio and format are derived at query time, not stored; `--aspect W:H` matches within
-  a tolerance and uses the matching file's metrics for the class filters.
+- Aspect ratio and format are derived at query time, not stored; `--aspect W:H` matches a
+  file whose width / height is within 3% (*initial*) of W / H (so 3440×1440 and 2560×1080 are
+  both 21:9), and uses the matching file's metrics for the class filters. Among several
+  matches: the default file if it is one, else the largest by pixel count, ties broken by name.
 - **Prompts**: commands may ask (e.g. "no 21:9 file; create a crop?") only when stdin and
   stderr are terminals (stdout may be a pipe: `amo list` output is data) and
   `--non-interactive` is not given; otherwise they take the documented fallback (for
   `--aspect`: the default file, with a warning) and never block.
 - `info.yaml` is loaded with a loader that rejects duplicate keys: `yaml.safe_load` silently
   keeps the last, which would drop a file listed twice.
-- Still open: what `amo index` does with loose images outside a record (an `amo add` command,
-  or wrapping them in a new record), and how re-pairing works per file.
+
+**Finding records.** A record is a directory under a root holding `info.yaml` or `info.yml`;
+both at once is a conflict, and the record is not indexed until one is removed. Its files are
+the images directly inside it: the scan does not descend into a record, so records do not nest.
+An `info.yaml` directly in a root is reported and ignored (it would claim every loose image).
+
+**Loose images** (images under a root but not in a record) are reported by `amo index` and not
+indexed; `amo index` never moves files. `amo add FILE` makes a record of one: it creates the
+record directory beside the file (or, for a file outside the roots, in the first library root,
+or the NSFW root with `--nsfw`), moves the file in, and writes `info.yaml`. A hand-made
+directory with images and an empty or partial `info.yaml` is a record too: `amo index` fills
+in the rest.
+
+**Healing** (`amo index`) splits the fields in two:
+
+- **Derived** fields are recomputed whenever they are missing, invalid or out of date, without
+  asking: `schema` and `id` when absent (a new record), and per file `sha256`, `width`,
+  `height` and `metrics`. A file whose content hash changed is measured again.
+- **Authored** fields are never rewritten, because nothing could recompute them: `id` once set
+  (usage keys off it), `name`, `default_file`, `source`, `fetched`, the shape of `files`,
+  `derived_from` and `crop`. If one is invalid, or `info.yaml` does not parse (including a
+  duplicate key), or its `schema` is not one this program knows, the record is reported and
+  not indexed until fixed by hand; nothing is written to it. Unknown keys are kept as written.
+
+**Per-file re-pairing**, within one record: an image in the directory that `files` does not
+list, whose hash is that of a listed file that is missing, is that file renamed: its entry
+moves to the new name, and `default_file` and `derived_from` follow. Any other unlisted image is
+measured and added. A listed file that is missing with no match keeps its entry (so does an
+annexed file whose content is not present: a broken symlink), is reported, and fails
+`--check`; the rest of the record is still indexed, and a missing `default_file` falls back to
+the rule above with a warning. A file moved to another record is not re-paired: it is added
+there, and reported missing from the first. A record directory renamed or moved needs no
+healing at all: its identity is inside it.
+
+**Duplicates.** Two records with the same `id` (a copied directory) are both reported and
+neither is indexed; deleting the `id` line from one gives it a new id at the next
+`amo index`. The same `sha256` in two files anywhere in the library is a warning only.
 
 ### Index and usage (SQLite)
 
@@ -313,6 +350,5 @@ FILTERS are the class flags above. WALLHAVEN: `--tags`, `--purity`, `--category`
 
 - Thresholds: calibrate (above).
 - Whether `amo list` should prefer images shown least recently (it has the usage table).
-- Records (see "Records"): loose images outside a record, and per-file re-pairing.
 - Index staleness: `amo list` trusts the index; whether it should detect changes since the last
   `amo index` (a stat walk of the roots) and warn or refresh.
