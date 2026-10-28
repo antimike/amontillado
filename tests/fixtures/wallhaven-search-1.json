@@ -1,0 +1,33 @@
+{
+  "data": [
+    {
+      "id": "aaa111",
+      "url": "https://wallhaven.cc/w/aaa111",
+      "path": "https://w.wallhaven.cc/full/aa/wallhaven-aaa111.jpg",
+      "file_type": "image/jpeg",
+      "dimension_x": 128,
+      "dimension_y": 72,
+      "purity": "sfw",
+      "category": "general",
+      "colors": ["#000000", "#424153"],
+      "source": "",
+      "created_at": "2024-06-02 21:53:31",
+      "thumbs": {"large": "https://th.wallhaven.cc/lg/aa/aaa111.jpg"}
+    },
+    {
+      "id": "bbb222",
+      "url": "https://wallhaven.cc/w/bbb222",
+      "path": "https://w.wallhaven.cc/full/bb/wallhaven-bbb222.png",
+      "file_type": "image/png",
+      "dimension_x": 128,
+      "dimension_y": 72,
+      "purity": "sfw",
+      "category": "anime",
+      "colors": ["#cc0000"],
+      "source": "https://example.com/artist",
+      "created_at": "2023-01-15 08:00:00",
+      "thumbs": {"large": "https://th.wallhaven.cc/lg/bb/bbb222.jpg"}
+    }
+  ],
+  "meta": {"current_page": 1, "last_page": 2, "seed": "XyZ987"}
+}
