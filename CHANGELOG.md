@@ -35,6 +35,10 @@ All notable changes to amontillado are documented here. The format follows
 - `amo fetch --test-set`: keeps one wallpaper per bucket (dark, light, muted, saturated, busy,
   sparse, monochrome, multi-hue), each filling one bucket only, and prints `BUCKET<TAB>PATH`
   lines; fails if a bucket stays empty.
+- `tools/calibrate.py` (`just calibrate`): samples random Wallhaven thumbnails and reports
+  metric distributions and class shares. The class thresholds are calibrated with it on 400
+  images, so each class holds roughly a fifth of them; `--warm` and `--cool` leave out muted
+  images.
 - `api_key_command` in `config.yaml`, or `WALLHAVEN_API_KEY`: the Wallhaven API key, needed for
   nsfw results, never logged or stored.
 

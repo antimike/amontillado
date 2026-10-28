@@ -32,7 +32,7 @@ colours go together, so that several monitors show a coherent set. See
 ## Status
 
 Pre-alpha, not yet released. Measuring, the library, the index, queries, the Wallhaven
-fetcher and test sets work; calibrated class thresholds are still to come. `amontillado` and
+fetcher and test sets work, with class thresholds calibrated on a Wallhaven sample. `amontillado` and
 its short alias `amo` are the same command.
 
 ## Install
