@@ -331,3 +331,45 @@ def test_usage_survives_reindexing(indexed: dict[str, Path], home: Path) -> None
     main(["shown", str(indexed["red"])])
     main(["index"])
     assert len(_usage(home)) == 1
+
+
+def test_add_indexes_and_refuses_duplicates(
+    library: Path, home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["index"])
+    loose = _save(np.zeros((36, 64, 3), dtype=np.uint8), library / "a.png")
+    copy = home / "copy.png"
+    copy.write_bytes(loose.read_bytes())
+    main(["add", "--name", "night", str(loose)])
+    assert _index_rows(home) == ["a.png"]
+    assert _list(capsys) == {"a"}
+    main(["shown", "night"])
+    with pytest.raises(SystemExit) as exc:
+        main(["add", str(copy)])
+    assert exc.value.code == "amontillado: 1 of 1 files could not be added"
+    assert copy.exists()
+    main(["add", "--force", str(copy)])
+    assert sorted(_index_rows(home)) == ["a.png", "copy.png"]
+    main(["index", "--check"])
+
+
+def test_add_refuses_a_taken_name(library: Path, home: Path) -> None:
+    main(["add", "--name", "night", str(_save(np.zeros((36, 64, 3), np.uint8), home / "a.png"))])
+    other = _save(np.full((36, 64, 3), 9, np.uint8), home / "b.png")
+    with pytest.raises(SystemExit):
+        main(["add", "--name", "night", str(other)])
+    assert other.exists()
+
+
+def test_add_dry_run_changes_nothing(library: Path, home: Path) -> None:
+    loose = _save(np.zeros((36, 64, 3), dtype=np.uint8), library / "a.png")
+    main(["add", "--dry-run", str(loose)])
+    assert loose.exists()
+    assert not (library / "a").exists()
+    assert _index_rows(home) == []
+
+
+def test_add_name_takes_one_file(library: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["add", "--name", "x", "a.png", "b.png"])
+    assert exc.value.code == "amontillado: --name takes one FILE"

@@ -315,3 +315,71 @@ def test_symlinked_directory_is_not_followed(config: Config, save_image: SaveIma
 def test_missing_root_is_skipped(tmp_path: Path) -> None:
     config = Config((tmp_path / "none",), tmp_path / "nsfw", tmp_path / "index.sqlite")
     assert heal_library(config).clean
+
+
+def test_add_wraps_a_loose_image_in_place(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    loose = save_image(root / "sub" / "sunset.png", (255, 0, 0))
+    digest = sha256_file(loose)
+    placement = library.place(config, loose, name=None, nsfw=False)
+    assert placement.directory == root / "sub" / "sunset"
+    entry = library.add_picture(config, placement, name=None)
+    assert not loose.exists()
+    record = read_record(root / "sub" / "sunset" / "info.yaml")
+    assert record.files["sunset.png"].sha256 == digest
+    assert record.files["sunset.png"].metrics.hue_name == "red"
+    assert (entry.id, entry.default, entry.root) == (record.id, "sunset.png", root)
+    assert heal_library(config).clean
+
+
+def test_add_from_outside_the_roots(config: Config, save_image: SaveImage, tmp_path: Path) -> None:
+    file = save_image(tmp_path / "downloads" / "x.png")
+    placement = library.place(config, file, name="night", nsfw=False)
+    assert placement.directory == config.library_roots[0] / "night"
+    entry = library.add_picture(config, placement, name="night")
+    assert read_record(placement.directory / "info.yaml").name == "night"
+    assert not entry.nsfw_root
+    other = save_image(tmp_path / "downloads" / "y.png")
+    nsfw = library.place(config, other, name=None, nsfw=True)
+    assert nsfw.directory == config.nsfw_root / "y"
+    assert library.add_picture(config, nsfw, name=None).nsfw_root
+
+
+def test_measuring_failure_moves_nothing(config: Config, tmp_path: Path) -> None:
+    bad = tmp_path / "bad.png"
+    bad.write_text("not an image")
+    placement = library.place(config, bad, name=None, nsfw=False)
+    with pytest.raises(OSError):
+        library.add_picture(config, placement, name=None)
+    assert bad.exists()
+    assert not placement.directory.exists()
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("not-image", "not an image file"),
+        ("in-record", "already in the record"),
+        ("in-nested-record", "already in the record"),
+        ("exists", "already exists"),
+        ("bad-name", "does not match"),
+        ("nsfw-in-root", "--nsfw is for other files"),
+    ],
+)
+def test_add_refuses(config: Config, save_image: SaveImage, case: str, message: str) -> None:
+    root = config.library_roots[0]
+    name, nsfw = ("Bad Name" if case == "bad-name" else None), case == "nsfw-in-root"
+    if case == "not-image":
+        file = root / "notes.txt"
+        file.write_text("")
+    elif case == "in-record":
+        file = save_image(mark_record(root / "r").parent / "a.png")
+    elif case == "in-nested-record":
+        mark_record(root / "r")
+        file = save_image(root / "r" / "deeper" / "a.png")
+    else:
+        file = save_image(root / "a.png")
+        if case == "exists":
+            (root / "a").mkdir()
+    with pytest.raises(library.AddError, match=message):
+        library.place(config, file, name=name, nsfw=nsfw)

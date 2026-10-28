@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import shutil
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ from amontillado.metrics import image_size, measure_file
 from amontillado.record import (
     IMAGE_SUFFIXES,
     INFO_NAMES,
+    NAME_PATTERN,
     FileEntry,
     Record,
     RecordError,
@@ -301,3 +303,59 @@ def _heal_record(
     if reasons:
         write_record(path, record)
     return record, hashes
+
+
+class AddError(Exception):
+    """A file cannot be made a record; the message says why."""
+
+
+@dataclass(frozen=True)
+class Placement:
+    """Where `amo add` puts a file: the new record's directory, under `root`."""
+
+    file: Path
+    root: Path
+    directory: Path
+
+
+def place(config: Config, file: Path, *, name: str | None, nsfw: bool) -> Placement:
+    """Where `file` would become a record: beside it if it is under a root, else in the first
+    library root (or the NSFW root with `nsfw`), in a directory named `name` or its stem.
+    Raises AddError."""
+    if not file.is_file() or file.suffix.lower() not in IMAGE_SUFFIXES:
+        raise AddError(f"{file}: not an image file")
+    if name is not None and not NAME_PATTERN.fullmatch(name):
+        raise AddError(f"name {name!r} does not match {NAME_PATTERN.pattern}")
+    resolved = file.resolve()
+    roots = (*config.library_roots, config.nsfw_root)
+    root = next((root for root in roots if resolved.is_relative_to(root.resolve())), None)
+    if root is not None:
+        if nsfw:
+            raise AddError(f"{file}: already under the root {root}; --nsfw is for other files")
+        directory = resolved.parent
+        while directory != root.resolve():
+            if any((directory / info).is_file() for info in INFO_NAMES):
+                raise AddError(f"{file}: already in the record {directory}")
+            directory = directory.parent
+        parent = file.parent
+    else:
+        root = config.nsfw_root if nsfw else config.library_roots[0]
+        parent = root
+    directory = parent / (name or file.stem)
+    if directory.exists():
+        raise AddError(f"{directory} already exists")
+    return Placement(file, root, directory)
+
+
+def add_picture(config: Config, placement: Placement, *, name: str | None) -> Entry:
+    """Make a record of one file: measure it, move it into the new directory, write the info
+    file. Raises OSError or Image.DecompressionBombError (before anything moves, if measuring
+    fails)."""
+    file = placement.file
+    entry = FileEntry(sha256_file(file), *image_size(file), measure_file(file))
+    record = Record(uuid.uuid4().hex, name=name, files={file.name: entry})
+    placement.directory.mkdir(parents=True)
+    shutil.move(file, placement.directory / file.name)
+    write_record(placement.directory / INFO_NAMES[0], record)
+    nsfw = placement.directory.resolve().is_relative_to(config.nsfw_root)
+    return Entry(placement.directory, placement.root, nsfw, record, (file.name,), file.name, name)

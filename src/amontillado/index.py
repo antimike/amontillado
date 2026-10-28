@@ -171,6 +171,17 @@ def rebuild(conn: sqlite3.Connection, entries: Iterable[Entry]) -> int:
     return len(entries)
 
 
+def add(conn: sqlite3.Connection, entry: Entry) -> None:
+    """Add one record to the index, in one transaction."""
+    conn.execute("BEGIN")
+    try:
+        _insert(conn, [entry])
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
 def _insert(conn: sqlite3.Connection, entries: list[Entry]) -> None:
     conn.executemany(_INSERT_RECORD, [_record_row(entry) for entry in entries])
     conn.executemany(_INSERT_FILE, [row for entry in entries for row in _file_rows(entry)])
@@ -237,6 +248,17 @@ def files(conn: sqlite3.Connection) -> list[IndexedFile]:
             conn.execute(_SELECT_FILES)
         )
     ]
+
+
+def names(conn: sqlite3.Connection) -> set[str]:
+    """The names records answer to."""
+    return {name for (name,) in conn.execute("SELECT name FROM records WHERE name IS NOT NULL")}
+
+
+def files_with_hash(conn: sqlite3.Connection, sha256: str) -> list[Path]:
+    """The indexed files with this content, by path."""
+    query = "SELECT path FROM files WHERE sha256 = ? ORDER BY path"
+    return [Path(path) for (path,) in conn.execute(query, (sha256,))]
 
 
 def find_record(conn: sqlite3.Connection, query: str) -> str:

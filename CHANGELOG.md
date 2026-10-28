@@ -23,6 +23,8 @@ All notable changes to amontillado are documented here. The format follows
   with `--purity`. `--aspect 21:9` prints each record's file of that aspect ratio instead.
 - `amo shown PICTURE...`: records that pictures were shown, by record id, in the usage history;
   a picture is a file, a record directory, a name, an id or a unique id prefix.
+- `amo add FILE... [--name N] [--nsfw] [--force]`: makes each image file a record of its own
+  and indexes it; refuses content already in the library unless `--force`.
 
 ### Fixed
 

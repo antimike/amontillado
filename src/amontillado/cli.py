@@ -34,12 +34,18 @@ from amontillado.index import (
     LookupFailed,
     connect,
     files,
+    files_with_hash,
     find_record,
+    names,
     rebuild,
     record_shown,
 )
-from amontillado.library import PURITIES, Report, heal_library
+from amontillado.index import (
+    add as add_to_index,
+)
+from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
 from amontillado.metrics import HUE_NAMES, measure_file
+from amontillado.record import sha256_file
 
 logger = getLogger("amontillado")
 
@@ -165,6 +171,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Log what would be recorded; record nothing."
     )
     shown.set_defaults(func=cmd_shown)
+
+    add = commands.add_parser(
+        "add",
+        help="Make records of image files.",
+        description="Make each file a record of its own: create a directory beside it (or, "
+        "for a file outside the roots, in the first library root), move the file in, write "
+        "its info.yaml, and add it to the index. Refuses a file whose content is already in "
+        "the library, and a name another record has.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(add, argparse.SUPPRESS)
+    add.add_argument("files", nargs="+", type=Path, metavar="FILE", help="Image files.")
+    add.add_argument(
+        "--name",
+        type=str,
+        help="The record's name (one FILE only), also used for its directory; default: no "
+        "name, and the file's stem for the directory.",
+    )
+    add.add_argument(
+        "--nsfw",
+        action="store_true",
+        help="Put files from outside the roots in the NSFW root.",
+    )
+    add.add_argument(
+        "--force", action="store_true", help="Add files whose content is already in the library."
+    )
+    add.add_argument(
+        "--dry-run", action="store_true", help="Log what would be added; change nothing."
+    )
+    add.set_defaults(func=cmd_add)
 
     return parser
 
@@ -329,6 +365,52 @@ def cmd_shown(args: argparse.Namespace) -> None:
                     record_shown(conn, record_id)
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
+
+
+def cmd_add(args: argparse.Namespace) -> None:
+    if args.name is not None and len(args.files) > 1:
+        sys.exit("amontillado: --name takes one FILE")
+    config = _load_config()
+    failed = 0
+    try:
+        with closing(connect(config.index_path)) as conn:
+            taken = names(conn)
+            for file in args.files:
+                try:
+                    _add_one(conn, config, file, args, taken)
+                except AddError as exc:
+                    logger.error("%s", exc)
+                    failed += 1
+                except (OSError, Image.DecompressionBombError) as exc:
+                    logger.error("%s: %s", file, exc)
+                    failed += 1
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    if failed:
+        sys.exit(f"amontillado: {failed} of {len(args.files)} files could not be added")
+
+
+def _add_one(
+    conn: sqlite3.Connection,
+    config: Config,
+    file: Path,
+    args: argparse.Namespace,
+    taken: set[str],
+) -> None:
+    placement = place(config, file, name=args.name, nsfw=args.nsfw)
+    if args.name in taken:
+        raise AddError(f"name {args.name!r} is taken")
+    duplicates = files_with_hash(conn, sha256_file(file))
+    if duplicates and not args.force:
+        raise AddError(f"{file}: same content as {duplicates[0]}; --force adds it anyway")
+    if duplicates:
+        logger.warning("%s: same content as %s", file, duplicates[0])
+    if args.dry_run:
+        logger.info("would add %s as %s", file, placement.directory)
+        return
+    entry = add_picture(config, placement, name=args.name)
+    add_to_index(conn, entry)
+    logger.info("added %s as %s", file, entry.directory)
 
 
 def _problems(report: Report, *, check: bool) -> list[str]:
