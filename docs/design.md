@@ -1,8 +1,8 @@
 # Design
 
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
-implemented, test sets included. Values marked *initial* are starting points to calibrate on
-real images; change them here when they change in code.
+implemented, test sets included; class thresholds calibrated (2026-10-28). Values marked
+*initial* are starting points to calibrate on real images; change them here when they change in code.
 
 ## Scope
 
@@ -217,20 +217,34 @@ A greyscale image has no chromatic pixels: `hue`, `hue_name` are null, `hue_shar
 
 Values are rounded when written: `hue` to 0.1°, the others to 3 decimals.
 
-### Classes (query-time, *initial* thresholds)
+### Classes (query-time, calibrated thresholds)
 
-| Flag | Rule |
-|---|---|
-| `--dark` / `--light` | `lightness` < 0.35 / > 0.65 |
-| `--muted` / `--saturated` | `chroma` < 0.03 / > 0.08 |
-| `--sparse` / `--busy` | `busy` < 0.04 / > 0.12 |
-| `--hue NAME` | `hue_name` = NAME and `hue_share` ≥ 0.40, and not muted |
-| `--monochrome` / `--multi-hue` | has chromatic pixels and `hue_spread` < 0.30 / `hue_spread` > 0.60 |
-| `--warm` / `--cool` | `warmth` > 0.3 / < −0.3 |
+| Flag | Rule | Share of the sample |
+|---|---|---|
+| `--dark` / `--light` | `lightness` < 0.35 / > 0.65 | 21% / 22% |
+| `--muted` / `--saturated` | `chroma` < 0.02 / > 0.075 | 19% / 18% |
+| `--sparse` / `--busy` | `busy` < 0.03 / > 0.15 | 17% / 17% |
+| `--hue NAME` | `hue_name` = NAME and `hue_share` ≥ 0.40, and not muted | 2-20% per hue; 68% have one |
+| `--monochrome` / `--multi-hue` | has chromatic pixels and `hue_spread` < 0.03 / `hue_spread` > 0.50 | 20% / 15% |
+| `--warm` / `--cool` | `warmth` > 0.8 / < −0.8, and not muted | 29% / 14% |
 
-Calibrate before v0.1: measure a few hundred thumbnails from a random Wallhaven sample, look at
-the distributions, and set thresholds so each class holds a sensible minority. Record the result
-here.
+**Calibration** (2026-10-28, `tools/calibrate.py`, `just calibrate`): 400 thumbnails from a
+random sfw Wallhaven search with no other filters (279 general, 121 anime; the sample stays
+outside the repository), thresholds set so each class holds roughly a fifth. Findings:
+
+- Most wallpapers sit close to one hue: median `hue_spread` 0.12, and the initial monochrome
+  bound (0.30) took 70% of the sample. 0.03 is about all chromatic weight within ±25° of the
+  mean hue.
+- `warmth` is nearly binary for the same reason (p25 −0.47, p75 0.94), so the threshold barely
+  moves the warm share; leaving out muted images (whose warmth is only a tint) does. Warm stays
+  the largest class: the sample leans warm (red is the top hue, 20%).
+- Fixed hue sectors split one hue rarely: 11 of the 278 images with `hue_spread` < 0.30 have
+  `hue_share` < 0.40. A share within ±30° of the mean hue would recover about half of them; not
+  worth a metric version for v0.1 (see "Open questions").
+- Thumbnails measure like their full images (40 pairs): median |difference| in `busy` 0.002,
+  p90 0.021; in `lightness` 0.003 / 0.022. JPEG artefacts in thumbnails do not inflate `busy`.
+- The metric constants (chromatic C > 0.03, edge 0.08, the hue sectors) were not changed:
+  changing them changes stored metrics and needs a `metrics.version` bump.
 
 ## Fetcher (Wallhaven)
 
@@ -372,7 +386,9 @@ nothing, and prints the page URL of each wallpaper it would keep.
 
 ## Open questions
 
-- Thresholds: calibrate (above).
+- Hue sectors: whether `hue_share` should be the weight within ±30° of the mean hue (and
+  `hue_name` the sector holding the mean hue), so a hue on a sector boundary is not split;
+  about 4% of narrow-hued images are affected ("Calibration").
 - Whether `amo list` should prefer images shown least recently (it has the usage table).
 - Index staleness: `amo list` trusts the index; whether it should detect changes since the last
   `amo index` (a stat walk of the roots) and warn or refresh.

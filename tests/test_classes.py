@@ -34,10 +34,10 @@ def test_neutral_is_unclassified() -> None:
         ({"chroma": 0.1}, ["saturated"]),
         ({"busy": 0.01}, ["sparse"]),
         ({"busy": 0.2}, ["busy"]),
-        ({"hue_spread": 0.1}, ["monochrome"]),
+        ({"hue_spread": 0.01}, ["monochrome"]),
         ({"hue_spread": 0.8}, ["multi-hue"]),
-        ({"warmth": 0.5}, ["warm"]),
-        ({"warmth": -0.5}, ["cool"]),
+        ({"warmth": 0.9}, ["warm"]),
+        ({"warmth": -0.9}, ["cool"]),
         ({"hue_share": 0.7}, ["blue"]),
     ],
 )
@@ -52,9 +52,14 @@ def test_greyscale_is_muted_never_monochrome() -> None:
 
 
 def test_muted_image_has_no_hue() -> None:
-    tinted = replace(NEUTRAL, chroma=0.02, hue_share=0.9)
+    tinted = replace(NEUTRAL, chroma=0.01, hue_share=0.9)
     assert not has_hue(tinted, "blue")
     assert classify(tinted) == ["muted"]
+
+
+def test_muted_image_is_neither_warm_nor_cool() -> None:
+    assert classify(replace(NEUTRAL, chroma=0.01, warmth=1.0)) == ["muted"]
+    assert classify(replace(NEUTRAL, chroma=0.01, warmth=-1.0)) == ["muted"]
 
 
 def test_hue_is_only_the_dominant_one() -> None:

@@ -1,7 +1,8 @@
 """Classes such as dark, muted or busy, computed from the raw metrics at query time.
 
 Nothing here is stored: retuning a threshold needs no recomputation. The rules are in
-docs/design.md, "Classes"; the thresholds are *initial* until calibrated.
+docs/design.md, "Classes"; the thresholds were calibrated on a random Wallhaven sample
+(tools/calibrate.py).
 """
 
 from __future__ import annotations
@@ -13,15 +14,15 @@ from amontillado.metrics import HUE_NAMES, Metrics
 
 DARK_MAX = 0.35
 LIGHT_MIN = 0.65
-MUTED_MAX = 0.03
-SATURATED_MIN = 0.08
-SPARSE_MAX = 0.04
-BUSY_MIN = 0.12
+MUTED_MAX = 0.02
+SATURATED_MIN = 0.075
+SPARSE_MAX = 0.03
+BUSY_MIN = 0.15
 HUE_SHARE_MIN = 0.40
-MONOCHROME_MAX = 0.30
-MULTI_HUE_MIN = 0.60
-WARM_MIN = 0.3
-COOL_MAX = -0.3
+MONOCHROME_MAX = 0.03
+MULTI_HUE_MIN = 0.50
+WARM_MIN = 0.8
+COOL_MAX = -0.8
 # Relative: 3440x1440 and 2560x1080 both count as 21:9.
 ASPECT_TOLERANCE = 0.03
 
@@ -40,8 +41,10 @@ CLASSES: dict[str, Callable[[Metrics], bool]] = {
     # A greyscale image has no hue at all: it is muted, never monochrome.
     "monochrome": lambda m: m.hue_name is not None and m.hue_spread < MONOCHROME_MAX,
     "multi-hue": lambda m: m.hue_spread > MULTI_HUE_MIN,
-    "warm": lambda m: m.warmth > WARM_MIN,
-    "cool": lambda m: m.warmth < COOL_MAX,
+    # Most images are near one hue, so warmth is nearly binary; a muted image's is only a
+    # tint, which would make most of a library warm.
+    "warm": lambda m: m.warmth > WARM_MIN and not _is_muted(m),
+    "cool": lambda m: m.warmth < COOL_MAX and not _is_muted(m),
 }
 
 
