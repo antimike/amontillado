@@ -149,3 +149,108 @@ def test_symlinked_directory_is_not_followed(config: Config, save_image: SaveIma
 def test_missing_root_is_skipped(tmp_path: Path, save_image: SaveImage) -> None:
     config = Config((tmp_path / "none",), tmp_path / "nsfw", tmp_path / "index.sqlite")
     assert heal_library(config).clean
+
+
+def test_yml_sidecar_is_used_in_place(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    save_image(root / "a.png")
+    heal_library(config)
+    (root / "a.yaml").rename(root / "a.yml")
+    report = heal_library(config)
+    assert report.clean
+    assert sorted(path.name for path in root.iterdir()) == ["a.png", "a.yml"]
+
+
+def test_unparseable_yml_is_kept_aside(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    save_image(root / "a.png")
+    (root / "a.yml").write_text("a: [\n")
+    heal_library(config)
+    assert (root / "a.yml.bad").read_text() == "a: [\n"
+    assert read_sidecar(root / "a.yml").file == "a.png"
+
+
+def test_yaml_and_yml_for_one_image(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    save_image(root / "a.png")
+    heal_library(config)
+    (root / "a.yml").write_bytes((root / "a.yaml").read_bytes())
+    report = heal_library(config)
+    assert report.conflicts == [[root / "a.png", root / "a.yaml", root / "a.yml"]]
+    assert report.entries == []
+
+
+def _set_source(sidecar: Path, source: dict[str, object]) -> None:
+    data = yaml.safe_load(sidecar.read_text())
+    data["source"] = source
+    sidecar.write_text(yaml.safe_dump(data))
+
+
+def test_renamed_image_adopts_its_sidecar(
+    config: Config, save_image: SaveImage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = config.library_roots[0]
+    save_image(root / "wallhaven-x.png", (255, 0, 0))
+    heal_library(config)
+    _set_source(root / "wallhaven-x.yaml", {"site": "wallhaven", "id": "x"})
+    (root / "sub").mkdir()
+    (root / "wallhaven-x.png").rename(root / "sub" / "sunset.png")
+    monkeypatch.setattr(library, "measure_file", lambda path: pytest.fail("measured"))
+    report = heal_library(config)
+    assert report.healed == [
+        (root / "sub" / "sunset.yaml", f"re-paired with {root}/wallhaven-x.yaml")
+    ]
+    assert report.orphans == []
+    assert not (root / "wallhaven-x.yaml").exists()
+    sidecar = read_sidecar(root / "sub" / "sunset.yaml")
+    assert sidecar.file == "sunset.png"
+    assert sidecar.source == {"site": "wallhaven", "id": "x"}
+
+
+def test_adopted_yml_keeps_its_suffix(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    save_image(root / "a.png")
+    heal_library(config)
+    (root / "a.yaml").rename(root / "a.yml")
+    (root / "a.png").rename(root / "b.png")
+    heal_library(config)
+    assert read_sidecar(root / "b.yml").file == "b.png"
+
+
+def test_check_reports_a_re_pairing_without_moving(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    save_image(root / "a.png")
+    heal_library(config)
+    (root / "a.png").rename(root / "b.png")
+    report = heal_library(config, check=True)
+    assert report.healed == [(root / "b.yaml", f"re-paired with {root}/a.yaml")]
+    assert report.orphans == []
+    assert (root / "a.yaml").exists() and not (root / "b.yaml").exists()
+
+
+def test_one_orphan_is_adopted_once(config: Config, save_image: SaveImage) -> None:
+    # Two copies of one image, both renamed: one adopts the sidecar, the other gets a new one.
+    root = config.library_roots[0]
+    save_image(root / "a.png")
+    heal_library(config)
+    _set_source(root / "a.yaml", {"site": "wallhaven", "id": "x"})
+    (root / "a.png").rename(root / "b.png")
+    (root / "c.png").write_bytes((root / "b.png").read_bytes())
+    report = heal_library(config)
+    assert sorted(reason for _, reason in report.healed) == [
+        "no sidecar",
+        f"re-paired with {root}/a.yaml",
+    ]
+    assert read_sidecar(root / "b.yaml").source == {"site": "wallhaven", "id": "x"}
+    assert read_sidecar(root / "c.yaml").source is None
+
+
+def test_orphan_of_other_content_is_not_adopted(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    save_image(root / "a.png", (255, 0, 0))
+    heal_library(config)
+    (root / "a.png").unlink()
+    save_image(root / "b.png", (0, 0, 255))
+    report = heal_library(config)
+    assert report.orphans == [root / "a.yaml"]
+    assert read_sidecar(root / "b.yaml").metrics.hue_name == "blue"

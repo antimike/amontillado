@@ -28,7 +28,9 @@ theme engine layer.
 
 ### Sidecars (source of truth)
 
-`<image>.yaml` next to each image (`wallhaven-abc123.jpg` → `wallhaven-abc123.yaml`). Only facts
+`<image>.yaml` next to each image (`wallhaven-abc123.jpg` → `wallhaven-abc123.yaml`); an
+image pairs with the sidecar of the same name stem, and `.yml` is read as well (new sidecars
+are written as `.yaml`). Only facts
 that do not change about the image:
 
 ```yaml
@@ -64,14 +66,17 @@ metrics:
 
 Read with `yaml.safe_load` only. Written atomically (temporary file, then rename).
 
-**Healing** (`amo index`): an image without a sidecar gets one (`source: null`, `fetched: null`);
-a sidecar that does not parse, lacks fields, or has an older `metrics.version` is rewritten,
+**Healing** (`amo index`): an image without a sidecar first looks for an orphaned sidecar whose
+`id` is its content hash, anywhere in the roots: the image was renamed or moved on its own, so
+that sidecar is moved next to it (keeping its suffix) and its `file` updated, without measuring.
+Otherwise it gets a new sidecar (`source: null`, `fetched: null`). An orphan is adopted once;
+a second copy of the same content gets a sidecar of its own. A sidecar that does not parse, lacks fields, or has an older `metrics.version` is rewritten,
 keeping whatever `source` block still parses. A sidecar that is not valid YAML is first kept as
-`<name>.yaml.bad`, so a typo in a hand edit loses nothing. A changed content hash means new
+`<name>.bad` (`a.yaml.bad`), so a typo in a hand edit loses nothing. A changed content hash means new
 content: `id`, size and metrics are all recomputed. A renamed image (sidecar renamed with it)
-only has `file` updated. Sidecars without an image are reported, not deleted. Two images that
-would share a sidecar (`a.jpg`, `a.png`) are reported and neither is indexed until one is
-renamed.
+only has `file` updated. Sidecars without an image are reported, not deleted. An ambiguous
+pairing (two images that would share a sidecar, `a.jpg` and `a.png`, or one image with both
+`a.yaml` and `a.yml`) is reported and not indexed until it is resolved by hand.
 
 Images are `.jpg`, `.jpeg`, `.png` and `.webp` files; directory symlinks under a root are not
 followed. **Purity** is the sidecar's `source.purity`; without one, an image under the NSFW root
@@ -245,8 +250,20 @@ FILTERS are the class flags above. WALLHAVEN: `--tags`, `--purity`, `--category`
    for several monitors, the palette taken from the primary monitor's image.
 3. Possibly a theme engine layer (palette files, generator adapters, per-app templates); under
    discussion.
+4. git-annex libraries (epic `amo-qnn`): each root a git-annex repository, sidecars in git,
+   images annexed (SHA-256 keys, the same hash as `id`); the index stays outside, in
+   `$XDG_STATE_HOME`. Encryption of the NSFW library off-machine is a spike (git-remote-gcrypt
+   and an encrypted annex remote, or git-crypt, which does not cover annexed content).
+   **This brings the first non-Python dependencies** (git-annex, written in Haskell;
+   git-remote-gcrypt and gnupg). They stay optional and detected at runtime: `pipx install`
+   keeps working without them, and the commands that need them say so.
 
 ## Open questions
 
 - Thresholds: calibrate (above).
 - Whether `amo list` should prefer images shown least recently (it has the usage table).
+- **Sidecar layout**: one sidecar per image file, paired by name (v0.1), or papis-style records
+  (a directory per image holding one `info.yaml` that lists its files, e.g. the same wallpaper
+  as JPEG and PNG). Decide before the fetcher writes libraries in the v0.1 layout.
+- Index staleness: `amo list` trusts the index; whether it should detect changes since the last
+  `amo index` (a stat walk of the roots) and warn or refresh.

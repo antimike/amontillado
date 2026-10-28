@@ -1,15 +1,19 @@
 """The library: the images under the roots, and healing their sidecars.
 
-docs/design.md, "Healing": an image without a sidecar gets one; a sidecar that does not parse,
-lacks fields, or has older metrics is rewritten, keeping its `source` block where that still
-parses; a changed content hash means new content, so the image is measured again. A sidecar that
-is not valid YAML is kept as `<name>.yaml.bad` before it is replaced. Sidecars without an image,
-and images that would share one sidecar, are reported and left alone.
+docs/design.md, "Healing": an image without a sidecar first adopts an orphaned sidecar with its
+content hash (it was renamed or moved on its own), else gets a new one; a sidecar that does not
+parse, lacks fields, or has older metrics is rewritten, keeping its `source` block where that
+still parses; a changed content hash means new content, so the image is measured again. A
+sidecar that is not valid YAML is kept as `<name>.bad` before it is replaced. Sidecars without
+an image, and images and sidecars that would pair ambiguously, are reported and left alone.
+
+An image pairs with the sidecar of the same name stem: `a.jpg` with `a.yaml` or `a.yml`.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import shutil
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -33,6 +37,7 @@ from amontillado.sidecar import (
 logger = getLogger(__name__)
 
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+SIDECAR_SUFFIXES = frozenset({".yaml", ".yml"})
 PURITIES = ("sfw", "sketchy", "nsfw")
 
 
@@ -78,37 +83,79 @@ def heal_library(config: Config, *, check: bool = False) -> Report:
     report = Report()
     images, sidecars = _scan(config)
 
-    by_sidecar: dict[Path, list[tuple[Path, Path]]] = defaultdict(list)
+    images_by_stem: dict[Path, list[tuple[Path, Path]]] = defaultdict(list)
     for image, root in images:
-        by_sidecar[sidecar_path(image)].append((image, root))
-    report.orphans = sorted(set(sidecars) - set(by_sidecar))
-    for path in report.orphans:
-        logger.warning("%s: sidecar without an image", path)
+        images_by_stem[image.with_suffix("")].append((image, root))
+    sidecars_by_stem: dict[Path, list[Path]] = defaultdict(list)
+    for sidecar in sidecars:
+        sidecars_by_stem[sidecar.with_suffix("")].append(sidecar)
+    orphans = sorted(path for path in sidecars if path.with_suffix("") not in images_by_stem)
+    # Reading the orphans is only worth it if some image has lost its sidecar.
+    lost = any(stem not in sidecars_by_stem for stem in images_by_stem)
+    adoptable = _ids(orphans) if lost else {}
+    adopted: set[Path] = set()
 
-    for sidecar, group in sorted(by_sidecar.items()):
-        if len(group) > 1:
-            paths = [image for image, _ in group]
+    for stem, group in sorted(images_by_stem.items()):
+        found = sidecars_by_stem.get(stem, [])
+        if len(group) > 1 or len(found) > 1:
+            paths = sorted([image for image, _ in group] + found)
             report.conflicts.append(paths)
             logger.error(
-                "%s would be the sidecar of %d images; rename all but one", sidecar, len(paths)
+                "%s: ambiguous pairing of %s; rename or remove all but one image and one sidecar",
+                stem,
+                ", ".join(path.name for path in paths),
             )
             continue
         image, root = group[0]
         try:
-            current, reason = _heal_image(image, check=check)
+            image_id = content_id(image)
+            path = found[0] if found else sidecar_path(image)
+            orphan = None
+            if not found:
+                candidates = [p for p in adoptable.get(image_id, []) if p not in adopted]
+                orphan = candidates[0] if candidates else None
+            if orphan is not None:
+                adopted.add(orphan)
+                path = image.with_suffix(orphan.suffix)
+                if check:
+                    report.healed.append((path, f"re-paired with {orphan}"))
+                    logger.info("%s: would heal: re-paired with %s", path, orphan)
+                    continue
+                shutil.move(orphan, path)
+            current, reason = _heal_image(image, path, image_id, check=check)
         except (OSError, Image.DecompressionBombError) as exc:
             report.failed.append((image, str(exc)))
             logger.error("%s: %s", image, exc)
             continue
+        if orphan is not None:
+            reason = f"re-paired with {orphan}"
         if reason is not None:
-            report.healed.append((sidecar, reason))
-            logger.info("%s: %s%s", sidecar, "would heal: " if check else "healed: ", reason)
+            report.healed.append((path, reason))
+            logger.info("%s: %s%s", path, "would heal: " if check else "healed: ", reason)
         if current is not None:
             entry = Entry(image, root, image.resolve().is_relative_to(config.nsfw_root), current)
             if not entry.nsfw_root and entry.purity != "sfw":
                 logger.warning("%s: %s image outside the NSFW root", image, entry.purity)
             report.entries.append(entry)
+
+    report.orphans = [path for path in orphans if path not in adopted]
+    for path in report.orphans:
+        logger.warning("%s: sidecar without an image", path)
     return report
+
+
+def _ids(sidecars: list[Path]) -> dict[str, list[Path]]:
+    """The sidecars that name a content id, by id; unreadable ones are left out."""
+    by_id: dict[str, list[Path]] = defaultdict(list)
+    for path in sidecars:
+        try:
+            image_id = load_raw(path).get("id")
+        except (OSError, SidecarError) as exc:
+            logger.debug("%s: cannot re-pair: %s", path, exc)
+            continue
+        if isinstance(image_id, str):
+            by_id[image_id].append(path)
+    return by_id
 
 
 def _scan(config: Config) -> tuple[list[tuple[Path, Path]], list[Path]]:
@@ -126,23 +173,23 @@ def _scan(config: Config) -> tuple[list[tuple[Path, Path]], list[Path]]:
         # rglob does not follow directory symlinks, so a symlink cannot pull in another tree.
         for path in sorted(root.rglob("*")):
             suffix = path.suffix.lower()
-            if suffix not in IMAGE_SUFFIXES and suffix != ".yaml":
+            if suffix not in IMAGE_SUFFIXES and suffix not in SIDECAR_SUFFIXES:
                 continue
             if not path.is_file() or path.resolve() in seen:
                 continue
             seen.add(path.resolve())
-            if suffix == ".yaml":
+            if suffix in SIDECAR_SUFFIXES:
                 sidecars.append(path)
             else:
                 images.append((path, root))
     return images, sidecars
 
 
-def _heal_image(image: Path, *, check: bool) -> tuple[Sidecar | None, str | None]:
-    """The image's valid sidecar (None when checking one that needs measuring) and why it
-    was or would be healed (None if it was fine)."""
-    path = sidecar_path(image)
-    image_id = content_id(image)
+def _heal_image(
+    image: Path, path: Path, image_id: str, *, check: bool
+) -> tuple[Sidecar | None, str | None]:
+    """The valid sidecar at `path` of `image`, whose content id is `image_id` (None when
+    checking one that needs measuring), and why it was or would be healed (None if fine)."""
     source = fetched = None
     unparseable = False
     try:
@@ -177,6 +224,6 @@ def _heal_image(image: Path, *, check: bool) -> tuple[Sidecar | None, str | None
     width, height = image_size(image)
     healed = Sidecar(image_id, image.name, width, height, source, fetched, measure_file(image))
     if unparseable:
-        path.replace(path.with_suffix(".yaml.bad"))
+        path.replace(path.with_name(path.name + ".bad"))
     write_sidecar(path, healed)
     return healed, reason
