@@ -26,7 +26,7 @@ from rich.logging import RichHandler
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
-from amontillado.classes import CLASSES, classify, has_aspect, has_hue
+from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import Config, ConfigError, load_config
 from amontillado.index import (
     IndexDatabaseError,
@@ -298,8 +298,8 @@ def cmd_list(args: argparse.Namespace) -> None:
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
     rows = [_pick(group, args.aspect) for group in by_record.values()]
-    wanted = [name for name in CLASSES if getattr(args, name.replace("-", "_"))]
-    matches = [row for row in rows if _matches(row, args, wanted, config)]
+    look = _look(args)
+    matches = [row for row in rows if _matches(row, args, look, config)]
     if args.aspect is not None:
         fallbacks = sum(not has_aspect(row.width, row.height, args.aspect) for row in matches)
         if fallbacks:
@@ -332,7 +332,12 @@ def _pick(group: list[IndexedFile], aspect: float | None) -> IndexedFile:
     return max(matching, key=lambda row: row.width * row.height, default=default)
 
 
-def _matches(row: IndexedFile, args: argparse.Namespace, wanted: list[str], config: Config) -> bool:
+def _look(args: argparse.Namespace) -> Look:
+    classes = tuple(name for name in CLASSES if getattr(args, name.replace("-", "_")))
+    return Look(classes, args.hue)
+
+
+def _matches(row: IndexedFile, args: argparse.Namespace, look: Look, config: Config) -> bool:
     if row.purity not in (args.purity or {"sfw"}):
         return False
     # Checked against the current config too, and through symlinks: the index may predate a
@@ -341,9 +346,7 @@ def _matches(row: IndexedFile, args: argparse.Namespace, wanted: list[str], conf
         row.nsfw_root or row.path.resolve().is_relative_to(config.nsfw_root)
     ):
         return False
-    if not all(CLASSES[name](row.metrics) for name in wanted):
-        return False
-    return args.hue is None or has_hue(row.metrics, args.hue)
+    return look.matches(row.metrics)
 
 
 def cmd_shown(args: argparse.Namespace) -> None:

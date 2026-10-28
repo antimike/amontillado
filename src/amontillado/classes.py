@@ -6,7 +6,8 @@ docs/design.md, "Classes"; the thresholds are *initial* until calibrated.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
+from dataclasses import dataclass
 
 from amontillado.metrics import HUE_NAMES, Metrics
 
@@ -52,6 +53,20 @@ def has_hue(m: Metrics, name: str) -> bool:
 def has_aspect(width: int, height: int, ratio: float) -> bool:
     """Whether width / height is within ASPECT_TOLERANCE of `ratio`, as `--aspect W:H` means."""
     return abs(width / height - ratio) <= ASPECT_TOLERANCE * ratio
+
+
+@dataclass(frozen=True)
+class Look:
+    """What a query asks an image to look like: class names (CLASSES keys) and a hue."""
+
+    classes: tuple[str, ...] = ()
+    hue: str | None = None
+
+    def matches(self, m: Metrics, *, ignore: Collection[str] = ()) -> bool:
+        """Whether `m` is in every class and has the hue; classes in `ignore` are not judged."""
+        if not all(CLASSES[name](m) for name in self.classes if name not in ignore):
+            return False
+        return self.hue is None or has_hue(m, self.hue)
 
 
 def classify(m: Metrics) -> list[str]:
