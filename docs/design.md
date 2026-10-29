@@ -381,9 +381,10 @@ nothing, and prints the page URL of each wallpaper it would keep.
 1. v0.1: the CLI above, calibrated thresholds, tests, CI, a tagged release.
 2. Palette-aware grouping: features per image, clusters of compatible images, a coherent set
    for several monitors, the palette taken from the primary monitor's image.
-3. Possibly a theme engine layer (palette files, generator adapters, per-app templates); under
-   discussion. Spike on reusing tinted-theming's templates through tinty, with a proposal:
-   [research/tinted-theming.md](research/tinted-theming.md).
+3. v0.2, the theme engine (epic `amo-aqp`): palette files, generator adapters, per-app
+   templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
+   from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,
+   pywal), without running tinty: [research/tinted-theming.md](research/tinted-theming.md).
 4. git-annex libraries (epic `amo-qnn`): each root a git-annex repository, info files in git,
    images annexed (SHA-256 keys, the same hash as each file's `sha256`); the index stays outside, in
    `$XDG_STATE_HOME`. Encryption of the NSFW library off-machine is a spike (git-remote-gcrypt
