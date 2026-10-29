@@ -316,7 +316,9 @@ apply. It is the input for comparing palette generators. Decided 2026-10-28:
 - Output is one `BUCKET<TAB>PATH` line per filled bucket, in bucket order (page URLs with
   `--dry-run`); exit non-zero, naming the empty buckets, if any bucket stays empty.
 - A dry run with `--busy-from full` cannot fill busy or sparse (the full image is never seen).
-- Rare buckets (multi-hue, monochrome) may need `--max-candidates` above its default.
+- With the calibrated thresholds every bucket holds 15-22% of a random sample; a default dry run
+  (2026-10-28) filled all eight from 12 thumbnails. Narrow server-side filters (`--tags`,
+  `--color`) can still leave a bucket empty: raise `--max-candidates`.
 
 ## CLI (v0.1)
 
