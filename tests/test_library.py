@@ -143,6 +143,48 @@ def test_changed_content_is_measured_again(config: Config, save_image: SaveImage
     assert entry.metrics.hue_name == "blue"
 
 
+def test_routine_heals_log_at_debug_and_renames_at_info(
+    config: Config, save_image: SaveImage, caplog: pytest.LogCaptureFixture
+) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "a.png")
+    with caplog.at_level(logging.DEBUG, logger="amontillado"):
+        heal_library(config)
+        assert [r.levelno for r in caplog.records if "healed:" in r.message] == [logging.DEBUG]
+        caplog.clear()
+        (info.parent / "a.png").rename(info.parent / "b.png")
+        heal_library(config)
+    assert [r.levelno for r in caplog.records if "healed:" in r.message] == [logging.INFO]
+
+
+def test_report_counts_records_measured_and_renamed(config: Config, save_image: SaveImage) -> None:
+    first = mark_record(config.library_roots[0] / "r")
+    save_image(first.parent / "a.png")
+    save_image(first.parent / "b.png", (9, 9, 9))
+    second = mark_record(config.library_roots[0] / "s")
+    save_image(second.parent / "c.png")
+    report = heal_library(config, check=True)
+    assert (report.records, report.measured, report.renamed) == (2, 3, 0)
+    report = heal_library(config)
+    assert (report.records, report.measured, report.renamed) == (2, 3, 0)
+    (first.parent / "a.png").rename(first.parent / "d.png")
+    report = heal_library(config)
+    assert (report.records, report.measured, report.renamed) == (2, 0, 1)
+
+
+def test_track_wraps_the_records_found(config: Config, save_image: SaveImage) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "a.png")
+    seen = []
+
+    def track(items: list) -> list:
+        seen.extend(found.directory for found in items)
+        return items
+
+    heal_library(config, track=track)
+    assert seen == [info.parent]
+
+
 def test_renamed_file_keeps_its_entry_without_measuring(
     config: Config, save_image: SaveImage, monkeypatch: pytest.MonkeyPatch
 ) -> None:

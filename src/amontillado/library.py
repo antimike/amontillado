@@ -12,10 +12,12 @@ entries and are reported. Images outside any record are reported, never moved.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import shutil
 import uuid
 from collections import defaultdict
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
@@ -75,7 +77,11 @@ class Report:
     """What a pass over the library found, and (unless checking) did."""
 
     entries: list[Entry] = field(default_factory=list)
+    records: int = 0
     healed: list[tuple[Path, str]] = field(default_factory=list)
+    # Files measured (or, checking, to be measured), and files re-paired by hash.
+    measured: int = 0
+    renamed: int = 0
     loose: list[Path] = field(default_factory=list)
     missing: list[Path] = field(default_factory=list)
     conflicts: list[list[Path]] = field(default_factory=list)
@@ -96,19 +102,25 @@ class _Found:
     images: tuple[str, ...]
 
 
-def heal_library(config: Config, *, check: bool = False) -> Report:
+def heal_library(
+    config: Config,
+    *,
+    check: bool = False,
+    track: Callable[[list[_Found]], Iterable[_Found]] | None = None,
+) -> Report:
     """Heal every record under the library roots and the NSFW root.
 
     With `check`, nothing is measured or written: `healed` lists what would be healed, and
-    `entries` stays empty.
+    `entries` stays empty. `track` wraps the records found, for a progress display.
     """
     report = Report()
     found = _scan(config, report)
+    report.records = len(found)
     hashes: dict[str, list[Path]] = defaultdict(list)
     ids: dict[str, list[Path]] = defaultdict(list)
     names: dict[str, list[Path]] = defaultdict(list)
     entries: list[Entry] = []
-    for record_dir in found:
+    for record_dir in track(found) if track else found:
         path = record_dir.info
         try:
             healed = _heal_record(record_dir, report, check=check)
@@ -231,6 +243,9 @@ def _heal_record(
         return None
 
     reasons: list[str] = []
+    # Routine heals (a new record, measuring) log at DEBUG; a first index would log one line
+    # per record. Content changes and renames are worth seeing.
+    notable = False
     if record.id is None:
         record = dataclasses.replace(record, id=uuid.uuid4().hex)
         reasons.append("new id")
@@ -246,6 +261,8 @@ def _heal_record(
             renames[old] = match
             reasons.append(f"{match}: renamed from {old}")
     if renames:
+        notable = True
+        report.renamed += len(renames)
         files = {
             renames.get(name, name): dataclasses.replace(
                 entry, derived_from=renames.get(entry.derived_from, entry.derived_from)
@@ -261,6 +278,7 @@ def _heal_record(
             continue
         if entry.sha256 is not None and entry.sha256 != hashes[name]:
             reasons.append(f"{name}: content changed")
+            notable = True
             to_measure.append(name)
         elif not entry.complete:
             reasons.append(f"{name}: measured")
@@ -284,8 +302,15 @@ def _heal_record(
 
     if reasons:
         report.healed.append((path, "; ".join(reasons)))
-        logger.info("%s: %s%s", path, "would heal: " if check else "healed: ", "; ".join(reasons))
+        logger.log(
+            logging.INFO if notable else logging.DEBUG,
+            "%s: %s%s",
+            path,
+            "would heal: " if check else "healed: ",
+            "; ".join(reasons),
+        )
     if check:
+        report.measured += len(to_measure)
         return dataclasses.replace(record, files=files), hashes
 
     for name in to_measure:
@@ -300,6 +325,7 @@ def _heal_record(
         files[name] = dataclasses.replace(
             files[name], sha256=hashes[name], width=width, height=height, metrics=metrics
         )
+    report.measured += len(to_measure)
     record = dataclasses.replace(record, files=files)
     if reasons:
         write_record(path, record)

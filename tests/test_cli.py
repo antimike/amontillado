@@ -10,8 +10,9 @@ import pytest
 import yaml
 from conftest import FakeClock, FakeWeb, mark_record
 from PIL import Image
+from rich.console import Console
 
-from amontillado import __version__
+from amontillado import __version__, cli
 from amontillado.cli import get_cli_arguments, main
 from amontillado.wallhaven import Client
 
@@ -86,6 +87,35 @@ def test_index_heals_and_indexes(library: Path, home: Path) -> None:
     main(["index"])
     assert "a.png" in yaml.safe_load((library / "r" / "info.yaml").read_text())["files"]
     assert _index_rows(home) == ["a.png"]
+
+
+def test_index_logs_one_summary(library: Path, caplog: pytest.LogCaptureFixture) -> None:
+    _record(library / "r")
+    _record(library / "s")
+    _save(np.zeros((36, 64, 3), dtype=np.uint8), library / "loose.png")
+    main(["index"])
+    assert "indexed 2 records: 2 healed, 2 files measured, 1 image outside a record" in caplog.text
+    assert "healed:" not in caplog.text
+    caplog.clear()
+    main(["index"])
+    assert "indexed 2 records: 1 image outside a record" in caplog.text
+
+
+def test_index_check_logs_what_would_change(
+    library: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _record(library / "r")
+    with pytest.raises(SystemExit):
+        main(["index", "--check"])
+    assert "checked 1 record: 1 to heal, 1 file to measure" in caplog.text
+
+
+def test_index_shows_progress_on_a_terminal(library: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _record(library / "r")
+    terminal = io.StringIO()
+    monkeypatch.setattr(cli, "STDERR", Console(file=terminal, force_terminal=True))
+    main(["index"])
+    assert "indexing" in terminal.getvalue()
 
 
 def test_index_check_writes_nothing_and_fails(library: Path, home: Path) -> None:
