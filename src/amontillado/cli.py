@@ -17,15 +17,17 @@ import random
 import re
 import sqlite3
 import sys
+from collections.abc import Callable, Iterable
 from contextlib import closing
 from logging import getLogger
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, TypeVar
 
 import yaml
 from PIL import Image
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
@@ -61,6 +63,11 @@ from amontillado.wallhaven import (
 )
 
 logger = getLogger("amontillado")
+# Shared by logging and progress bars, so log lines print above a bar. Rich's default console is
+# stdout, which carries data (`amo list` output is piped).
+STDERR = Console(stderr=True)
+
+T = TypeVar("T")
 
 
 # Opposite classes: asking for both could only ever match nothing.
@@ -374,8 +381,7 @@ def get_cli_arguments(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def setup_logger(args: argparse.Namespace) -> None:
-    # Rich's default console is stdout, which carries data (`amo list` output is piped).
-    logger.addHandler(RichHandler(level=args.loglevel, console=Console(stderr=True)))
+    logger.addHandler(RichHandler(level=args.loglevel, console=STDERR))
     logger.setLevel(args.loglevel)
 
 
@@ -411,14 +417,18 @@ def _index_error(config: Config, exc: Exception) -> NoReturn:
 
 def cmd_index(args: argparse.Namespace) -> None:
     config = _load_config()
-    report = heal_library(config, check=args.check)
-    if not args.check:
+    report = heal_library(
+        config, check=args.check, track=_progress("checking" if args.check else "indexing")
+    )
+    if args.check:
+        logger.info("%s", _summary(f"checked {_count(report.records, 'record')}", report, True))
+    else:
         try:
             with closing(connect(config.index_path)) as conn:
                 count = rebuild(conn, report.entries)
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             _index_error(config, exc)
-        logger.info("indexed %s", _count(count, "record"))
+        logger.info("%s", _summary(f"indexed {_count(count, 'record')}", report, False))
     problems = _problems(report, check=args.check)
     if problems:
         sys.exit(f"amontillado: {', '.join(problems)}")
@@ -630,6 +640,31 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: empty buckets: {', '.join(empty)}")
     if report.count < wanted:
         sys.exit(f"amontillado: {report.count} of {wanted} wanted")
+
+
+def _progress(description: str) -> Callable[[list[T]], Iterable[T]] | None:
+    """A progress bar on stderr, cleared when done; None when stderr is not a terminal (a
+    timer's run logs to the journal)."""
+    if not STDERR.is_terminal:
+        return None
+    return lambda items: track(items, description=description, console=STDERR, transient=True)
+
+
+def _summary(head: str, report: Report, check: bool) -> str:
+    """`head`, then the counts in `report` that are not zero."""
+    parts = [
+        f"{len(report.healed)} {'to heal' if check else 'healed'}" if report.healed else "",
+        _count(report.measured, "file") + (" to measure" if check else " measured")
+        if report.measured
+        else "",
+        f"{report.renamed} renamed" if report.renamed else "",
+        f"{_count(len(report.loose), 'image')} outside a record" if report.loose else "",
+        f"{_count(len(report.missing), 'file')} missing" if report.missing else "",
+        _count(len(report.conflicts), "conflict") if report.conflicts else "",
+        f"{len(report.failed)} failed" if report.failed else "",
+    ]
+    details = ", ".join(part for part in parts if part)
+    return f"{head}: {details}" if details else head
 
 
 def _problems(report: Report, *, check: bool) -> list[str]:

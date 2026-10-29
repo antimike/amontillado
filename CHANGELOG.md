@@ -17,7 +17,8 @@ All notable changes to amontillado are documented here. The format follows
 - `amo index [--check]`: fills in and updates the derived fields of every record (never the
   authored ones), follows a file renamed inside its record by content hash, reports images
   outside a record, missing files and conflicting records, and rebuilds the SQLite index,
-  keeping the usage history.
+  keeping the usage history. Logs one summary line (routine heals only at
+  `--loglevel debug`), with a progress bar on a terminal.
 - `amo list`: the default file of each indexed record by class (`--dark`, `--muted`,
   `--sparse`, `--hue blue`, `--monochrome`, `--warm`, ...), `--random N`; NSFW records only
   with `--purity`. `--aspect 21:9` prints each record's file of that aspect ratio instead.

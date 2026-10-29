@@ -336,6 +336,11 @@ amo add FILE... [--name N] [--nsfw] [--force] [--dry-run]   make each file a rec
 an info file needs fixing by hand, or records conflict (both info files, a shared id or name).
 `--check` is its dry run: it measures and writes nothing, and also fails if any record needs
 healing, an image is outside a record, or a listed file is missing.
+It ends with one INFO summary (records indexed or checked, healed, files measured, renamed,
+and any loose, missing, conflicting or failed). Routine heals (a new record, a file measured)
+log at DEBUG, so a first index of a large library stays quiet; a changed file or a rename logs at
+INFO, problems at WARNING or ERROR. On a terminal, a progress bar runs on stderr while records
+are hashed and measured.
 
 `amo list` prints the default file of each matching record, sfw records outside the NSFW root
 only unless `--purity` (comma-separated: `sfw`, `sketchy`, `nsfw`) asks for more; the NSFW-root
