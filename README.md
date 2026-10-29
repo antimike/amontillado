@@ -31,13 +31,13 @@ colours go together, so that several monitors show a coherent set. See
 
 ## Status
 
-Pre-alpha, not yet released. Measuring, the library, the index, queries, the Wallhaven
-fetcher and test sets work, with class thresholds calibrated on a Wallhaven sample. `amontillado` and
-its short alias `amo` are the same command.
+Pre-alpha; v0.1.0 is the first release. Measuring, the library, the index, queries, the
+Wallhaven fetcher and test sets work, with class thresholds calibrated on a Wallhaven sample.
+`amontillado` and its short alias `amo` are the same command.
 
 ## Install
 
-Not released yet. Once a version is tagged:
+Pin a tag:
 
 ```sh
 pipx install git+https://github.com/antimike/amontillado@v0.1.0
@@ -51,7 +51,7 @@ From a checkout, for development: `just install-dev` (an editable pipx install),
 ```sh
 amo fetch --dark --sparse --count 3        # keep 3 dark, uncluttered wallpapers from Wallhaven
 amo fetch --hue blue --ratio 21:9 --dry-run   # show what would be kept; download nothing
-amo fetch --test-set --max-candidates 300  # one wallpaper per bucket: dark, light, muted, ...
+amo fetch --test-set                       # one wallpaper per bucket: dark, light, muted, ...
 amo add ~/Downloads/forest.jpg             # make your own image a record
 amo index                                  # heal records and rebuild the index
 amo list --dark --muted --random 1         # a path, for a wallpaper setter

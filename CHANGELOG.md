@@ -6,6 +6,8 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-28
+
 ### Added
 
 - Package skeleton: `amontillado` and `amo` commands (`--version`, `--loglevel`), uv build,
