@@ -4,7 +4,8 @@ docs/design.md, "Index and usage". The `records` and `files` tables hold nothing
 an info file (or implied by where a record lives), so `rebuild` drops and recreates them: a
 schema change to them needs no migration. The `usage` table, keyed by record id, cannot be
 rebuilt and is never dropped, except once when upgrading from schema 1, whose usage rows were
-keyed by content hash.
+keyed by content hash. Each file's size and mtime are kept beside its hash, so that the next
+`amo index` need not hash it again (`known_hashes`).
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _CREATE_RECORDS = """
 CREATE TABLE records (
@@ -55,7 +56,9 @@ CREATE TABLE files (
     hue_share REAL NOT NULL,
     hue_spread REAL NOT NULL,
     warmth REAL NOT NULL,
-    busy REAL NOT NULL
+    busy REAL NOT NULL,
+    bytes INTEGER,
+    mtime_ns INTEGER
 )
 """
 _CREATE_FILES_SHA256 = "CREATE INDEX files_sha256 ON files (sha256)"
@@ -79,7 +82,8 @@ INSERT INTO records VALUES (
 _INSERT_FILE = """
 INSERT INTO files VALUES (
     :path, :record_id, :sha256, :is_default, :width, :height, :lightness, :chroma,
-    :colourful_share, :hue, :hue_name, :hue_share, :hue_spread, :warmth, :busy
+    :colourful_share, :hue, :hue_name, :hue_share, :hue_spread, :warmth, :busy, :bytes,
+    :mtime_ns
 )
 """
 # The metric columns in Metrics field order, so that a row unpacks into Metrics.
@@ -120,17 +124,17 @@ def connect(path: Path) -> sqlite3.Connection:
     # Transactions are explicit, so that DDL in a rebuild is part of one.
     conn = sqlite3.connect(path, isolation_level=None)
     try:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version > SCHEMA_VERSION:
-            raise IndexDatabaseError(
-                f"{path} has schema {version}; this amontillado knows {SCHEMA_VERSION}"
-            )
+        version = _schema_version(conn, path)
         conn.execute("BEGIN")
         if version == 1:
             # Schema 1 keyed usage by content hash; records are keyed by id now.
             logger.warning("%s: upgrading from schema 1; the usage history is discarded", path)
             conn.execute("DROP TABLE IF EXISTS images")
             conn.execute("DROP TABLE IF EXISTS usage")
+        if version == 2 and _has_table(conn, "files"):
+            # Schema 2 had no hash cache; the next `amo index` fills it in.
+            conn.execute("ALTER TABLE files ADD COLUMN bytes INTEGER")
+            conn.execute("ALTER TABLE files ADD COLUMN mtime_ns INTEGER")
         if not _has_table(conn, "records"):
             _create_tables(conn)
         conn.execute(_CREATE_USAGE)
@@ -141,6 +145,15 @@ def connect(path: Path) -> sqlite3.Connection:
         conn.close()
         raise
     return conn
+
+
+def _schema_version(conn: sqlite3.Connection, path: Path) -> int:
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version > SCHEMA_VERSION:
+        raise IndexDatabaseError(
+            f"{path} has schema {version}; this amontillado knows {SCHEMA_VERSION}"
+        )
+    return version
 
 
 def _has_table(conn: sqlite3.Connection, name: str) -> bool:
@@ -210,6 +223,7 @@ def _file_rows(entry: Entry) -> list[dict[str, object]]:
     for name in entry.present:
         file = entry.record.files[name]
         assert file.metrics is not None
+        size, mtime_ns = entry.stats.get(name, (None, None))
         rows.append(
             {
                 "path": str(entry.directory / name),
@@ -219,6 +233,8 @@ def _file_rows(entry: Entry) -> list[dict[str, object]]:
                 "width": file.width,
                 "height": file.height,
                 **{key: getattr(file.metrics, key) for key in Metrics.__dataclass_fields__},
+                "bytes": size,
+                "mtime_ns": mtime_ns,
             }
         )
     return rows
@@ -259,6 +275,25 @@ def source_ids(conn: sqlite3.Connection, site: str) -> set[str]:
     """The ids, at `site`, of the indexed records fetched from it."""
     query = "SELECT source_id FROM records WHERE source_site = ? AND source_id IS NOT NULL"
     return {source_id for (source_id,) in conn.execute(query, (site,))}
+
+
+def known_hashes(path: Path) -> dict[str, tuple[int, int, str]]:
+    """Each indexed file's size, mtime (ns) and hash, by path, read from the index at `path`
+    without changing it: empty when there is no index, or it predates the cache."""
+    if not path.exists():
+        return {}
+    conn = sqlite3.connect(f"{path.absolute().as_uri()}?mode=ro", uri=True)
+    try:
+        version = _schema_version(conn, path)
+        if version < 3 or not _has_table(conn, "files"):
+            return {}
+        query = (
+            "SELECT path, bytes, mtime_ns, sha256 FROM files "
+            "WHERE bytes IS NOT NULL AND mtime_ns IS NOT NULL"
+        )
+        return {row[0]: (row[1], row[2], row[3]) for row in conn.execute(query)}
+    finally:
+        conn.close()
 
 
 def files_with_hash(conn: sqlite3.Connection, sha256: str) -> list[Path]:

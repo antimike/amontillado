@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pytest
@@ -183,6 +184,36 @@ def test_track_wraps_the_records_found(config: Config, save_image: SaveImage) ->
 
     heal_library(config, track=track)
     assert seen == [info.parent]
+
+
+def _known(config: Config) -> dict[str, tuple[int, int, str]]:
+    """The hash cache an index of the library as it is now would hold."""
+    return {
+        str(entry.directory / name): (*entry.stats[name], entry.record.files[name].sha256 or "")
+        for entry in heal_library(config).entries
+        for name in entry.present
+    }
+
+
+def test_unchanged_file_is_not_hashed_again(
+    config: Config, save_image: SaveImage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    known = _known(config)
+    monkeypatch.setattr(library, "sha256_file", lambda path: pytest.fail(f"hashed {path}"))
+    report = heal_library(config, known=known)
+    assert report.clean
+    assert len(report.entries) == 1
+
+
+def test_file_with_a_new_mtime_is_hashed_again(config: Config, save_image: SaveImage) -> None:
+    image = save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    known = _known(config)
+    # Same size, new content and mtime: the cache must not hide the change.
+    save_image(image, (0, 0, 255))
+    os.utime(image, ns=(image.stat().st_atime_ns, image.stat().st_mtime_ns + 1))
+    report = heal_library(config, known=known)
+    assert report.healed == [(image.parent / "info.yaml", "a.png: content changed")]
 
 
 def test_renamed_file_keeps_its_entry_without_measuring(

@@ -17,6 +17,7 @@ from amontillado.index import (
     connect,
     files,
     find_record,
+    known_hashes,
     rebuild,
     record_shown,
 )
@@ -119,8 +120,53 @@ def test_failed_rebuild_keeps_the_old_rows(config: Config, save_image: SaveImage
 def test_metric_columns_follow_the_dataclass(config: Config) -> None:
     conn = connect(config.index_path)
     columns = [row[1] for row in conn.execute("PRAGMA table_info(files)")]
-    metric_columns = columns[columns.index("lightness") :]
+    start = columns.index("lightness")
+    metric_columns = columns[start : start + len(Metrics.__dataclass_fields__)]
     assert metric_columns == list(Metrics.__dataclass_fields__)
+
+
+def test_schema_2_gains_the_hash_cache_and_keeps_its_rows(
+    config: Config, save_image: SaveImage
+) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    entries = heal_library(config).entries
+    conn = connect(config.index_path)
+    rebuild(conn, entries)
+    record_shown(conn, entries[0].id)
+    conn.execute("ALTER TABLE files DROP COLUMN bytes")
+    conn.execute("ALTER TABLE files DROP COLUMN mtime_ns")
+    conn.execute("PRAGMA user_version = 2")
+    conn.close()
+    assert known_hashes(config.index_path) == {}
+    conn = connect(config.index_path)
+    assert len(files(conn)) == 1
+    assert len(_usage(conn)) == 1
+    assert known_hashes(config.index_path) == {}  # until the next rebuild fills it in
+    rebuild(conn, heal_library(config).entries)
+    assert len(known_hashes(config.index_path)) == 1
+
+
+def test_known_hashes_are_what_was_indexed(config: Config, save_image: SaveImage) -> None:
+    image = save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    [entry] = heal_library(config).entries
+    rebuild(connect(config.index_path), [entry])
+    stat = image.stat()
+    assert known_hashes(config.index_path) == {
+        str(image): (stat.st_size, stat.st_mtime_ns, entry.record.files["a.png"].sha256)
+    }
+
+
+def test_known_hashes_without_an_index_creates_none(config: Config) -> None:
+    assert known_hashes(config.index_path) == {}
+    assert not config.index_path.exists()
+
+
+def test_known_hashes_refuses_a_newer_schema(config: Config) -> None:
+    config.index_path.parent.mkdir(parents=True)
+    with sqlite3.connect(config.index_path) as conn:
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+    with pytest.raises(IndexDatabaseError, match="schema"):
+        known_hashes(config.index_path)
 
 
 @pytest.fixture
