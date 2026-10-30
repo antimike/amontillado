@@ -403,6 +403,10 @@ nothing, and prints the page URL of each wallpaper it would keep.
 
 ## Open questions
 
+- `HUE_SHARE_MIN`: kept at 0.40 when metrics version 2 raised `--hue` coverage from 68% to 80%
+  of the calibration sample ("Calibration"). Raising it narrows `--hue` to images dominated by
+  one hue: 0.45 leaves 77%, 0.50 73%, 0.55 67% (about the old coverage). Revisit if `--hue`
+  results look too loose in use; it is a query-time threshold, so no metrics version is needed.
 - Whether `amo list` should prefer images shown least recently (it has the usage table).
 - Index staleness: `amo list` trusts the index; whether it should detect changes since the last
   `amo index` (a stat walk of the roots) and warn or refresh.
