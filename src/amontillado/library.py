@@ -6,7 +6,8 @@ per file `sha256`, `width`, `height`, `metrics`) and never rewrites authored one
 whose info file does not parse, or whose authored fields are invalid, is reported and left
 alone. Within a record, an unlisted image with the hash of a listed file that is missing is
 that file renamed; other unlisted images are added; listed files that are missing keep their
-entries and are reported. Images outside any record are reported, never moved.
+entries and are reported. Images outside any record are reported, never moved. A file whose
+size and mtime are what the index last saw is not hashed again.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import os
 import shutil
 import uuid
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
@@ -43,6 +44,9 @@ logger = getLogger(__name__)
 
 PURITIES = ("sfw", "sketchy", "nsfw")
 
+# A file's size and mtime (ns): when both are unchanged, so is its content (the hash cache).
+Stat = tuple[int, int]
+
 
 @dataclass(frozen=True)
 class Entry:
@@ -56,6 +60,8 @@ class Entry:
     default: str
     # The name the record answers to: None when another record has the same one.
     name: str | None
+    # The Stat of each present file when it was hashed, for the hash cache.
+    stats: Mapping[str, Stat] = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -106,12 +112,15 @@ def heal_library(
     config: Config,
     *,
     check: bool = False,
+    known: Mapping[str, tuple[int, int, str]] | None = None,
     track: Callable[[list[_Found]], Iterable[_Found]] | None = None,
 ) -> Report:
     """Heal every record under the library roots and the NSFW root.
 
     With `check`, nothing is measured or written: `healed` lists what would be healed, and
-    `entries` stays empty. `track` wraps the records found, for a progress display.
+    `entries` stays empty. `known` maps a file's path to its size, mtime (ns) and hash as last
+    indexed: a file whose size and mtime match is not hashed again. `track` wraps the records
+    found, for a progress display.
     """
     report = Report()
     found = _scan(config, report)
@@ -123,14 +132,14 @@ def heal_library(
     for record_dir in track(found) if track else found:
         path = record_dir.info
         try:
-            healed = _heal_record(record_dir, report, check=check)
+            healed = _heal_record(record_dir, report, check=check, known=known or {})
         except RecordError as exc:
             report.failed.append((path, str(exc)))
             logger.error("%s: %s; fix it by hand", path, exc)
             continue
         if healed is None:
             continue
-        record, file_hashes = healed
+        record, file_hashes, stats = healed
         for name, digest in file_hashes.items():
             hashes[digest].append(record_dir.directory / name)
         if record.id is not None:
@@ -145,7 +154,14 @@ def heal_library(
             continue
         nsfw = record_dir.directory.resolve().is_relative_to(config.nsfw_root)
         entry = Entry(
-            record_dir.directory, record_dir.root, nsfw, record, present, default, record.name
+            record_dir.directory,
+            record_dir.root,
+            nsfw,
+            record,
+            present,
+            default,
+            record.name,
+            stats,
         )
         if not entry.nsfw_root and entry.purity != "sfw":
             logger.warning(
@@ -223,20 +239,28 @@ def _scan(config: Config, report: Report) -> list[_Found]:
 
 
 def _heal_record(
-    found: _Found, report: Report, *, check: bool
-) -> tuple[Record, dict[str, str]] | None:
-    """Heal one record. Returns it (with derived fields filled in unless checking) and the
-    hashes of its files that are present, or None if it failed; RecordError if its info file
-    cannot be used."""
+    found: _Found, report: Report, *, check: bool, known: Mapping[str, tuple[int, int, str]]
+) -> tuple[Record, dict[str, str], dict[str, Stat]] | None:
+    """Heal one record. Returns it (with derived fields filled in unless checking), and the
+    hashes and Stats of its files that are present, or None if it failed; RecordError if its
+    info file cannot be used."""
     directory, path = found.directory, found.info
+    hashes: dict[str, str] = {}
+    stats: dict[str, Stat] = {}
     try:
         record = read_record(path)
-        # A broken symlink (an annexed file whose content is not here) is not present.
-        hashes = {
-            name: sha256_file(directory / name)
-            for name in found.images
-            if (directory / name).is_file()
-        }
+        for name in found.images:
+            file = directory / name
+            # A broken symlink (an annexed file whose content is not here) is not present.
+            if not file.is_file():
+                continue
+            # Stat before hashing: a change while hashing then shows at the next index.
+            stats[name] = file_stat(file)
+            cached = known.get(str(file))
+            if cached is not None and cached[:2] == stats[name]:
+                hashes[name] = cached[2]
+            else:
+                hashes[name] = sha256_file(file)
     except OSError as exc:
         report.failed.append((directory, str(exc)))
         logger.error("%s: %s", directory, exc)
@@ -311,7 +335,7 @@ def _heal_record(
         )
     if check:
         report.measured += len(to_measure)
-        return dataclasses.replace(record, files=files), hashes
+        return dataclasses.replace(record, files=files), hashes, stats
 
     for name in to_measure:
         file = directory / name
@@ -329,7 +353,13 @@ def _heal_record(
     record = dataclasses.replace(record, files=files)
     if reasons:
         write_record(path, record)
-    return record, hashes
+    return record, hashes, stats
+
+
+def file_stat(path: Path) -> Stat:
+    """The file's size and mtime (ns), for the hash cache."""
+    st = path.stat()
+    return st.st_size, st.st_mtime_ns
 
 
 def source_ids_on_disk(config: Config, site: str) -> set[str]:
@@ -416,4 +446,7 @@ def add_picture(config: Config, placement: Placement, *, name: str | None) -> En
     shutil.move(file, placement.directory / file.name)
     write_record(placement.directory / INFO_NAMES[0], record)
     nsfw = placement.directory.resolve().is_relative_to(config.nsfw_root)
-    return Entry(placement.directory, placement.root, nsfw, record, (file.name,), file.name, name)
+    stats = {file.name: file_stat(placement.directory / file.name)}
+    return Entry(
+        placement.directory, placement.root, nsfw, record, (file.name,), file.name, name, stats
+    )

@@ -122,6 +122,12 @@ in the rest.
 - **Derived** fields are recomputed whenever they are missing, invalid or out of date, without
   asking: `schema` and `id` when absent (a new record), and per file `sha256`, `width`,
   `height` and `metrics`. A file whose content hash changed is measured again.
+  **Hash cache**: the index keeps each file's size and mtime (ns) beside its hash, and a file
+  whose size and mtime both match what the last index saw is not hashed again (hashing runs at
+  about 1 GB/s, so a large library would otherwise be read in full on every run). The cost: an
+  edit that leaves both as they were (a tool that restores the mtime, or a filesystem with
+  coarse timestamps) goes unnoticed until `amo index --rehash`, which ignores the cache. The cache is read without changing the database, so `--check` uses
+  it too.
 - **Authored** fields are never rewritten, because nothing could recompute them: `id` once set
   (usage keys off it), `name`, `default_file`, `source`, `fetched`, the shape of `files`,
   `derived_from` and `crop`. If one is invalid, or `info.yaml` does not parse (including a
@@ -149,11 +155,12 @@ cannot be rebuilt):
 
 - `records`: one row per record (id, name, directory, root, whether it is under the NSFW root,
   purity, category, tags as JSON, source site and id), and `files`: one row per file present
-  (path, record id, sha256 (indexed), whether it is the default file, size, every metric).
+  (path, record id, sha256 (indexed), whether it is the default file, size, every metric,
+  and for the hash cache its size in bytes and mtime in ns).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (2); a newer one than the
-  program knows is refused.
+  table. The database's `PRAGMA user_version` is its schema version (3); a newer one than the
+  program knows is refused. Schema 2 lacked the hash-cache columns; upgrading adds them empty.
 - `usage`: `id` (the record's), `shown_count`, `last_shown` (ISO 8601, UTC); later perhaps a
   rating. Keyed by record, so it follows a picture through renames and moves. Kept across
   rebuilds. The only mutable data; never written to info files, which keeps them stable under
@@ -335,7 +342,7 @@ apply. It is the input for comparing palette generators. Decided 2026-10-28:
 
 ```text
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
-amo index [--check]                  heal records, rebuild the index; --check reports only
+amo index [--check] [--rehash]       heal records, rebuild the index; --check reports only
 amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N]   matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]

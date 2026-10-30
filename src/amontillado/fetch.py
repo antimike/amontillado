@@ -34,7 +34,7 @@ from amontillado.classes import Look, classify
 from amontillado.config import Config
 from amontillado.index import add as add_to_index
 from amontillado.index import files_with_hash, source_ids
-from amontillado.library import Entry, source_ids_on_disk
+from amontillado.library import Entry, file_stat, source_ids_on_disk
 from amontillado.metrics import Metrics, image_size, measure_file
 from amontillado.record import INFO_NAMES, FileEntry, Record, sha256_file, write_record
 from amontillado.wallhaven import Client, Search, WallhavenError, Wallpaper
@@ -251,7 +251,8 @@ def _keep(
     finally:
         temporary.unlink(missing_ok=True)
     nsfw = directory.resolve().is_relative_to(config.nsfw_root)
-    add_to_index(conn, Entry(directory, root, nsfw, record, (file.name,), file.name, None))
+    stats = {file.name: file_stat(file)}
+    add_to_index(conn, Entry(directory, root, nsfw, record, (file.name,), file.name, None, stats))
     if matches:
         logger.info("kept %s (%s)", file, _classes(metrics))
     else:
