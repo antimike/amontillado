@@ -164,7 +164,7 @@ the input for the v0.2 design.
    backend is the only candidate that assigns the named hues and pairs contrast by design; try it
    before wallust. It needs matugen ≥ 4.0 (Fedora ships 3.1.0: COPR, cargo or the release binary).
 
-**Open:**
+**Open** (settled 2026-10-30 in [design.md](../design.md), "Theme engine (v0.2)"):
 
 - The `matugen` format for palettes matugen did not make (presets, wallust): amontillado would
   synthesise Material roles for `--import-json`, or the format works only with matugen-generated
