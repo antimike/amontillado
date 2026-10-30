@@ -19,7 +19,7 @@ from PIL import Image, ImageOps
 from amontillado.colour import srgb_to_oklch
 
 # Bump when a metric's definition changes: sidecars with an older version are recomputed.
-METRICS_VERSION = 1
+METRICS_VERSION = 2
 
 MEASURE_WIDTH = 432
 
@@ -30,6 +30,8 @@ EDGE_MIN = 0.08
 # Upper bounds of the hue sectors, in degrees; red wraps around 0°.
 _SECTOR_BOUNDS = np.array([44.0, 80.0, 125.0, 170.0, 230.0, 280.0, 310.0, 358.0])
 HUE_NAMES = ("red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink")
+# Width of the arc whose weight is hue_share, in degrees (one per histogram bin).
+HUE_ARC = 60
 WARM_HUES = frozenset({"red", "orange", "yellow", "pink"})
 
 _ALPHA_MODES = frozenset({"RGBA", "RGBa", "LA", "La", "PA"})
@@ -158,18 +160,42 @@ def _hue_statistics(hue: np.ndarray, weight: np.ndarray) -> dict[str, object]:
     cos_sum = float((weight * np.cos(radians)).sum())
     resultant = math.hypot(sin_sum, cos_sum) / total
 
-    sector = np.searchsorted(_SECTOR_BOUNDS, hue, side="right") % len(HUE_NAMES)
+    sector = _sector(hue)
     sector_weight = np.bincount(sector, weights=weight, minlength=len(HUE_NAMES))
-    top = int(sector_weight.argmax())
     warm = sum(sector_weight[i] for i, name in enumerate(HUE_NAMES) if name in WARM_HUES)
+    arc_weight, arc_hue = _heaviest_arc(hue, weight)
 
     return {
         "hue": math.degrees(math.atan2(sin_sum, cos_sum)) % 360.0,
-        "hue_name": HUE_NAMES[top],
-        "hue_share": float(sector_weight[top] / total),
+        "hue_name": HUE_NAMES[int(_sector(np.array(arc_hue)))],
+        "hue_share": arc_weight / total,
         "hue_spread": max(0.0, 1.0 - resultant),
         "warmth": float((2 * warm - total) / total),
     }
+
+
+def _sector(hue: np.ndarray) -> np.ndarray:
+    return np.searchsorted(_SECTOR_BOUNDS, hue, side="right") % len(HUE_NAMES)
+
+
+def _heaviest_arc(hue: np.ndarray, weight: np.ndarray) -> tuple[float, float]:
+    """The weight of the heaviest HUE_ARC-degree arc of the hue circle, and the weighted
+    circular mean of the hues in it.
+
+    Arcs start on whole degrees. Measuring the arc rather than a fixed sector keeps one hue
+    that straddles a sector boundary together; centring it on the peak rather than on the
+    mean hue keeps a dominant hue that a second one pulls the mean away from.
+    """
+    degree = np.floor(hue).astype(np.intp) % 360
+    histogram = np.bincount(degree, weights=weight, minlength=360)
+    wrapped = np.concatenate([histogram, histogram[: HUE_ARC - 1]])
+    arcs = np.convolve(wrapped, np.ones(HUE_ARC), mode="valid")
+    start = int(arcs.argmax())
+    inside = (degree - start) % 360 < HUE_ARC
+    radians = np.radians(hue[inside])
+    w = weight[inside]
+    mean = math.degrees(math.atan2((w * np.sin(radians)).sum(), (w * np.cos(radians)).sum()))
+    return float(arcs[start]), mean % 360.0
 
 
 def _edge_density(lightness: np.ndarray) -> float:
