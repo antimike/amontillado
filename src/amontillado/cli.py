@@ -53,6 +53,7 @@ from amontillado.index import (
 )
 from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
 from amontillado.metrics import HUE_NAMES, measure_file
+from amontillado.palette import PaletteError, dump_palette, palette_from_schemes
 from amontillado.record import sha256_file
 from amontillado.wallhaven import (
     CATEGORY_FLAGS,
@@ -312,6 +313,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fetch.set_defaults(func=cmd_fetch)
 
+    palette = commands.add_parser(
+        "palette",
+        help="Make a palette.",
+        description="Print a palette (per variant, the base24 colours and the roles: accent, "
+        "selection, ...) as YAML. Base24 keys and roles the source leaves out are derived.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(palette, argparse.SUPPRESS)
+    palette.add_argument(
+        "--from-scheme",
+        nargs="+",
+        type=Path,
+        required=True,
+        metavar="FILE",
+        help="One tinted-theming scheme (base16 or base24 YAML), or a dark and a light one of "
+        "a family, which make one palette with both variants.",
+    )
+    palette.set_defaults(func=cmd_palette)
+
     return parser
 
 
@@ -530,6 +550,14 @@ def cmd_shown(args: argparse.Namespace) -> None:
                     record_shown(conn, record_id)
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
+
+
+def cmd_palette(args: argparse.Namespace) -> None:
+    try:
+        palette = palette_from_schemes(args.from_scheme)
+    except PaletteError as exc:
+        sys.exit(f"amontillado: {exc}")
+    print(dump_palette(palette), end="")
 
 
 def cmd_add(args: argparse.Namespace) -> None:

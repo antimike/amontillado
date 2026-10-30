@@ -8,6 +8,10 @@ All notable changes to amontillado are documented here. The format follows
 
 ### Added
 
+- Palettes (v0.2 theme engine): per variant (dark, light), all 24 base24 colours plus roles
+  (accent, selection, error, ...); base24 keys and roles a source leaves out are derived in
+  OKLCH. `amo palette --from-scheme FILE [FILE]` converts one tinted-theming scheme (base16 or
+  base24, current or legacy format), or a family's dark and light pair, into a palette.
 - `amo index --rehash`: hash every file again (see the hash cache below).
 
 ### Changed

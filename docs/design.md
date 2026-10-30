@@ -2,7 +2,8 @@
 
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
 implemented, test sets included; class thresholds calibrated (2026-10-28). v0.2's theme engine is
-agreed (2026-10-30), not yet implemented: "Theme engine (v0.2)". Values marked
+agreed (2026-10-30) and being built: the palette model and `amo palette --from-scheme` are
+implemented; "Theme engine (v0.2)". Values marked
 *initial* are starting points to calibrate on real images; change them here when they change in code.
 
 ## Scope
@@ -492,7 +493,16 @@ palette has both.
 scheme (base16 or base24 YAML, e.g. from the `tinted-theming/schemes` catalogue) into a palette,
 deriving the missing keys and roles as above; given two files (a family's dark and light
 schemes, as gruvbox and solarized ship), it makes one palette with both variants, each file
-placed by its `variant` key.
+placed by its `variant` key. Both scheme formats are read: the current one (`system`, `name`,
+`variant`, colours under `palette`) and the legacy one (`scheme`, colours at the top level
+without `#`); a scheme without a `variant` is dark when its `base00` has OKLCH lightness below
+0.5. The palette's `name` is the scheme's, or for two the words their names begin with
+("Gruvbox dark, hard" and "Gruvbox light, hard" make "Gruvbox"); `source.schemes` records each
+variant's scheme name, author and file. Colour values must be quoted strings (an unquoted
+`282828` is a YAML integer). A palette file is validated on load: `version: 1`, a name, at least
+one of `dark` and `light`, all of `base00`-`base0F` per variant, colours as `"#rrggbb"`, and no
+unknown key inside a variant (a misspelt role would otherwise be silently derived); an unknown
+top-level key is a warning.
 
 ### Contrast checks
 
