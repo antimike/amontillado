@@ -13,6 +13,7 @@ from PIL import Image
 from rich.console import Console
 
 from amontillado import __version__, cli
+from amontillado import library as library_module
 from amontillado.cli import get_cli_arguments, main
 from amontillado.wallhaven import Client
 
@@ -125,6 +126,23 @@ def test_index_check_writes_nothing_and_fails(library: Path, home: Path) -> None
     assert exc.value.code == "amontillado: 1 record to heal"
     assert (library / "r" / "info.yaml").read_text() == ""
     assert not (home / ".local/state/amontillado/index.sqlite").exists()
+
+
+def test_index_hashes_only_changed_files_unless_rehashing(
+    library: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _record(library / "r")
+    main(["index"])
+    hashed: list[Path] = []
+    real = library_module.sha256_file
+    monkeypatch.setattr(
+        library_module, "sha256_file", lambda path: hashed.append(path) or real(path)
+    )
+    main(["index"])
+    main(["index", "--check"])
+    assert hashed == []
+    main(["index", "--rehash"])
+    assert [path.name for path in hashed] == ["a.png"]
 
 
 def test_index_check_passes_on_a_healed_library(library: Path) -> None:

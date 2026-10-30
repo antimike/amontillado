@@ -43,6 +43,7 @@ from amontillado.index import (
     files,
     files_with_hash,
     find_record,
+    known_hashes,
     names,
     rebuild,
     record_shown,
@@ -135,6 +136,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Report what would be healed, and fail if anything would; write nothing (the "
         "dry run of this command).",
+    )
+    index.add_argument(
+        "--rehash",
+        action="store_true",
+        help="Hash every file, not only those whose size or mtime changed since the last index "
+        "(an edit that keeps both goes unnoticed otherwise).",
     )
     index.set_defaults(func=cmd_index)
 
@@ -417,8 +424,15 @@ def _index_error(config: Config, exc: Exception) -> NoReturn:
 
 def cmd_index(args: argparse.Namespace) -> None:
     config = _load_config()
+    try:
+        known = {} if args.rehash else known_hashes(config.index_path)
+    except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+        _index_error(config, exc)
     report = heal_library(
-        config, check=args.check, track=_progress("checking" if args.check else "indexing")
+        config,
+        check=args.check,
+        known=known,
+        track=_progress("checking" if args.check else "indexing"),
     )
     if args.check:
         logger.info("%s", _summary(f"checked {_count(report.records, 'record')}", report, True))

@@ -6,7 +6,14 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `amo index --rehash`: hash every file again (see the hash cache below).
+
 ### Changed
+
+- `amo index` hashes only files whose size or mtime changed since the last index; the index
+  keeps both per file (schema 3; a schema 2 index is upgraded in place).
 
 - `hue_share` is the weight of the heaviest 60° arc of hues, and `hue_name` names the sector
   holding that arc's mean, so a hue on a sector boundary is no longer split (metrics version
