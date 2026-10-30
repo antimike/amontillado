@@ -2,7 +2,7 @@
 
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
 implemented, test sets included; class thresholds calibrated (2026-10-28). v0.2's theme engine is
-proposed (2026-10-29), not yet agreed: "Theme engine (v0.2, proposed)". Values marked
+agreed (2026-10-30), not yet implemented: "Theme engine (v0.2)". Values marked
 *initial* are starting points to calibrate on real images; change them here when they change in code.
 
 ## Scope
@@ -11,7 +11,7 @@ proposed (2026-10-29), not yet agreed: "Theme engine (v0.2, proposed)". Values m
 Wallhaven with filters, and build test sets. No GUI, no wallpaper setter, no timer: those belong
 to the user's desktop configuration and call `amo list`.
 
-**v0.2, the theme engine (proposed):** palettes from pictures, presets or tinted-theming schemes,
+**v0.2, the theme engine:** palettes from pictures, presets or tinted-theming schemes,
 contrast checks, and per-app templates rendered into a per-profile cache, with reload commands.
 
 **Later (see "Roadmap"):** palette-aware grouping and selection across monitors.
@@ -379,24 +379,25 @@ and exits non-zero if it kept fewer than `--count` (`--test-set` prints and fail
 "Test set"). `--dry-run` measures thumbnails, downloads
 nothing, and prints the page URL of each wallpaper it would keep.
 
-## Theme engine (v0.2, proposed)
+## Theme engine (v0.2)
 
-**Status: proposed 2026-10-29, not yet agreed.** No code until MH agrees it; the decisions to
-settle are under "Theme engine: decisions for MH" at the end of this section. Background, sources
-and the rejected options: [research/tinted-theming.md](research/tinted-theming.md) (its
-"Direction" is the input; points where this section departs from it are marked **departs**).
+**Status: agreed with MH 2026-10-30** (proposed 2026-10-29; the decisions are under "Theme
+engine: decisions" at the end of this section). Background, sources and the rejected options:
+[research/tinted-theming.md](research/tinted-theming.md) (its "Direction" is the input; points
+where this section departs from it are marked **departs**).
 
 amontillado makes a palette (from a picture, a palette file or a tinted-theming scheme), checks
 its contrast, renders one file per configured app into a per-profile cache, and runs each app's
 reload command. It never edits an app's own config: the user's config (chezmoi's, for MH)
 includes the rendered file, as pywal's `~/.cache/wal` is included (chezmoi D39). It runs neither
-tinty nor pywal, and matugen or wallust only to generate a palette.
+tinty nor pywal; matugen or wallust generate palettes, and matugen renders an app's template only
+when that app asks for it (`render_with: matugen`).
 
 ### Flow
 
 ```text
-amo theme apply PICTURE            1. generate a palette (generator adapter) or load one
-                                   2. check contrast, adjust foregrounds that fail
+amo theme apply PICTURE            1. generate a palette, both variants (generator adapter), or load one
+                                   2. check contrast per variant, adjust colours that fail
                                    3. render every app into <cache>/.<profile>.new/
                                    4. swap it in for <cache>/<profile>/, point `current` at it
                                    5. run each app's reload command, then the wallpaper hook
@@ -409,35 +410,41 @@ not be running). Nothing in `apply` uses the network; template sources are fetch
 
 ### Palette
 
-A palette is a YAML file: base24 plus roles, one variant.
+A palette is a YAML file: per variant, base24 plus roles. A palette generated from a picture
+always holds both variants; a preset or scheme holds what it was given (usually one).
 
 ```yaml
 version: 1                      # palette format version
 name: wallhaven-xed63v          # the picture's name or id, the preset's or scheme's name
-variant: dark                   # dark | light
 source:                         # informational
   picture: 01HXYZ...            # record id, when generated from a picture
   file: wallhaven-xed63v.jpg
+  lightness: 0.31               # the picture's lightness metric, for variant: auto
   generator: matugen 4.2.0
   generated: 2026-10-29T18:00:00+00:00
-base24:                         # base00-base17, "#rrggbb"
-  base00: "#1b1d2b"
-  # ...
-  base17: "#e48bff"
-roles:                          # any role left out is derived (below)
-  accent: "#7aa2f7"
-  on_accent: "#1b1d2b"
-  secondary: "#bb9af7"
-  on_secondary: "#1b1d2b"
-  border: "#7aa2f7"
-  border_inactive: "#565f89"
-  selection: "#33467c"
-  on_selection: "#c0caf5"
-  error: "#f7768e"
-  warning: "#e0af68"
-  success: "#9ece6a"
-  info: "#7dcfff"
-adjusted: [base03, on_accent]   # written by the contrast check: colours it changed
+variants:
+  dark:
+    base24:                     # base00-base17, "#rrggbb"
+      base00: "#1b1d2b"
+      # ...
+      base17: "#e48bff"
+    roles:                      # any role left out is derived (below)
+      accent: "#7aa2f7"
+      on_accent: "#1b1d2b"
+      secondary: "#bb9af7"
+      on_secondary: "#1b1d2b"
+      border: "#7aa2f7"
+      border_inactive: "#565f89"
+      selection: "#33467c"
+      on_selection: "#c0caf5"
+      error: "#f7768e"
+      warning: "#e0af68"
+      success: "#9ece6a"
+      info: "#7dcfff"
+    adjusted: [base03, on_accent]   # written by the contrast check: colours it changed
+  light:
+    base24: {}                  # same keys
+    roles: {}
 ```
 
 **base24** follows the tinted-theming base24 styling guide: `base00`-`base07` a neutral ramp
@@ -463,14 +470,22 @@ the file does not give them:
 `warning` is `base0A` (yellow) rather than base24's `base0F` ("warning elements", usually brown):
 status bars and notifications expect yellow; a palette file can set it.
 
-**Variant.** `--variant dark|light`; default `auto`: light when the picture's `lightness` metric
-is above the `--light` threshold (0.65), dark otherwise. A palette file states its variant. One
-palette holds one variant (see the matugen view for what that costs).
+**Variant** chooses which of the palette's variants is applied: `auto`, `dark` or `light`. It is
+set globally (`theme.variant`, default `auto`), per run (`--variant`), and per app
+(`apps.<app>.variant`, which wins over both). `auto` is light when the picture's `lightness`
+metric is above the `--light` threshold (0.65), dark otherwise; for a palette without a picture,
+its dark variant if it has one. A variant the palette lacks (a one-variant preset) is a warning,
+and the app gets the variant the palette has: amontillado never makes a variant by inverting a
+palette (the chezmoi plan dropped inversion: it does not give good contrast). Formats that
+address both variants at once (the matugen view's `.dark` and `.light`) get both when the
+palette has both.
 
 **Presets.** Palette files in `$XDG_CONFIG_HOME/amontillado/palettes/<name>.yaml`
-(`--palette NAME` or a path). `amo palette --from-scheme FILE` converts a tinted-theming scheme
-(base16 or base24 YAML, e.g. from the `tinted-theming/schemes` catalogue) into a palette,
-deriving the missing keys and roles as above.
+(`--palette NAME` or a path). `amo palette --from-scheme FILE [FILE]` converts a tinted-theming
+scheme (base16 or base24 YAML, e.g. from the `tinted-theming/schemes` catalogue) into a palette,
+deriving the missing keys and roles as above; given two files (a family's dark and light
+schemes, as gruvbox and solarized ship), it makes one palette with both variants, each file
+placed by its `variant` key.
 
 ### Contrast checks
 
@@ -487,26 +502,40 @@ report; APCA is the alternative, see decisions). Pairs and minimums (*initial*):
 | `on_selection` on `selection` | 4.5 | selected text |
 | `border` on `base00` | 3.0 | non-text UI (WCAG 1.4.11) |
 
-A failing foreground is moved in OKLCH lightness (away from its background, hue kept, chroma
-lowered only to stay in gamut) until it passes; each change is logged and listed under
-`adjusted`. Backgrounds and `accent` are never moved: they carry the picture's look.
-`--no-adjust` reports failures without changing anything; `amo palette --check FILE` reports
-on a palette file.
+Each variant is checked on its own. `theme.contrast` sets what happens to a failing pair:
+`adjust` (default), `report` (log failures, change nothing) or `off`; `--no-adjust` gives
+`report` for one run. `amo palette --check FILE` reports on a palette file.
+
+Adjusting moves a colour in OKLCH lightness (away from the other colour of the pair, hue kept,
+chroma lowered only to stay in gamut) by the smallest step that passes; each change is logged
+and listed under `adjusted`. What may move, in order:
+
+1. the foreground of the pair;
+2. `accent` (and `secondary`), only when no foreground fixes the pair: `border` (the accent) on
+   `base00`, or an accent at middle lightness that neither `base00` nor `base07` labels at 4.5;
+3. never the ramp backgrounds `base00`, `base01`, `base10`, `base11`.
+
+Foregrounds first, because each fix then touches one pair only: a background sits under every
+foreground, so moving it to fix one pair changes all the others. The accent is the palette's
+link to the picture, so it moves last and as little as possible.
 
 ### Generators
 
-An adapter takes a picture path and a variant and returns a partial palette (base16 or base24,
-and any roles it knows); amontillado completes it as above. Generators are external programs,
+An adapter takes a picture path and returns a partial palette for each variant (base16 or
+base24, and any roles it knows); amontillado completes it as above. Generators are external programs,
 detected at run time (`pipx install` works without them; the commands that need one say so):
 
 - **matugen ≥ 4.0** (first): its base16 backend assigns the named hues and its Material roles give
-  `accent` (primary), `secondary` and the surfaces. Fedora ships 3.1.0, which has no base16
-  output: amontillado reports the version and refuses rather than guessing base16 from Material
-  roles. The exact command line and JSON keys are checked against matugen 4.2 when the adapter
+  `accent` (primary), `secondary` and the surfaces; one run gives both variants. Fedora ships
+  3.1.0, which has Material roles only and no base16 output (4.0, 2026-02, added the base16
+  backend, `hex_alpha` and the `format` / `set_alpha` filters, and changed the default JSON):
+  amontillado reports the version and refuses rather than invent six named hues from three
+  Material accents. The exact command line and JSON keys are checked against matugen 4.2 when the adapter
   is written.
 - **wallust** (second): 16 colours clustered from the image, mapped onto base16 by the ANSI table
   in reverse. Its `color1` need not be red, so the named-hue slots are only nominal; roles are
-  derived. Useful when matugen is not installed.
+  derived. Two runs, one with a dark palette setting and one with a light (the setting names are
+  checked when the adapter is written). Useful when matugen is not installed.
 
 `theme.generator` in the config picks one; default the first installed in that order.
 
@@ -560,7 +589,7 @@ Each format gets a *view* of the palette: the variables its templates expect.
   defines, and its `lighten` / `darken` calls. An unknown property is a render error.
 - **matugen** (**departs**: the direction had matugen render these with `--import-json`):
   amontillado renders the subset of matugen's template language that matugen-themes uses, over a
-  Material view of the palette. Counted over all 79 matugen-themes templates (2026-10-29): 4,476
+  Material view of the palette. Counted over all 74 matugen-themes templates (2026-10-29): 4,476
   of 4,680 markers (96%) are plain colour fields (`{{colors.<role>.<mode>.hex}}`, `hex_stripped`,
   `red`, `green`, `blue`); the rest are the fields `rgb`, `rgba`, `hex_alpha`, the filters
   `set_alpha`, `set_lightness`, `auto_lightness`, `saturate` (with `hsl`), `lighten` and
@@ -572,8 +601,10 @@ Each format gets a *view* of the palette: the variables its templates expect.
   `--import-json` only *adds* variables, its `colors.*` always come from its own generation, so
   with matugen rendering, a preset or wallust palette could not drive matugen-themes templates
   at all. Rendering ourselves works for every palette and needs no matugen at theme switch.
+  An app can still choose matugen as its renderer (`render_with: matugen`, below).
 
-  The Material view maps the palette onto Material roles: `primary` from `accent`, `secondary`
+  The Material view is a table that computes every Material role name those templates use
+  (`colors.primary`, `colors.surface_container_high`, ...) from the palette at render time: `primary` from `accent`, `secondary`
   from `secondary`, `tertiary` from the `base08`-`base0E` accent farthest in hue from `accent`,
   `error` from `error`, each with its `on_*`, `*_container` (the colour at `base02`'s lightness,
   chroma reduced, for a dark variant; at `base06`'s for a light one), `on_*_container`, and the
@@ -582,9 +613,11 @@ Each format gets a *view* of the palette: the variables its templates expect.
   lightened by L +0.03; `on_surface` = `base05`, `on_surface_variant` = `base04`, `outline` =
   `base03`, `outline_variant` = `base02`); `inverse_*`, `shadow`, `scrim`, `source_color`,
   `surface_tint` by the obvious rule. The full table lives in code, with a test that it covers
-  every role matugen 4.2 exports. The palette holds one variant, so `.dark`, `.light` and
-  `.default` all give the palette's colours: a template that uses both modes at once loses the
-  difference.
+  every role matugen 4.2 exports. `.dark` and `.light` give the palette's dark and light
+  variants, `.default` the applied one; with a one-variant palette all three give that variant.
+  Of the 74 templates, only `zed-colors.json` uses both modes (a dark and a light Zed theme in
+  one file); six use only `.dark`, which under matugen stays dark in light mode and here gives the
+  palette's dark variant.
 
 ### Per-app configuration
 
@@ -596,12 +629,15 @@ theme:
   profile: default                      # the profile `amo theme apply` writes without --profile
   generator: matugen                    # default: the first installed of matugen, wallust
   variant: auto                         # auto | dark | light
+  contrast: adjust                      # adjust | report | off
   wallpaper: {reload: "hyprctl hyprpaper reload ,{wallpaper}"}
   apps:
     kitty:    {reload: "pkill -USR1 kitty"}                   # source defaults to builtin
     rofi:     {source: tinted}                                 # complete theme from base16-rofi
     waybar:   {source: builtin, template: gtk, output: waybar-colors.css, reload: "pkill -USR2 waybar"}
     hyprland: {source: matugen-themes, template: hyprland-colors.lua, reload: "hyprctl reload"}
+    zed:      {source: matugen-themes, template: zed-colors.json, render_with: matugen}
+    rofi-alt: {source: tinted, template: rofi, variant: light, output: rofi-light.rasi}
     nvim:     {}                                               # palette.lua, for a lush spec
     mytool:   {source: path, path: ~/.config/mytool/theme.mustache, format: mustache, output: mytool.conf}
 ```
@@ -617,6 +653,15 @@ theme:
 - `reload`: a command run after the swap, split as a shell would split it and run without one
   (as `api_key_command`); `{wallpaper}`, `{profile}` and `{dir}` are substituted. No shell, so
   a pipeline needs a script.
+- `variant`: this app's variant, over `theme.variant` and `--variant` ("Palette").
+- `render_with`: `amontillado` (default) or `matugen`, for `format: matugen` only. With `matugen`,
+  amontillado writes a matugen config holding every such app's template and runs matugen once
+  per apply (`matugen image PICTURE`, or `matugen color hex ACCENT` for a palette without a
+  picture), rendering into the new profile directory. **Caveats**: the colours are matugen's own,
+  not the palette's, since matugen cannot take colours in (`--import-json` only adds variables):
+  the app misses the contrast adjustments, and with a preset or wallust palette it gets colours of
+  the same accent hue but not the same colours. matugen ≥ 4 must be installed for every apply.
+  Config-only, no CLI override.
 - `wallpaper.reload`: run last, with the picture's path. Setting a wallpaper stays the user's
   command; amontillado only knows which picture belongs to the theme.
 
@@ -632,7 +677,20 @@ commit and output). `<cache>/current` is a symlink to the profile last applied (
 renders a profile without moving it). App configs include from `current/`, or from a fixed
 profile; the "falling back to `current/`" of D39 is the user's include line, which amontillado
 does not need to know about. A profile directory is built beside the old one and swapped in by
-rename, so an app reading during an apply sees the old theme or the new one, never a mix.
+rename, and `current` is moved by renaming a new symlink over it (`ln -sfn` is not atomic), so
+an app reading during an apply sees the old theme or the new one, never a mix.
+
+A file watcher must watch a directory that is never replaced: `<cache>/` itself, reacting to
+`current` (or a profile name) being renamed. A watch on `current/palette.lua` watches the
+profile directory the link pointed to when the watch began, and goes deaf when that directory
+is swapped out; a watch on a file goes deaf whenever the file is replaced by rename. (A real
+`current/` directory, files copied in, was considered: its watch path is stable, but the switch
+is no longer all-or-nothing, and an app reading mid-copy can see two themes.)
+
+`--app NAME` (repeatable) re-renders only those apps: the new profile directory starts as a copy
+of the current one. Without a PICTURE or `--palette` that is always consistent (after a config
+change). With one, the named apps get the new palette and the others keep the old; `theme.yaml`
+records each app's palette, and `amo theme current` warns when they differ.
 
 ### nvim and lush
 
@@ -647,19 +705,20 @@ return {
 ```
 
 A lush spec in the user's nvim config `dofile`s it and maps roles onto highlight groups; a
-`vim.uv` file watcher on `palette.lua` re-runs `colorscheme`, so nvim needs no reload command.
+`vim.uv` file watcher on the cache directory (`~/.cache/theme/`, filtered on `current`; see
+"Cache" for why not on `palette.lua`) re-runs `colorscheme`, so nvim needs no reload command.
 `docs/examples/lush/` carries an example spec and the watcher (documentation, not a plugin).
 Without lush, `source: tinted` (tinted-nvim) or `source: matugen-themes` (`neovim`) theme nvim
 directly.
 
-### CLI (v0.2, proposed)
+### CLI (v0.2)
 
 ```text
-amo palette PICTURE [--generator G] [--variant V] [--no-adjust]   a palette as YAML on stdout
-amo palette --from-scheme FILE [--no-adjust]   a tinted-theming scheme as a palette
+amo palette PICTURE [--generator G] [--no-adjust]   a palette (both variants) as YAML on stdout
+amo palette --from-scheme FILE [FILE] [--no-adjust]   one or two tinted-theming schemes as a palette
 amo palette --check FILE                       contrast report; non-zero if a pair fails
-amo theme apply [PICTURE | --palette NAME|FILE] [--profile P] [--apps LIST] [--no-activate]
-                [--no-reload] [--dry-run]       render, swap in, reload
+amo theme apply [PICTURE | --palette NAME|FILE] [--profile P] [--variant V] [--app NAME]...
+                [--no-adjust] [--no-activate] [--no-reload] [--dry-run]   render, swap in, reload
 amo theme sync [--check]                       fetch (or verify) every template the config needs
 amo theme templates [APP]                      registry entries, sources and their variables
 amo theme current [--profile P]                the applied palette's name, picture and time
@@ -672,35 +731,33 @@ as shown (`amo shown`), so the usage table sees theme switches.
 
 New runtime dependency: `pystache` (MIT). matugen and wallust are optional external programs.
 
-### Theme engine: decisions for MH
+### Theme engine: decisions
 
-Settled in the research, not repeated: amontillado renders, no tinty; base24 plus roles;
-variables-only built-ins; per-app YAML; pinned URLs; `palette.lua` for lush; matugen ≥ 4 before
-wallust. Proposed here, to agree or change:
+Settled in the research: amontillado renders, no tinty; base24 plus roles; variables-only
+built-ins; per-app YAML; pinned URLs; `palette.lua` for lush; matugen ≥ 4 before wallust.
+Agreed with MH, 2026-10-30:
 
-1. **matugen templates rendered by amontillado** (the matugen view above), not by matugen with
-   `--import-json`. Otherwise matugen-themes works only with matugen-generated palettes, and
-   matugen must be installed for every theme switch. Cost: a renderer for that subset (fields,
-   six filters, `for`/`if`) whose filter arithmetic must match matugen's, kept in step with what
-   matugen-themes uses; anything outside the subset is an error, not a silent gap. Fallback if
-   that proves too costly: support only the plain colour fields (96% of markers) and let the
-   few templates using filters fail.
-2. **One variant per palette.** Templates that use `.dark` and `.light` together get the same
-   colours for both. The alternative, generating both variants every time, doubles generator
-   runs for a feature no planned app uses.
-3. **Contrast: WCAG 2 ratios, adjust by default.** APCA models perceived contrast better for
-   dark themes but has no settled thresholds; WCAG 2 is what checkers (including chezmoi's
-   `tools/term-contrast`, to check) report. Backgrounds and the accent are never moved.
-4. **`current` is a symlink** to the last applied profile (my reading of D39's "falling back to
-   `current/`"); to confirm against the chezmoi include lines.
+1. **matugen-format templates are rendered by amontillado** over the Material view (**departs**
+   from the research's direction), with `render_with: matugen` per app, config-only, its caveats
+   documented. If the filter subset proves too costly, support the plain colour fields only (96%
+   of markers) and let the templates using filters fail.
+2. **Palettes from pictures hold both variants** (free with matugen, a second wallust run);
+   `variant` (global, `--variant`, per app) chooses which is applied. Presets hold what they are
+   given; a missing variant warns and falls back. No inversion.
+3. **Contrast: WCAG 2 ratios, `theme.contrast: adjust | report | off`** (default `adjust`;
+   `--no-adjust` per run). Foregrounds move first, then the accent as a last resort, never the
+   ramp backgrounds. APCA models perceived contrast better for dark themes but has no settled
+   thresholds.
+4. **`current` is a symlink**, swapped atomically; watchers watch the cache directory.
 5. **No network in `apply`.** Templates are fetched only by `amo theme sync`; a missing one is an
    error naming the command. A timer-driven switch then never waits on GitHub.
 6. **`variant: auto` from the `lightness` metric** (light above 0.65).
 7. **`warning` is `base0A`** (yellow), not base24's `base0F`.
 8. **The wallpaper hook lives in amontillado's config** (`theme.wallpaper.reload`), so wallpaper
    and theme switch as one step; the command itself (hyprpaper, swaybg) is still the user's.
-9. **matugen 3 is refused**, not supported through its Material roles, until Fedora ships 4.x or
-   MH installs it from COPR, cargo or a release binary (chezmoi plan, step 1).
+9. **matugen 3 is refused** until Fedora ships 4.x or MH installs it from COPR, cargo or a
+   release binary (chezmoi plan, step 1).
+10. **`--app NAME`** (repeatable) applies to a subset of apps ("Cache").
 
 ## Testing
 
@@ -719,7 +776,13 @@ wallust. Proposed here, to agree or change:
    templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
    from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,
    pywal), without running tinty: [research/tinted-theming.md](research/tinted-theming.md).
-   Design proposed in "Theme engine (v0.2, proposed)".
+   Design agreed 2026-10-30: "Theme engine (v0.2)".
+   Also for v0.2, **a commented config template**: `amo config init` writes `config.yaml` from a
+   template shipped in the package, every key commented with its meaning and trade-offs (e.g.
+   `render_with: matugen`'s caveats); `amo config check` validates a config. The key
+   descriptions live in one table in code that generates the template's comments and the
+   `--help` text of any flag overriding a key; this document links to the template rather than
+   repeating it.
 4. git-annex libraries (epic `amo-qnn`): each root a git-annex repository, info files in git,
    images annexed (SHA-256 keys, the same hash as each file's `sha256`); the index stays outside, in
    `$XDG_STATE_HOME`. Encryption of the NSFW library off-machine is a spike (git-remote-gcrypt
