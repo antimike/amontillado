@@ -64,7 +64,7 @@ files:
     width: 3840
     height: 2160
     metrics:                        # per file: a crop measures differently
-      version: 1                    # bump when a metric's definition changes: forces recomputation
+      version: 2                    # bump when a metric's definition changes: forces recomputation
       lightness: 0.31
       chroma: 0.042
       colourful_share: 0.38
@@ -199,7 +199,7 @@ only, each weighted by its chroma, so a few vivid pixels count more than many ne
 | `chroma` | mean C over all pixels | muted images give generators almost no hue (grey palettes); saturated ones test whether accents turn garish |
 | `colourful_share` | share of chromatic pixels | separates "a little colour everywhere" from "a vivid patch on grey" |
 | `hue` | chroma-weighted circular mean of h | the image's overall hue |
-| `hue_name`, `hue_share` | the named sector (below) with the largest chroma weight, and its share of all chromatic weight | "red-heavy" |
+| `hue_name`, `hue_share` | the heaviest 60° arc of chroma-weighted hues: the named sector (below) holding its weighted mean hue, and its share of all chromatic weight | "red-heavy" |
 | `hue_spread` | circular variance of the chroma-weighted hues, 1 − R (0 = one hue, 1 = all hues evenly) | monochrome vs multi-hued: does the generator find distinct accents when the image offers one hue? |
 | `warmth` | (warm weight − cool weight) / total chromatic weight, in −1..1 | warm vs cool; warm sectors are red, orange, yellow, pink |
 | `busy` | edge density: share of interior pixels whose Sobel gradient magnitude on L exceeds 0.08 (*initial*) | legibility of text over translucent, blurred windows |
@@ -210,7 +210,11 @@ left out.
 
 Hue sectors (degrees, OKLCH; boundaries halfway between the reference hues, *initial*; each
 sector includes its lower bound): red 358-44, orange 44-80, yellow 80-125, green 125-170,
-cyan 170-230, blue 230-280, purple 280-310, pink 310-358.
+cyan 170-230, blue 230-280, purple 280-310, pink 310-358. They name hues and split `warmth`;
+`hue_share` measures an arc instead (arcs start on whole degrees), so one hue that straddles a
+boundary is not split, and the arc follows the peak rather than the mean hue, so a dominant hue
+keeps its share when a second hue pulls the mean away (metrics version 2; version 1 used the
+heaviest sector).
 
 A greyscale image has no chromatic pixels: `hue`, `hue_name` are null, `hue_share`,
 `hue_spread` and `warmth` are 0. It is muted, never monochrome.
@@ -224,7 +228,7 @@ Values are rounded when written: `hue` to 0.1°, the others to 3 decimals.
 | `--dark` / `--light` | `lightness` < 0.35 / > 0.65 | 21% / 22% |
 | `--muted` / `--saturated` | `chroma` < 0.02 / > 0.075 | 19% / 18% |
 | `--sparse` / `--busy` | `busy` < 0.03 / > 0.15 | 17% / 17% |
-| `--hue NAME` | `hue_name` = NAME and `hue_share` ≥ 0.40, and not muted | 2-20% per hue; 68% have one |
+| `--hue NAME` | `hue_name` = NAME and `hue_share` ≥ 0.40, and not muted | 4-23% per hue; 80% have one |
 | `--monochrome` / `--multi-hue` | has chromatic pixels and `hue_spread` < 0.03 / `hue_spread` > 0.50 | 20% / 15% |
 | `--warm` / `--cool` | `warmth` > 0.8 / < −0.8, and not muted | 29% / 14% |
 
@@ -238,9 +242,13 @@ outside the repository), thresholds set so each class holds roughly a fifth. Fin
 - `warmth` is nearly binary for the same reason (p25 −0.47, p75 0.94), so the threshold barely
   moves the warm share; leaving out muted images (whose warmth is only a tint) does. Warm stays
   the largest class: the sample leans warm (red is the top hue, 20%).
-- Fixed hue sectors split one hue rarely: 11 of the 278 images with `hue_spread` < 0.30 have
-  `hue_share` < 0.40. A share within ±30° of the mean hue would recover about half of them; not
-  worth a metric version for v0.1 (see "Open questions").
+- Fixed hue sectors split one hue: 11 of the 278 images with `hue_spread` < 0.30 had a
+  heaviest-sector share < 0.40. Metrics version 2 (2026-10-29) measures the heaviest 60° arc
+  instead: none of the 11 stays below 0.40, no image loses its `--hue` class, 47 gain one
+  (images with a dominant hue among others; one hue now holds 80% of the sample, was 68%) and
+  15 change name (a hue near a boundary, named by where its weight centres). An arc centred on
+  the mean hue was tried first and rejected: it drops images whose two hues put the mean
+  between them (22 lost their class). 0.40 was kept: the share it asks for is unchanged.
 - Thumbnails measure like their full images (40 pairs): median |difference| in `busy` 0.002,
   p90 0.021; in `lightness` 0.003 / 0.022. JPEG artefacts in thumbnails do not inflate `busy`.
 - The metric constants (chromatic C > 0.03, edge 0.08, the hue sectors) were not changed:
@@ -395,9 +403,10 @@ nothing, and prints the page URL of each wallpaper it would keep.
 
 ## Open questions
 
-- Hue sectors: whether `hue_share` should be the weight within ±30° of the mean hue (and
-  `hue_name` the sector holding the mean hue), so a hue on a sector boundary is not split;
-  about 4% of narrow-hued images are affected ("Calibration").
+- `HUE_SHARE_MIN`: kept at 0.40 when metrics version 2 raised `--hue` coverage from 68% to 80%
+  of the calibration sample ("Calibration"). Raising it narrows `--hue` to images dominated by
+  one hue: 0.45 leaves 77%, 0.50 73%, 0.55 67% (about the old coverage). Revisit if `--hue`
+  results look too loose in use; it is a query-time threshold, so no metrics version is needed.
 - Whether `amo list` should prefer images shown least recently (it has the usage table).
 - Index staleness: `amo list` trusts the index; whether it should detect changes since the last
   `amo index` (a stat walk of the roots) and warn or refresh.

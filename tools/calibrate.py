@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import math
 import sys
 from logging import getLogger
 from pathlib import Path
@@ -33,8 +32,7 @@ from rich.logging import RichHandler
 
 from amontillado import classes
 from amontillado.cli import HelpFormatter
-from amontillado.colour import srgb_to_oklch
-from amontillado.metrics import CHROMATIC_MIN, Metrics, load_rgb, measure, measure_file
+from amontillado.metrics import METRICS_VERSION, Metrics, measure_file
 from amontillado.wallhaven import Client, Search, WallhavenError
 
 logger = getLogger("calibrate")
@@ -128,72 +126,58 @@ def cmd_sample(args: argparse.Namespace) -> None:
         sys.exit(f"calibrate: the search ended at {len(seen)} results")
 
 
-def window_share(rgb: np.ndarray, half_width: float) -> float:
-    """Share of chromatic weight within ±half_width degrees of the mean hue."""
-    _, chroma, hue = srgb_to_oklch(rgb)
-    chromatic = chroma > CHROMATIC_MIN
-    hue, weight = hue[chromatic], chroma[chromatic]
-    if weight.sum() == 0:
-        return 0.0
-    radians = np.radians(hue)
-    mean = math.degrees(
-        math.atan2((weight * np.sin(radians)).sum(), (weight * np.cos(radians)).sum())
-    )
-    distance = np.abs((hue - mean + 180.0) % 360.0 - 180.0)
-    return float(weight[distance <= half_width].sum() / weight.sum())
-
-
 def cmd_report(args: argparse.Namespace) -> None:
     sample = load_sample(args.directory)
     if not sample:
         sys.exit(f"calibrate: no sample in {args.directory}")
-    rows: list[tuple[dict, Metrics, np.ndarray]] = []
+    rows: list[tuple[dict, Metrics]] = []
     for entry in sample:
-        rgb = load_rgb(args.directory / THUMBS / f"{entry['id']}.jpg")
-        rows.append((entry, measure(rgb), rgb))
+        rows.append((entry, measure_file(args.directory / THUMBS / f"{entry['id']}.jpg")))
     n = len(rows)
     print(f"sample: {n} thumbnails")
     categories = {}
-    for entry, _, _ in rows:
+    for entry, _ in rows:
         categories[entry["category"]] = categories.get(entry["category"], 0) + 1
     print("categories:", ", ".join(f"{k} {v}" for k, v in sorted(categories.items())))
 
     print("\npercentiles (thumbnails):")
     print(f"{'metric':<16}" + "".join(f"{f'p{p}':>8}" for p in PERCENTILES))
     for name in METRIC_NAMES:
-        values = np.array([getattr(m, name) for _, m, _ in rows])
+        values = np.array([getattr(m, name) for _, m in rows])
         print(f"{name:<16}" + "".join(f"{v:>8.3f}" for v in np.percentile(values, PERCENTILES)))
 
     print("\nclass shares (current thresholds):")
     for name, rule in classes.CLASSES.items():
-        share = sum(rule(m) for _, m, _ in rows) / n
+        share = sum(rule(m) for _, m in rows) / n
         print(f"  {name:<12}{share:6.1%}")
     hues = {}
-    for _, m, _ in rows:
+    for _, m in rows:
         for hue in classes.classify(m):
             if hue not in classes.CLASSES:
                 hues[hue] = hues.get(hue, 0) + 1
     print("  hues:", ", ".join(f"{k} {v / n:.1%}" for k, v in sorted(hues.items())))
 
-    print("\nhue sectors splitting one hue (hue_spread < 0.30):")
-    narrow = [(m, rgb) for _, m, rgb in rows if m.hue_name is not None and m.hue_spread < 0.30]
-    split = [m for m, _ in narrow if m.hue_share < classes.HUE_SHARE_MIN]
+    print("\nnarrow-hued images (hue_spread < 0.30) without a hue:")
+    narrow = [m for _, m in rows if m.hue_name is not None and m.hue_spread < 0.30]
+    split = [m for m in narrow if m.hue_share < classes.HUE_SHARE_MIN]
     print(f"  {len(narrow)} narrow-hued, {len(split)} with hue_share < {classes.HUE_SHARE_MIN}")
-    for half_width in (20, 30, 40):
-        shares = np.array([window_share(rgb, half_width) for _, _, rgb in rows])
-        print(
-            f"  window ±{half_width}°: p25/p50/p75 "
-            + "/".join(f"{v:.2f}" for v in np.percentile(shares, (25, 50, 75)))
-            + f", narrow-hued below {classes.HUE_SHARE_MIN}: "
-            + str(sum(window_share(rgb, half_width) < classes.HUE_SHARE_MIN for _, rgb in narrow))
-        )
 
-    full = [(Metrics.from_dict(e["full_metrics"]), m) for e, m, _ in rows if "full_metrics" in e]
+    full = [(Metrics.from_dict(e["full_metrics"]), m) for e, m in rows if "full_metrics" in e]
     if full:
         print(
             f"\nthumbnail minus full image ({len(full)} pairs): "
             "median difference, median and p90 of |difference|"
         )
+        stale = sum(
+            e["full_metrics"].get("version") != METRICS_VERSION
+            for e, _ in rows
+            if "full_metrics" in e
+        )
+        if stale:
+            # Full images are not kept, so these cannot be remeasured.
+            print(
+                f"  {stale} full images measured under an older metrics version: compare with care"
+            )
         for name in METRIC_NAMES:
             diff = np.array([getattr(t, name) - getattr(f, name) for f, t in full])
             print(

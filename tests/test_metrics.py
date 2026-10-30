@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from amontillado.classes import HUE_SHARE_MIN
 from amontillado.metrics import (
     MEASURE_WIDTH,
     METRICS_VERSION,
@@ -104,7 +105,27 @@ def test_half_red_half_blue() -> None:
 def test_hue_wheel_is_multi_hued() -> None:
     m = measure(hue_wheel())
     assert m.hue_spread > 0.9
-    assert m.hue_share < 0.3
+    assert m.hue_share < HUE_SHARE_MIN
+
+
+def test_hue_on_a_sector_boundary_is_not_split() -> None:
+    # 40° and 50° lie either side of the red/orange boundary (44°); a fixed sector would
+    # give each well under HUE_SHARE_MIN (blue, the most chromatic, outweighs either).
+    image = solid((255, 90, 0))
+    image[:, 21:42] = (255, 120, 0)
+    image[:, 42:] = (0, 0, 255)
+    m = measure(image)
+    assert m.hue_name in ("red", "orange")
+    assert m.hue_share > 0.5
+
+
+def test_dominant_hue_keeps_its_share_beside_a_second() -> None:
+    # The mean hue falls between red and cyan, far from both; the share follows the peak.
+    image = solid((255, 0, 0))
+    image[:, 38:] = (0, 255, 255)
+    m = measure(image)
+    assert m.hue_name == "red"
+    assert m.hue_share > 0.55
 
 
 def test_vivid_patch_on_grey() -> None:

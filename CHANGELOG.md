@@ -6,6 +6,13 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `hue_share` is the weight of the heaviest 60° arc of hues, and `hue_name` names the sector
+  holding that arc's mean, so a hue on a sector boundary is no longer split (metrics version
+  2: `amo index` remeasures every file). One hue now holds 80% of the calibration sample (was
+  68%).
+
 ## [0.1.0] - 2026-10-28
 
 ### Added
