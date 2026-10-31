@@ -24,6 +24,7 @@ All notable changes to amontillado are documented here. The format follows
 
 ### Changed
 
+- New runtime dependency: `pystache` (MIT), for rendering mustache templates.
 - `amo index` hashes only files whose size or mtime changed since the last index; the index
   keeps both per file (schema 3; a schema 2 index is upgraded in place).
 
