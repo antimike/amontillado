@@ -596,6 +596,15 @@ GTK3 `gtk.css` and libadwaita's `gtk-4.0/gtk.css`), `rofi` (a `* { ... }` block 
 `dunst` (a `dunstrc.d` drop-in with the urgency colours: dunst has no variables, so this one is a
 small complete theme), `nvim` (`palette.lua`), `shell` (`export AMO_BASE00=...`), and `json` (the
 palette as JSON, for anything else). `amo theme templates` lists them with their variables.
+Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
+`_` (rofi 2.0): there roles are hyphenated (`on-accent`). The hyprland and hyprlock colours are
+`rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);
+the others are `#rrggbb`. kitty's file sets `color0`-`color21` (the ANSI table under "Formats and
+views", then base16-shell's extras `base09`, `base0F`, `base01`, `base02`, `base04`, `base06`),
+the tab, border, selection and URL colours. Headers name the palette by its slug, never its
+name, so no quote in a name can break a Lua, shell or JSON file. Default output files: `kitty.conf`,
+`colors.css`, `colors.rasi`, `hyprland.lua`, `hyprlock.conf`, `sway`, `dunst.conf`, `palette.lua`,
+`colors.sh`, `palette.json`.
 
 ### Formats and views
 

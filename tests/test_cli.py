@@ -652,3 +652,17 @@ def test_fetch_test_set_takes_no_look_filters_or_count(
         main(["fetch", "--test-set", *args])
     assert exc.value.code == "amontillado: --test-set takes no look filters or --count"
     assert web.requests == []
+
+
+def test_theme_templates(capsys: pytest.CaptureFixture[str]) -> None:
+    main(["theme", "templates"])
+    lines = capsys.readouterr().out.splitlines()
+    assert [line.split()[0] for line in lines][:2] == ["kitty", "gtk"]
+    assert lines[6].split()[:3] == ["dunst", "complete", "dunst.conf"]
+    main(["theme", "templates", "nvim"])
+    variables = capsys.readouterr().out.splitlines()
+    assert variables[0] == "scheme-slug"
+    assert "on_accent-hex" in variables
+    with pytest.raises(SystemExit) as exc:
+        main(["theme", "templates", "nope"])
+    assert exc.value.code == "amontillado: no template 'nope' (amo theme templates lists them)"

@@ -1,0 +1,20 @@
+# amontillado {{scheme-slug}} ({{scheme-variant}}): a dunstrc.d drop-in.
+
+[global]
+    highlight = "#{{accent-hex}}"
+    separator_color = "frame"
+
+[urgency_low]
+    background = "#{{base01-hex}}"
+    foreground = "#{{base04-hex}}"
+    frame_color = "#{{border_inactive-hex}}"
+
+[urgency_normal]
+    background = "#{{base00-hex}}"
+    foreground = "#{{base05-hex}}"
+    frame_color = "#{{border-hex}}"
+
+[urgency_critical]
+    background = "#{{base00-hex}}"
+    foreground = "#{{base05-hex}}"
+    frame_color = "#{{error-hex}}"

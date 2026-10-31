@@ -20,6 +20,10 @@ All notable changes to amontillado are documented here. The format follows
 - The config file's `theme:` block (cache, profile, generator, variant, contrast, wallpaper
   reload, and per app source, template, format, output, reload, variant, render_with), checked
   on every load with errors naming the key; nothing uses it yet.
+- Built-in templates (mustache, variables-only: every base24 colour and role in the app's own
+  syntax): kitty, gtk (`@define-color`, for waybar, swaync, wlogout and GTK), rofi, hyprland (a
+  Lua table), hyprlock, sway, dunst (a small complete `dunstrc.d` drop-in), nvim
+  (`palette.lua`), shell and json. `amo theme templates [APP]` lists them, or one's variables.
 - `amo index --rehash`: hash every file again (see the hash cache below).
 
 ### Changed
