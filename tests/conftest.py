@@ -20,7 +20,7 @@ SaveImage = Callable[..., Path]
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """HOME at tmp_path, XDG variables unset: load_config() sees only this tree."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    for variable in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
+    for variable in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
         monkeypatch.delenv(variable, raising=False)
     return tmp_path
 

@@ -12,6 +12,9 @@ All notable changes to amontillado are documented here. The format follows
   (accent, selection, error, ...); base24 keys and roles a source leaves out are derived in
   OKLCH. `amo palette --from-scheme FILE [FILE]` converts one tinted-theming scheme (base16 or
   base24, current or legacy format), or a family's dark and light pair, into a palette.
+- The config file's `theme:` block (cache, profile, generator, variant, contrast, wallpaper
+  reload, and per app source, template, format, output, reload, variant, render_with), checked
+  on every load with errors naming the key; nothing uses it yet.
 - `amo index --rehash`: hash every file again (see the hash cache below).
 
 ### Changed
