@@ -31,6 +31,7 @@ from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
+from amontillado.builtin import BUILTINS
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import API_KEY_VARIABLE, Config, ConfigError, api_key, load_config
 from amontillado.contrast import apply_contrast, check
@@ -348,6 +349,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     palette.set_defaults(func=cmd_palette)
 
+    theme = commands.add_parser(
+        "theme",
+        help="Theme apps from a palette.",
+        description="Render a palette into each configured app's file (docs/design.md, "
+        '"Theme engine (v0.2)").',
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(theme, argparse.SUPPRESS)
+    theme.set_defaults(func=lambda _args: theme.print_help())
+    theme_commands = theme.add_subparsers(title="commands", metavar="COMMAND")
+
+    templates = theme_commands.add_parser(
+        "templates",
+        help="List the templates and their variables.",
+        description="Without APP, print each built-in template: its name, whether it is "
+        "variables-only or a complete theme, its default output file and what it holds. With "
+        "APP, print the variables that template uses, one per line.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(templates, argparse.SUPPRESS)
+    templates.add_argument("app", nargs="?", metavar="APP", help="A template's name.")
+    templates.set_defaults(func=cmd_theme_templates)
+
     return parser
 
 
@@ -598,6 +622,24 @@ def _check_palette(path: Path) -> None:
         failed += len(failures)
     if failed:
         sys.exit(f"amontillado: {_count(failed, 'pair')} below the contrast minimum")
+
+
+def cmd_theme_templates(args: argparse.Namespace) -> None:
+    if args.app is not None:
+        template = BUILTINS.get(args.app)
+        if template is None:
+            sys.exit(f"amontillado: no template {args.app!r} (amo theme templates lists them)")
+        for variable in template.variables():
+            print(variable)
+        return
+    width = max(len(name) for name in BUILTINS)
+    output_width = max(len(template.output) for template in BUILTINS.values())
+    for template in BUILTINS.values():
+        kind = "complete" if template.complete else "variables"
+        print(
+            f"{template.name:<{width}}  {kind:<9}  {template.output:<{output_width}}  "
+            f"{template.description}"
+        )
 
 
 def cmd_add(args: argparse.Namespace) -> None:
