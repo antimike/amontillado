@@ -761,9 +761,15 @@ file, plus `palette.yaml` (the palette applied), `wallpaper` (a symlink to the p
 commit and output). `<cache>/current` is a symlink to the profile last applied (`--no-activate`
 renders a profile without moving it). App configs include from `current/`, or from a fixed
 profile; the "falling back to `current/`" of D39 is the user's include line, which amontillado
-does not need to know about. A profile directory is built beside the old one and swapped in by
-rename, and `current` is moved by renaming a new symlink over it (`ln -sfn` is not atomic), so
-an app reading during an apply sees the old theme or the new one, never a mix.
+does not need to know about. `<cache>/<profile>` is itself a symlink, to a generation directory
+`<cache>/.profiles/<profile>/<time>-<random>/`: each apply writes a new generation, then renames
+a new symlink over the profile's (and over `current`; `ln -sfn` is not atomic). A directory
+cannot be renamed over a non-empty one, so swapping real directories would leave a moment with
+no profile at all; with symlinks an app reading during an apply sees the old theme or the new
+one, never a mix and never nothing. The previous generation is kept for a reader still inside
+it; older ones are deleted. A real directory at `<cache>/<profile>` is not amontillado's: apply
+refuses to touch it. `--no-activate` renders the profile without moving `current` and runs no
+reload command (the profile is not live).
 
 A file watcher must watch a directory that is never replaced: `<cache>/` itself, reacting to
 `current` (or a profile name) being renamed. A watch on `current/palette.lua` watches the
