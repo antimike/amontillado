@@ -429,6 +429,7 @@ source:                         # informational
   file: wallhaven-xed63v.jpg
   lightness: 0.31               # the picture's lightness metric, for variant: auto
   generator: matugen 4.2.0
+  hues: amontillado             # who assigned base08-base0F ("Generators")
   generated: 2026-10-29T18:00:00+00:00
 variants:
   dark:
@@ -468,7 +469,7 @@ the file does not give them:
 
 | Role | Derived from |
 |---|---|
-| `accent` | the generator's primary colour if it has one (matugen); else the `base08`-`base0E` accent nearest in hue to the picture's `hue` metric; for a scheme or preset, `base0D` (the convention templates follow) |
+| `accent` | the generator's accent (matugen's primary, wallust's most chromatic colour); else the `base08`-`base0E` accent nearest in hue to the picture's `hue` metric; for a scheme or preset, `base0D` (the convention templates follow) |
 | `on_accent`, `on_secondary` | whichever of `base00` and `base07` contrasts more with it |
 | `secondary` | the generator's secondary; else the next accent by hue distance from `accent` |
 | `border`, `border_inactive` | `accent`, `base03` |
@@ -549,23 +550,56 @@ variant's bright step may want to be darker instead: to calibrate.)
 
 ### Generators
 
-An adapter takes a picture path and returns a partial palette for each variant (base16 or
-base24, and any roles it knows); amontillado completes it as above. Generators are external programs,
-detected at run time (`pipx install` works without them; the commands that need one say so):
+An adapter takes a picture path and returns, per variant, the neutral ramp (`base00`-`base07`),
+the accents it knows (`accent`, `secondary`) and its own sixteen colours (used only under
+`theme.hues: generator`, below); amontillado completes the palette as above. Generators are
+external programs, detected at run time (`pipx install` works without them; the commands that
+need one say so):
 
-- **matugen ≥ 4.0** (first): its base16 backend assigns the named hues and its Material roles give
-  `accent` (primary), `secondary` and the surfaces; one run gives both variants. Fedora ships
-  3.1.0, which has Material roles only and no base16 output (4.0, 2026-02, added the base16
-  backend, `hex_alpha` and the `format` / `set_alpha` filters, and changed the default JSON):
-  amontillado reports the version and refuses rather than invent six named hues from three
-  Material accents. The exact command line and JSON keys are checked against matugen 4.2 when the adapter
-  is written.
-- **wallust** (second): 16 colours clustered from the image, mapped onto base16 by the ANSI table
-  in reverse. Its `color1` need not be red, so the named-hue slots are only nominal; roles are
-  derived. Two runs, one with a dark palette setting and one with a light (the setting names are
-  checked when the adapter is written). Useful when matugen is not installed.
+- **matugen ≥ 4.0** (first): one run gives both variants: Material roles (`primary` as
+  `accent`, `secondary`, the surfaces) and tonal palettes (`neutral` at tones 0-100, for the
+  ramp). Its `base16` block does **not** assign the named hues (checked on 4.2.0, 2026-10-30, by
+  chezmoi's generator comparison on the 8 test-set pictures): the only backend is `wal`,
+  pywal-style clustering independent of the Material engine (`-t` and `--contrast` leave it
+  byte-identical); 0-2 of colours 1-6 lie within 45° of their ANSI hue, and nothing enforces
+  contrast (the accents on `base00` reach 1.00:1 on every picture, collapsing into the background
+  on dark or muted ones). Command line (4.2): `matugen image PICTURE -c CONFIG --dry-run -j hex -q
+  --source-color-index 0`. CONFIG must hold a `[templates]` table (empty will do; an empty
+  `[config]` alone does not parse), and off a terminal `--source-color-index` or `--prefer` is
+  required ("Multiple source colors found"). JSON keys: `base16`, `colors`, `image`,
+  `is_dark_mode`, `mode`, `palettes`; `colors.<role>.{dark,light}.color`,
+  `base16.baseXX.{dark,light,default}.color`, `palettes.<name>.<tone>`. Fedora ships 3.1.0,
+  whose JSON and command line differ (4.0, 2026-02, added the base16 backend, `hex_alpha` and the
+  `format` / `set_alpha` filters, and changed the default JSON): amontillado reports the version
+  and refuses rather than parse an untested format.
+- **wallust** (second): 16 colours clustered from the image, in no reliable order (red lands
+  anywhere). Under `hues: amontillado` they give the ramp (darkest to lightest) and the accent
+  (the most chromatic of colours 1-6, *initial*). Under `hues: generator` amontillado runs
+  `wallust -k -c lchansi -p ansidark16` (`ansilight16` for the light variant), the settings that
+  put each hue in its ANSI slot (by holding most accents fixed: yellow, magenta and cyan were
+  identical on all 8 test pictures), and maps the result onto base16 by the ANSI table in reverse.
+  Two runs, one per variant. Useful when matugen is not installed.
 
 `theme.generator` in the config picks one; default the first installed in that order.
+
+**Named hues** (`theme.hues`, per run `--hues`) say who assigns `base08`-`base0F`, and so ANSI
+colours 1-6 and 9-14:
+
+- `amontillado` (default), for either generator: each named hue keeps a fixed nominal OKLCH hue
+  (no blending toward the picture); its chroma follows the picture's (the accent's, scaled) and
+  its lightness a target per variant (both *initial*); the contrast check then adjusts as for
+  any palette. The picture shows in the ramp, the accent and the chroma: a named hue cannot
+  follow the picture's hue and stay that colour. To calibrate with chezmoi's `palette-compare`
+  on the test set, against the generators' raw output.
+- `generator`: the generator's own sixteen colours (matugen's `base16` block; wallust's ANSI
+  settings above), then the contrast check, which fixes contrast but not a wrong or collapsed
+  hue. For comparison, or for a user who prefers them.
+
+`source.hues` in the palette records which. Rejected: matugen's `custom_colors` with
+`blend = true` (Material's harmonization), checked on 3 pictures 2026-10-30. It solves contrast
+(every hue at tone 80, 10.9:1 on the surface) but moves each hue 10-30° toward the picture's
+source colour, so neighbours collapse (on an orange picture red `#ffb595` beside orange
+`#ffb878`; blue 32° toward purple), and every accent gets the same lightness.
 
 ### Template sources
 
@@ -670,6 +704,7 @@ theme:
   cache: ~/.cache/theme                 # default $XDG_CACHE_HOME/theme
   profile: default                      # the profile `amo theme apply` writes without --profile
   generator: matugen                    # default: the first installed of matugen, wallust
+  hues: amontillado                     # amontillado | generator ("Generators")
   variant: auto                         # auto | dark | light
   contrast: adjust                      # adjust | report | off
   wallpaper: {reload: "hyprctl hyprpaper reload ,{wallpaper}"}
@@ -764,10 +799,10 @@ directly.
 ### CLI (v0.2)
 
 ```text
-amo palette PICTURE [--generator G] [--no-adjust]   a palette (both variants) as YAML on stdout
+amo palette PICTURE [--generator G] [--hues H] [--no-adjust]   a palette (both variants) as YAML
 amo palette --from-scheme FILE [FILE] [--no-adjust]   one or two tinted-theming schemes as a palette
 amo palette --check FILE                       contrast report; non-zero if a pair fails
-amo theme apply [PICTURE | --palette NAME|FILE] [--profile P] [--variant V] [--app NAME]...
+amo theme apply [PICTURE | --palette NAME|FILE] [--profile P] [--variant V] [--hues H] [--app NAME]...
                 [--no-adjust] [--no-activate] [--no-reload] [--dry-run]   render, swap in, reload
 amo theme sync [--check]                       fetch (or verify) every template the config needs
 amo theme templates [APP]                      registry entries, sources and their variables
@@ -808,6 +843,13 @@ Agreed with MH, 2026-10-30:
 9. **matugen 3 is refused** until Fedora ships 4.x or MH installs it from COPR, cargo or a
    release binary (chezmoi plan, step 1).
 10. **`--app NAME`** (repeatable) applies to a subset of apps ("Cache").
+11. **amontillado builds the named hues** (`theme.hues: amontillado`, default; MH, 2026-10-30,
+    from chezmoi's generator comparison): matugen 4.2's `base16` block is clustering, not named
+    hues, and wallust's colours are unordered, so neither generator's ANSI 0-15 is usable as is.
+    Fixed nominal hues, chroma and lightness from the picture, the ramp and accent from the
+    generator. `hues: generator` keeps the generator's own colours as an option, a palette-level
+    key beside `theme.generator` rather than an app: it changes the palette every app gets.
+    matugen's `blend` harmonization was rejected (neighbouring hues collapse). wallust stays.
 
 ## Testing
 
