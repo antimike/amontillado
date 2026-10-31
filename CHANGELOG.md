@@ -12,6 +12,11 @@ All notable changes to amontillado are documented here. The format follows
   (accent, selection, error, ...); base24 keys and roles a source leaves out are derived in
   OKLCH. `amo palette --from-scheme FILE [FILE]` converts one tinted-theming scheme (base16 or
   base24, current or legacy format), or a family's dark and light pair, into a palette.
+- Contrast checks: WCAG 2 ratios over fixed pairs (body text 7, syntax and labels 4.5, comments
+  and borders 3), per variant. `amo palette --from-scheme` adjusts failing colours in OKLCH
+  lightness (foregrounds first, the accent last, never the backgrounds), logging each change and
+  listing it under `adjusted`; `theme.contrast: adjust | report | off` and `--no-adjust` say
+  whether. `amo palette --check FILE` reports a palette file's failing pairs.
 - The config file's `theme:` block (cache, profile, generator, variant, contrast, wallpaper
   reload, and per app source, template, format, output, reload, variant, render_with), checked
   on every load with errors naming the key; nothing uses it yet.

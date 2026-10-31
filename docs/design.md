@@ -3,7 +3,7 @@
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
 implemented, test sets included; class thresholds calibrated (2026-10-28). v0.2's theme engine is
 agreed (2026-10-30) and being built: the palette model and `amo palette --from-scheme` are
-implemented; "Theme engine (v0.2)". Values marked
+implemented, with contrast checks and the `theme:` config block; "Theme engine (v0.2)". Values marked
 *initial* are starting points to calibrate on real images; change them here when they change in code.
 
 ## Scope
@@ -535,6 +535,17 @@ and listed under `adjusted`. What may move, in order:
 Foregrounds first, because each fix then touches one pair only: a background sits under every
 foreground, so moving it to fix one pair changes all the others. The accent is the palette's
 link to the picture, so it moves last and as little as possible.
+
+After each move every pair is checked again, so a colour moved for one pair is seen by the
+next. A `border` that is the accent moves with it; one a palette file sets apart is a
+foreground like any other. A pair no allowed move fixes (a background other than the accent
+or secondary, such as `selection`, whose label cannot reach the minimum) stays as it is, with a
+warning. `--no-adjust` turns `adjust` into `report`; it does not turn checking back on under
+`off`. `amo palette --check FILE` prints each failing pair (`dark: base03 on base00: 2.52, needs
+3`) on stdout and exits non-zero if there are any; it never adjusts. (A first run on gruvbox,
+2026-10-30: dark needed five moves, light twelve, mostly its accents on `base01`; the light
+variant's brightened `base12`-`base17` come back down to about their base colours, so a light
+variant's bright step may want to be darker instead: to calibrate.)
 
 ### Generators
 
