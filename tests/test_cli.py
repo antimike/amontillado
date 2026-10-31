@@ -47,6 +47,25 @@ def test_measure_prints_yaml(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     assert {"saturated", "monochrome", "warm", "red"} <= set(out[1]["classes"])
 
 
+def test_palette_from_scheme(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    ramp = ["#101010", "#202020", "#303030", "#505050", "#a0a0a0", "#d0d0d0", "#e0e0e0", "#f0f0f0"]
+    accents = ["#e06060", "#e09050", "#e0c050", "#60c060", "#50c0c0", "#6090e0", "#b070e0"]
+    colours = dict(
+        zip([f"base{i:02X}" for i in range(16)], [*ramp, *accents, "#906040"], strict=True)
+    )
+    scheme = tmp_path / "s.yaml"
+    scheme.write_text(yaml.safe_dump({"system": "base16", "name": "S", "palette": colours}))
+    main(["palette", "--from-scheme", str(scheme)])
+    out = yaml.safe_load(capsys.readouterr().out)
+    assert out["name"] == "S"
+    assert out["variants"]["dark"]["roles"]["accent"] == "#6090e0"
+    assert len(out["variants"]["dark"]["base24"]) == 24
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", "--from-scheme", str(tmp_path / "none.yaml")])
+    assert str(exc.value.code).startswith("amontillado: ")
+    assert "No such file" in str(exc.value.code)
+
+
 def test_measure_reports_bad_files(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     good = _save(np.zeros((36, 64, 3), dtype=np.uint8), tmp_path / "good.png")
     bad = tmp_path / "bad.png"
