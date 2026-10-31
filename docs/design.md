@@ -682,6 +682,14 @@ theme:
 - `wallpaper.reload`: run last, with the picture's path. Setting a wallpaper stays the user's
   command; amontillado only knows which picture belongs to the theme.
 
+The block is checked whenever the config is loaded (any `amo` command), so a mistake fails at
+once, naming its key (`theme.apps.kitty.reload: ...`); unknown keys warn, as at the top level.
+Beyond the types and choices above: a profile name is a single path component that does not
+start with `.` and is not `current` (both name other things in the cache); `output` is a plain
+file name, not `palette.yaml`, `theme.yaml` or `wallpaper`, and no two apps give the same one;
+`url` is `https://`; a reload command names no placeholder other than the three; `render_with:
+matugen` needs `format: matugen` (or `source: matugen-themes`, whose format it is).
+
 Whether a result is complete or variables-only comes from the registry (`amo theme templates`
 shows it); a variables-only file does nothing until the app's own config maps the variables.
 
