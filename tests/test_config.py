@@ -255,3 +255,9 @@ def test_unknown_theme_keys_warn(home: Path, caplog: pytest.LogCaptureFixture) -
         load_config()
     assert "unknown setting 'theme.varient'" in caplog.text
     assert "unknown setting 'theme.apps.kitty.relaod'" in caplog.text
+
+
+@pytest.mark.parametrize("value", ["off", "'off'"])
+def test_contrast_off_unquoted(home: Path, value: str) -> None:
+    write_config(home, f"theme: {{contrast: {value}}}\n")
+    assert load_config().theme.contrast == "off"

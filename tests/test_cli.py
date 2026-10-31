@@ -66,6 +66,54 @@ def test_palette_from_scheme(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     assert "No such file" in str(exc.value.code)
 
 
+def _palette_file(path: Path, base03: str) -> Path:
+    ramp = ["#101010", "#181818", "#303030", base03, "#a0a0a0", "#e0e0e0", "#f0f0f0", "#ffffff"]
+    accents = ["#ff8080", "#ffa060", "#ffe080", "#80ff80", "#80ffff", "#80b0ff", "#e0a0ff"]
+    colours = dict(
+        zip([f"base{i:02X}" for i in range(16)], [*ramp, *accents, "#c08060"], strict=True)
+    )
+    data = {"version": 1, "name": "p", "variants": {"dark": {"base24": colours}}}
+    path.write_text(yaml.safe_dump(data))
+    return path
+
+
+def test_palette_check(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    main(["palette", "--check", str(_palette_file(tmp_path / "good.yaml", "#707070"))])
+    assert capsys.readouterr().out == ""
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", "--check", str(_palette_file(tmp_path / "bad.yaml", "#202020"))])
+    assert exc.value.code == "amontillado: 1 pair below the contrast minimum"
+    assert capsys.readouterr().out.startswith("dark: base03 on base00: 1.")
+
+
+def _scheme_file(path: Path, base03: str) -> Path:
+    palette = yaml.safe_load(_palette_file(path, base03).read_text())
+    colours = palette["variants"]["dark"]["base24"]
+    path.write_text(yaml.safe_dump({"system": "base16", "name": "S", "palette": colours}))
+    return path
+
+
+@pytest.mark.parametrize(
+    ("argv", "config", "adjusted"),
+    [([], "", True), (["--no-adjust"], "", False), ([], "theme: {contrast: off}\n", False)],
+)
+def test_palette_from_scheme_contrast(
+    tmp_path: Path,
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    config: str,
+    adjusted: bool,
+) -> None:
+    (home / ".config/amontillado").mkdir(parents=True)
+    (home / ".config/amontillado/config.yaml").write_text(config)
+    scheme = _scheme_file(tmp_path / "s.yaml", "#202020")
+    main(["palette", "--from-scheme", str(scheme), *argv])
+    dark = yaml.safe_load(capsys.readouterr().out)["variants"]["dark"]
+    assert (dark["base24"]["base03"] != "#202020") is adjusted
+    assert ("adjusted" in dark) is adjusted
+
+
 def test_measure_reports_bad_files(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     good = _save(np.zeros((36, 64, 3), dtype=np.uint8), tmp_path / "good.png")
     bad = tmp_path / "bad.png"

@@ -33,6 +33,7 @@ from rich_argparse import RawDescriptionRichHelpFormatter
 from amontillado import __version__
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import API_KEY_VARIABLE, Config, ConfigError, api_key, load_config
+from amontillado.contrast import apply_contrast, check
 from amontillado.fetch import TEST_SET, fetch
 from amontillado.fetch import Options as FetchOptions
 from amontillado.index import (
@@ -53,7 +54,7 @@ from amontillado.index import (
 )
 from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
 from amontillado.metrics import HUE_NAMES, measure_file
-from amontillado.palette import PaletteError, dump_palette, palette_from_schemes
+from amontillado.palette import PaletteError, dump_palette, load_palette, palette_from_schemes
 from amontillado.record import sha256_file
 from amontillado.wallhaven import (
     CATEGORY_FLAGS,
@@ -317,18 +318,33 @@ def build_parser() -> argparse.ArgumentParser:
         "palette",
         help="Make a palette.",
         description="Print a palette (per variant, the base24 colours and the roles: accent, "
-        "selection, ...) as YAML. Base24 keys and roles the source leaves out are derived.",
+        "selection, ...) as YAML, or check a palette file's contrast. Base24 keys and roles the "
+        "source leaves out are derived; pairs below their WCAG contrast minimum are fixed as "
+        "theme.contrast says (default: adjusted, each change logged).",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(palette, argparse.SUPPRESS)
-    palette.add_argument(
+    palette_input = palette.add_mutually_exclusive_group(required=True)
+    palette_input.add_argument(
         "--from-scheme",
         nargs="+",
         type=Path,
-        required=True,
         metavar="FILE",
         help="One tinted-theming scheme (base16 or base24 YAML), or a dark and a light one of "
         "a family, which make one palette with both variants.",
+    )
+    palette_input.add_argument(
+        "--check",
+        type=Path,
+        metavar="FILE",
+        help="Print the pairs of a palette file below their contrast minimum, and fail if any "
+        "are; change nothing.",
+    )
+    palette.add_argument(
+        "--no-adjust",
+        action="store_true",
+        help="Report failing pairs instead of adjusting them (theme.contrast: report, for one "
+        "run).",
     )
     palette.set_defaults(func=cmd_palette)
 
@@ -553,11 +569,35 @@ def cmd_shown(args: argparse.Namespace) -> None:
 
 
 def cmd_palette(args: argparse.Namespace) -> None:
+    if args.check is not None:
+        _check_palette(args.check)
+        return
+    config = _load_config()
+    mode = config.theme.contrast
+    if args.no_adjust and mode == "adjust":
+        mode = "report"
     try:
         palette = palette_from_schemes(args.from_scheme)
     except PaletteError as exc:
         sys.exit(f"amontillado: {exc}")
-    print(dump_palette(palette), end="")
+    print(dump_palette(apply_contrast(palette, mode)), end="")
+
+
+def _check_palette(path: Path) -> None:
+    try:
+        palette = load_palette(path)
+    except PaletteError as exc:
+        sys.exit(f"amontillado: {exc}")
+    failed = 0
+    for name, variant in palette.variants.items():
+        failures = check(variant)
+        for failure in failures:
+            print(f"{name}: {failure}")
+        if not failures:
+            logger.info("%s: every pair passes", name)
+        failed += len(failures)
+    if failed:
+        sys.exit(f"amontillado: {_count(failed, 'pair')} below the contrast minimum")
 
 
 def cmd_add(args: argparse.Namespace) -> None:
