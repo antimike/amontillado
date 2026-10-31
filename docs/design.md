@@ -605,7 +605,12 @@ Each format gets a *view* of the palette: the variables its templates expect.
   *and every role* the spec's variables (`accent-hex`, `accent-hex-r`, `accent-rgb-r`,
   `accent-rgb16-r`, `accent-dec-r`, `accent-hex-bgr`, ...), and `scheme-name`, `scheme-slug`,
   `scheme-slug-underscored`, `scheme-system` (`base24`), `scheme-variant`,
-  `scheme-is-dark-variant` / `scheme-is-light-variant`. A tinted template written for base16 only
+  `scheme-is-dark-variant` / `scheme-is-light-variant`; also `scheme-author` (the scheme's, or
+  empty) and `scheme-description` (empty), which template headers name. Decimals have eight
+  places (`0.48627451`), `rgb16` is the 8-bit value times 257. The output is not HTML-escaped,
+  and partials (`{{> name}}`) are a render error: a template is one file, never one read from
+  the working directory. pystache renders an unclosed section to the end of the template rather
+  than failing. A tinted template written for base16 only
   renders unchanged (base24 is a superset). Tinted repositories hold several templates
   (`templates/config.yaml`); the registry names which one.
 - **pywal** (pywal16's syntax: `{color0}`, `{color0.strip}`, `{color0.rgb}`, `{color0.lighten(10)}`,
