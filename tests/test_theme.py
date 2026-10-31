@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from amontillado.cli import main
 from amontillado.config import AppConfig, Config, ThemeConfig
 from amontillado.palette import Palette, complete_variant, dump_palette
 from amontillado.theme import (
@@ -194,3 +195,39 @@ def test_find_palette(home: Path) -> None:
     assert find_palette(str(presets / "gruvbox.yaml")) == presets / "gruvbox.yaml"
     with pytest.raises(ThemeError, match="no palette file nord and no preset"):
         find_palette("nord")
+
+
+def _cli_setup(home: Path) -> Path:
+    config = home / ".config" / "amontillado" / "config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        yaml.safe_dump(
+            {"theme": {"apps": {"kitty": {"reload": "true {profile} {dir}"}, "json": {}}}}
+        )
+    )
+    palette = home / "p.yaml"
+    palette.write_text(dump_palette(_palette("cli")))
+    return palette
+
+
+def test_cli_apply_and_current(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    palette = _cli_setup(home)
+    main(["theme", "apply", "--palette", str(palette)])
+    cache = home / ".cache" / "theme"
+    assert (cache / "current" / "palette.json").is_file()
+    main(["theme", "current"])
+    out = capsys.readouterr().out.splitlines()
+    assert out[:3] == ["profile: default", "palette: cli", "picture: "]
+    assert out[3].startswith("applied: ")
+    with pytest.raises(SystemExit) as exc:
+        main(["theme", "apply", "--profile", ".hidden"])
+    assert exc.value.code == "amontillado: --profile: '.hidden' is not a profile name"
+
+
+def test_cli_dry_run_changes_nothing(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    palette = _cli_setup(home)
+    main(["theme", "apply", "--palette", str(palette), "--dry-run"])
+    out = capsys.readouterr().out.splitlines()
+    assert (Path(out[0]) / "kitty.conf").is_file()
+    assert out[1] == f"would run: true default {home / '.cache' / 'theme' / 'default'}"
+    assert not (home / ".cache" / "theme").exists()
