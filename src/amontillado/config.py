@@ -251,7 +251,7 @@ def _theme(value: object) -> ThemeConfig:
         profile=_profile(theme.get("profile", "default")),
         generator=_choice("theme.generator", theme.get("generator"), GENERATORS),
         variant=_choice("theme.variant", theme.get("variant", "auto"), VARIANT_CHOICES),
-        contrast=_choice("theme.contrast", theme.get("contrast", "adjust"), CONTRAST_CHOICES),
+        contrast=_choice("theme.contrast", _off(theme.get("contrast", "adjust")), CONTRAST_CHOICES),
         wallpaper_reload=_command("theme.wallpaper.reload", wallpaper.get("reload")),
         apps=parsed,
     )
@@ -317,6 +317,11 @@ def _choice(key: str, value: object, choices: tuple[str, ...]) -> str | None:
     if value is None or value in choices:
         return value  # type: ignore[return-value]
     raise ConfigError(f"{key}: {value!r} is not one of {', '.join(choices)}")
+
+
+def _off(value: object) -> object:
+    # YAML 1.1 reads an unquoted `off` as false.
+    return "off" if value is False else value
 
 
 def _text(key: str, value: object) -> str | None:
