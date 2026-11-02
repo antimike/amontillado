@@ -51,6 +51,7 @@ sources:
     foot: {repository: InioX/matugen-themes, path: templates/foot-colors.ini, output: foot-colors.ini, complete: true, sha256: ea5b3d287260bdba39dca95d89ba270c5761e1e056efcc7bb1075db7a10cc74d}
     tmux: {repository: InioX/matugen-themes, path: templates/tmux-colors.conf, output: tmux-colors.conf, complete: true, sha256: 3bf00c85ab3e07455b870b47355e345f19d0fa9f7d7719bacf546bdd457874e2}
     nvim: {repository: InioX/matugen-themes, path: templates/nvim-colors.vim, output: nvim-colors.vim, complete: true, sha256: 6577dd9c9ea04e1595b38c60644bbab04e95dd2a1dc9fe688274b1a9acd06787}
+    nvim-lua: {repository: InioX/matugen-themes, path: templates/neovim/matugen.lua, output: matugen.lua, complete: true, sha256: 63a1c8577a40eacbc78615af60e09efdf06e78cb2a583688732468066f1640d3}
     zed: {repository: InioX/matugen-themes, path: templates/zed-colors.json, output: zed-colors.json, complete: true, sha256: 8284a84b8aeb772470ea735fb5a1ae8a0f08b7d25d9685de0ff6458f0b89fc4d}
   pywal:
     kitty: {repository: eylles/pywal16, path: pywal/templates/colors-kitty.conf, output: colors-kitty.conf, complete: true, sha256: a09af1c9a9799a1ca4b26200177b48e10b22d27a7d7d1e18cc577812fd26d995}

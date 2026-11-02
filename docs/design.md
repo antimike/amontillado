@@ -635,10 +635,15 @@ far).
 Initial registry (2026-11-01): `tinted`: kitty and foot (tinted-terminal's base24 templates),
 rofi and rofi-colors (base16-rofi), dunst, waybar (variables), shell (tinted-shell, base24);
 `matugen-themes`: kitty, gtk, css, rofi, dunst, sway, swaybar, hyprland (Lua), hyprland-conf,
-mako, foot, tmux, nvim, zed; `pywal`: kitty, waybar, css, rofi, rofi-light, sway,
-hyprland-conf, mako, shell, json. Not taken: tinted-nvim (its templates load the tinted-nvim
-plugin, which themes nvim without amontillado), base16-gtk-flatcolor (a whole GTK theme),
-matugen-themes' `neovim/` (several files).
+mako, foot, tmux, nvim (`nvim-colors.vim`), nvim-lua (`neovim/matugen.lua`, a colourscheme of
+`nvim_set_hl` calls over Material roles; the directory's `init.lua` is example glue and
+`template.lua` needs the `nvim-base16` plugin), zed; `pywal`: kitty, waybar, css, rofi,
+rofi-light, sway, hyprland-conf, mako, shell, json. Not taken: tinted-nvim's templates (each
+renders `require("tinted-nvim").load("base24-<slug>")`, which loads only a scheme the plugin
+bundles; the plugin can instead take amontillado's palette as a custom scheme, `setup({ schemes
+= { ["base24-amo"] = dofile(".../palette.lua") } })`, needing no template), and
+base16-gtk-flatcolor (GTK 2 and 3 legacy colour names for the FlatColor theme, which its README
+has the user clone and patch by hand to import them; nothing for libadwaita).
 
 **Built-in templates** (variables-only, every role included, initial set from the chezmoi plan's
 app table): `kitty` (`color0`-`color15`, background, foreground, cursor, selection; an `include`
