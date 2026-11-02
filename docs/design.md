@@ -846,7 +846,7 @@ reload command. Three ways to turn the palette into highlight groups, all sharin
 | | Who maps colours to groups | Gives | Costs |
 |---|---|---|---|
 | **lush.nvim** spec over `palette.lua` (`docs/examples/nvim/`, amo-aqp.17) | the user's spec | the roles exactly as the bar, borders and terminal use them; colour operations | writing and keeping the coverage (treesitter, LSP, plugins) |
-| **tinted-nvim**, `setup({ schemes = { ["base24-amo"] = palette } })` (amo-aqp.22) | the plugin | upstream-kept coverage of core, treesitter, LSP and many plugins, no authoring | base16 conventions (no accent role: `base0D`); a plugin |
+| **tinted-nvim** v1, the palette as custom scheme `base24-amontillado` (`docs/examples/nvim/lua/amontillado/tinted.lua`, amo-aqp.22) | the plugin | upstream-kept coverage of core, treesitter, LSP and many plugins, no authoring | base16 conventions (no accent role: `base0D`); a plugin |
 | **matugen-themes** `neovim/matugen.lua` (`template: nvim-lua`; needs the matugen renderer, amo-aqp.13) | upstream's file | accent-aware (Material roles), one pinned file, no plugin | upstream's choices; colours through the Material view |
 
 Which one is the user's choice (chezmoi D73 plans lush). The lush example passes the palette's

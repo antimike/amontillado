@@ -10,6 +10,7 @@ out as an nvim runtime directory, so `lua/` and `colors/` go to the same places 
 | [lua/amontillado/palette.lua](lua/amontillado/palette.lua) | Reads `<cache>/current/palette.lua` (the built-in `nvim` template). |
 | [lua/amontillado/lush_spec.lua](lua/amontillado/lush_spec.lua) | A [lush.nvim](https://github.com/rktjmp/lush.nvim) spec: the palette's roles for the interface, base24's named hues for syntax. |
 | [colors/amontillado.lua](colors/amontillado.lua) | `:colorscheme amontillado`, built from the spec. |
+| [lua/amontillado/tinted.lua](lua/amontillado/tinted.lua) | The other way: [tinted-nvim](https://github.com/tinted-theming/tinted-nvim) v1 with the palette as a custom base24 scheme. |
 
 amontillado's config needs an nvim app with the built-in template (its default):
 
@@ -30,6 +31,25 @@ end)
 
 nvim needs no reload command: every running nvim re-reads the palette when a theme is applied.
 
+## Or: tinted-nvim
+
+Instead of the lush spec, tinted-nvim (v1; `version = "1.*"` in lazy.nvim) gives its own
+highlight coverage (core, treesitter, LSP, telescope, cmp, blink, lualine, notify, dapui)
+with nothing to write:
+
+```lua
+require("amontillado.tinted").start({
+  setup = {},   -- any tinted-nvim options; `schemes` gains "base24-amontillado"
+})
+```
+
+It runs tinted-nvim's `setup()` and `load()` again after each apply. To keep that working it
+turns off tinted-nvim's `compile` (compiled highlights are kept by scheme name, so a later apply
+would load the first palette), `apply_scheme_on_startup` and `selector` (tinty's file), and sets
+`background` from the palette, which tinted-nvim leaves alone. tinted-nvim follows base16's
+conventions (its interface uses `base0D`); the module's `highlights.overrides` puts the accent
+role on a few groups (`CursorLineNr`, `FloatBorder`, `PmenuSel`, ...), and yours, if any, win.
+
 ## Notes
 
 - **Why the watcher watches the directory.** `amo theme apply` swaps symlinks: `<cache>/<profile>`
@@ -45,6 +65,8 @@ nvim needs no reload command: every running nvim re-reads the palette when a the
   `theme.cache`; pass `cache` if the config moves it.
 - **Light and dark.** `background` follows the palette's `variant`, which `theme.variant` (or the
   nvim app's `variant`) chooses.
-- **Other ways to theme nvim** (docs/design.md, "nvim and lush"): tinted-nvim fed from the same
-  `palette.lua`, or matugen-themes' `neovim/matugen.lua` rendered by amontillado; both use
-  `watch.lua` the same way.
+- **The third way** (docs/design.md, "nvim and lush"): matugen-themes' `neovim/matugen.lua`,
+  rendered by amontillado (`template: nvim-lua`), uses `watch.lua` the same way.
+- **Tested** (2026-11-02, headless nvim 0.11.7, lush.nvim and tinted-nvim v1.0.0, four real
+  applies each: dark, light, dark, and `--no-activate` or `--app`): one callback per apply, and
+  `Normal`, the accent and `@string` matching `palette.lua` exactly each time.

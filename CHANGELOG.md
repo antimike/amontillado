@@ -42,6 +42,7 @@ All notable changes to amontillado are documented here. The format follows
   `color0`-`color15` by the base24 ANSI table, so `source: pywal` apps apply.
 - `docs/examples/nvim/`: a lush.nvim spec over the applied `palette.lua` (roles for the interface,
   base24 hues for syntax) and a watcher that re-runs `:colorscheme` after each `amo theme apply`.
+  Or tinted-nvim v1 fed the palette as a custom scheme, re-applied by the same watcher.
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).
