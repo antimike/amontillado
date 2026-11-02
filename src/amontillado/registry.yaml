@@ -1,0 +1,65 @@
+# amontillado's template registry (docs/design.md, "Theme engine (v0.2)", "Template sources").
+#
+# sources.<source>.<template>: one template. A template name defaults to the app's name, so
+# `apps: {kitty: {source: tinted}}` takes sources.tinted.kitty. Per entry: the output file name
+# in the profile, whether the result is a complete theme or variables only, and for a fetched
+# source the repository, path, pinned commit and the file's sha256.
+#
+# Edit the entries by hand; `tools/registry.py --update` moves every repository's pin to its
+# default branch's head and records each file's hash. Templates fetched by `amo theme sync` are
+# not redistributed by amontillado (all three upstreams are MIT).
+version: 1
+repositories:
+  tinted-theming/tinted-terminal: {commit: bb860c5c71c2ac6fb833cde24f592ecbae7ba629}
+  tinted-theming/base16-rofi: {commit: b5f959e13139bff25702105ff09df9de7c9588de}
+  tinted-theming/base16-dunst: {commit: 89d637a227dbf249e3e351afe02ad1417ed32892}
+  tinted-theming/base16-waybar: {commit: 28c1aafe52498bcd9ac74e232a8f5afb1dcbc0b5}
+  tinted-theming/tinted-shell: {commit: bd6d7953c5ca08dc0daed0edf019f047b9244bbc}
+  InioX/matugen-themes: {commit: 81dbb64821cd1716371a7590bfab245c0af0d19a}
+  eylles/pywal16: {commit: af711710cdc3c88248b667342e5d4289f00f8c6e}
+sources:
+  builtin:
+    kitty: {output: kitty.conf, complete: false, description: colour options; include from kitty.conf}
+    gtk: {output: colors.css, complete: false, description: '@define-color per colour; @import from waybar, swaync, wlogout, gtk.css'}
+    rofi: {output: colors.rasi, complete: false, description: 'a * { } block (roles hyphenated: on-accent)'}
+    hyprland: {output: hyprland.lua, complete: false, description: 'a Lua table of "rrggbb", for dofile()'}
+    hyprlock: {output: hyprlock.conf, complete: false, description: hyprlang $variables of rrggbb}
+    sway: {output: sway, complete: false, description: set $variable per colour; include from the config}
+    dunst: {output: dunst.conf, complete: true, description: 'a dunstrc.d drop-in: the urgency colours'}
+    nvim: {output: palette.lua, complete: false, description: 'a Lua table, for a lush spec'}
+    shell: {output: colors.sh, complete: false, description: export AMO_BASE00=... ; source from a shell}
+    json: {output: palette.json, complete: false, description: the palette as JSON}
+  tinted:
+    kitty: {repository: tinted-theming/tinted-terminal, path: templates/kitty-base24.mustache, output: kitty-theme.conf, complete: true, sha256: d3e544b4b0f10bb9d49878864085919e0c6d0bf4d824997ecf22251d1be9ed2e}
+    foot: {repository: tinted-theming/tinted-terminal, path: templates/foot-base24.mustache, output: foot.ini, complete: true, sha256: 97147366d46c14f481b5fcf0ec19559f0eb22a3dcd673f6b66131c06a42e13ab}
+    rofi: {repository: tinted-theming/base16-rofi, path: templates/default.mustache, output: rofi.rasi, complete: true, sha256: 38e0988e19ea793ab8df4588a3a4de52b1cd768cd2062c72644ec1a4bdb168a0}
+    rofi-colors: {repository: tinted-theming/base16-rofi, path: templates/colors.mustache, output: rofi-colors.rasi, complete: false, sha256: 045b67da330af2bb334ac7dd8b456b393a20daeb24af5184789ffeca5c534310}
+    dunst: {repository: tinted-theming/base16-dunst, path: templates/default.mustache, output: dunstrc, complete: true, sha256: 664981da2dc32b257313a58ad2cfdc5d4acfdd15b89610aa001178d2004475c8}
+    waybar: {repository: tinted-theming/base16-waybar, path: templates/default.mustache, output: waybar-colors.css, complete: false, sha256: 15bb435a8542b366884060423acedae61ea796480f5cd693b8c799accbe3f7db}
+    shell: {repository: tinted-theming/tinted-shell, path: templates/base24.mustache, output: tinted-shell.sh, complete: true, sha256: eea2ab702b0fbb9966f6e73f0e9172318a49b6458e498fe40bcea305e7f81fc0}
+  matugen-themes:
+    kitty: {repository: InioX/matugen-themes, path: templates/kitty-colors.conf, output: kitty-colors.conf, complete: true, sha256: 6c1fe4c5b178ef390dbdf9d9b6f9324d58ba00bc913a431200f73336fa821cb7}
+    gtk: {repository: InioX/matugen-themes, path: templates/gtk-colors.css, output: gtk-colors.css, complete: false, sha256: 8f90781ed32707289f52bc4a43163a52901e3eae5ee74d9083a70fccf2dab463}
+    css: {repository: InioX/matugen-themes, path: templates/colors.css, output: material-colors.css, complete: false, sha256: 3b171e167301b7b7d743cbe04fc00dfce847488741ca89b6ad221e33121d0afe}
+    rofi: {repository: InioX/matugen-themes, path: templates/rofi-colors.rasi, output: rofi-colors.rasi, complete: false, sha256: 1197c7d8e6dc4bae768dbcd0819fa7d61b85d4adf475d3765aff442a195ec09f}
+    dunst: {repository: InioX/matugen-themes, path: templates/dunstrc-colors, output: dunstrc-colors, complete: true, sha256: 282893c0ccba774cacf3435185b49a139633ff2e08e54872c938fe16bf2cfacf}
+    sway: {repository: InioX/matugen-themes, path: templates/sway-colors.conf, output: sway-colors.conf, complete: true, sha256: 11b710f0601645f5a552a4824a58f94156c83572e0e222235f756da1a41fa1c5}
+    swaybar: {repository: InioX/matugen-themes, path: templates/swaybar-colors.conf, output: swaybar-colors.conf, complete: true, sha256: 403312523d72d81fffb3b656440afb84f95f64f6ee04da47ca217aa836a726b1}
+    hyprland: {repository: InioX/matugen-themes, path: templates/hyprland-colors.lua, output: hyprland-colors.lua, complete: false, sha256: 64fe04a6fe06181e3ffee18f28fb247938b2963520acebf21279a27264e672cd}
+    hyprland-conf: {repository: InioX/matugen-themes, path: templates/hyprland-colors.conf, output: hyprland-colors.conf, complete: false, sha256: 22406101ee3423c72d71c1ca743051fa3342158b86ba47c34785f2d356ca1022}
+    mako: {repository: InioX/matugen-themes, path: templates/mako, output: mako, complete: true, sha256: cf39d86bffa4472abe3905ac867644ad7d73d98c3c12bd53a1168fa97a485b47}
+    foot: {repository: InioX/matugen-themes, path: templates/foot-colors.ini, output: foot-colors.ini, complete: true, sha256: ea5b3d287260bdba39dca95d89ba270c5761e1e056efcc7bb1075db7a10cc74d}
+    tmux: {repository: InioX/matugen-themes, path: templates/tmux-colors.conf, output: tmux-colors.conf, complete: true, sha256: 3bf00c85ab3e07455b870b47355e345f19d0fa9f7d7719bacf546bdd457874e2}
+    nvim: {repository: InioX/matugen-themes, path: templates/nvim-colors.vim, output: nvim-colors.vim, complete: true, sha256: 6577dd9c9ea04e1595b38c60644bbab04e95dd2a1dc9fe688274b1a9acd06787}
+    zed: {repository: InioX/matugen-themes, path: templates/zed-colors.json, output: zed-colors.json, complete: true, sha256: 8284a84b8aeb772470ea735fb5a1ae8a0f08b7d25d9685de0ff6458f0b89fc4d}
+  pywal:
+    kitty: {repository: eylles/pywal16, path: pywal/templates/colors-kitty.conf, output: colors-kitty.conf, complete: true, sha256: a09af1c9a9799a1ca4b26200177b48e10b22d27a7d7d1e18cc577812fd26d995}
+    waybar: {repository: eylles/pywal16, path: pywal/templates/colors-waybar.css, output: colors-waybar.css, complete: false, sha256: 57a1d5e0a7c29a981fb6ee2e93e4284fa6ad65a39732d23b886947024728346c}
+    css: {repository: eylles/pywal16, path: pywal/templates/colors.css, output: colors-pywal.css, complete: false, sha256: 14bad630d0318b1f3559b0e07207044b375f6d5fff9b4ca000cf109564693e20}
+    rofi: {repository: eylles/pywal16, path: pywal/templates/colors-rofi-dark.rasi, output: colors-rofi-dark.rasi, complete: true, sha256: 72ef56526c0a5640b4011cd5f3b31178703955810c942a091335935d3e510e67}
+    rofi-light: {repository: eylles/pywal16, path: pywal/templates/colors-rofi-light.rasi, output: colors-rofi-light.rasi, complete: true, sha256: d1c4de35e7aca5804d63999c34ac012df3704b095d8769d92ace50136016bd43}
+    sway: {repository: eylles/pywal16, path: pywal/templates/colors-sway, output: colors-sway, complete: false, sha256: 24abf58b3a1851a471bd64d7c3b4879c8f3020ffb61c790bfbbb18eb3ca507bd}
+    hyprland-conf: {repository: eylles/pywal16, path: pywal/templates/colors-hyprland.conf, output: colors-hyprland.conf, complete: false, sha256: dce27eb027e36300237e93e39f3b4b82b0d4b78dbee78b27af74f077b5dadc49}
+    mako: {repository: eylles/pywal16, path: pywal/templates/colors-mako, output: colors-mako, complete: true, sha256: 93b94334c8370267f52bf640d06e59fe135f51c2e9d0d3a1510b11796ccac706}
+    shell: {repository: eylles/pywal16, path: pywal/templates/colors.sh, output: colors-pywal.sh, complete: false, sha256: e317638e226ea0fe5d2780d79844df9b2a0bdaf85ac02b7d63be622aa1ce2dec}
+    json: {repository: eylles/pywal16, path: pywal/templates/colors.json, output: colors-pywal.json, complete: false, sha256: 4fe2fbdcef7d2e02e0673916643cd7d37a29fc8fe7580746a96bb16682a1d7dc}
