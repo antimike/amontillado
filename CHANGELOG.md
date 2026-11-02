@@ -37,12 +37,16 @@ All notable changes to amontillado are documented here. The format follows
   [--check]` downloads the templates the config uses (one HTTPS request per file, hash-checked,
   nothing kept on a mismatch); `amo theme apply` renders tinted, `url` and `path` mustache
   templates and never uses the network. `amo theme templates [APP]` lists every source.
+- pywal-format templates (pywal16's `{color0.rgba}` markers, with its colour properties and
+  `lighten`, `darken`, `saturate`, `foxify`, `adjust_alpha`), rendered by amontillado over
+  `color0`-`color15` by the base24 ANSI table, so `source: pywal` apps apply.
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).
 
 ### Changed
 
+- Python 3.11 or later (was 3.10, end of life since 2026-10).
 - New runtime dependency: `pystache` (MIT), for rendering mustache templates.
 - `amo index` hashes only files whose size or mtime changed since the last index; the index
   keeps both per file (schema 3; a schema 2 index is upgraded in place).

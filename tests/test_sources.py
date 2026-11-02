@@ -132,8 +132,8 @@ def test_apply_renders_a_synced_tinted_template(home: Path) -> None:
     cached_path(entry.sha256).write_bytes(TEMPLATE)
     with pytest.raises(ThemeError, match="does not match its hash"):
         render_app("rofi", app, palette, "dark")
-    with pytest.raises(ThemeError, match="format pywal is not supported yet"):
-        render_app("kitty", AppConfig(source="pywal"), palette, "dark")
+    with pytest.raises(ThemeError, match="format matugen is not supported yet"):
+        render_app("kitty", AppConfig(source="matugen-themes"), palette, "dark")
 
 
 def test_apply_records_the_pin(home: Path) -> None:

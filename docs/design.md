@@ -686,6 +686,22 @@ Each format gets a *view* of the palette: the variables its templates expect.
   11 `base13`, 12 `base16`, 13 `base17`, 14 `base15`, 15 `base07`), `background` (`base00`),
   `foreground` and `cursor` (`base05`), `wallpaper`, `alpha` (100). Every colour property pywal16
   defines, and its `lighten` / `darken` calls. An unknown property is a render error.
+  Checked against pywal16's source at the registry's pin (`pywal/util.py`, `export.py`): the
+  properties (`strip`, `rgb`, `rgbspace`, `rgba`, `xrgba`, `hex_argb`, `alpha`, `alpha_dec`,
+  `alpha_hex`, `decimal`, `octal` and their `_strip` forms, `red`/`green`/`blue` and their
+  `_hex`/`_dec` forms, `w3_luminance`) and the functions `lighten`, `darken`, `saturate` (sets
+  the HLS saturation), `foxify` and `adjust_alpha`, chained (`{color4.lighten(10).strip}`),
+  with pywal16's arithmetic: channels truncated, a percentage stripped of every non-digit
+  (`lighten(2.5)` is 25 %, `darken(-10)` is 10 %), and an `adjust_alpha` undone by any later
+  function (each returns a new colour at the default alpha). `tests/test_pywal_parity.py`
+  checks every property and function against pywal16 itself (a dev dependency pinned to the
+  release matching the registry's commit). `{{` and `}}` are literal braces. Where
+  pywal16 logs and goes on, amontillado fails: a `{...}` that does not parse (pywal16 skips the
+  whole file), an unknown colour or property, a function on `wallpaper`, `alpha` or `checksum`,
+  and arithmetic that leaves 0-255 (pywal16 prints a three-digit channel). Markers are replaced
+  where they stand (pywal16 replaces a marker's first occurrence in its line, which can be an
+  escaped copy). `checksum` (pywal16: the picture's MD5, for its cache) is the palette's slug;
+  `wallpaper` is the profile's picture, or empty.
 - **matugen** (**departs**: the direction had matugen render these with `--import-json`):
   amontillado renders the subset of matugen's template language that matugen-themes uses, over a
   Material view of the palette. Counted over all 74 matugen-themes templates (2026-10-29): 4,476

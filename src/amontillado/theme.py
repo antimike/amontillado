@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
@@ -26,7 +26,13 @@ from amontillado.config import AppConfig, Config, ThemeConfig, xdg_dir
 from amontillado.contrast import apply_contrast
 from amontillado.palette import Palette, dump_palette, load_palette
 from amontillado.registry import RegistryError
-from amontillado.render import RenderError, mustache_view, render_mustache
+from amontillado.render import (
+    RenderError,
+    mustache_view,
+    pywal_view,
+    render_mustache,
+    render_pywal,
+)
 from amontillado.sources import resolve
 from amontillado.sources import text as template_text
 
@@ -105,21 +111,26 @@ def choose_variant(palette: Palette, wanted: str) -> str:
     return only
 
 
-def render_app(name: str, app: AppConfig, palette: Palette, variant: str) -> Rendered:
+def render_app(
+    name: str, app: AppConfig, palette: Palette, variant: str, wallpaper: Path | None = None
+) -> Rendered:
     """`app` rendered from `palette`. Raises ThemeError for what cannot be rendered (yet), and
     for a fetched template `amo theme sync` has not kept."""
     if app.render_with != "amontillado":
         raise ThemeError(f"theme.apps.{name}: render_with: {app.render_with} is not supported yet")
     try:
         template = resolve(name, app)
-        if template.format != "mustache":
+        if template.format not in ("mustache", "pywal"):
             raise ThemeError(f"theme.apps.{name}: format {template.format} is not supported yet")
         source_text = template_text(template)
     except RegistryError as exc:
         raise ThemeError(str(exc)) from exc
     variant = choose_variant(palette, app.variant or variant)
     try:
-        text = render_mustache(source_text, mustache_view(palette, variant))
+        if template.format == "pywal":
+            text = render_pywal(source_text, pywal_view(palette, variant, wallpaper))
+        else:
+            text = render_mustache(source_text, mustache_view(palette, variant))
     except RenderError as exc:
         raise ThemeError(f"theme.apps.{name}: {template.name}: {exc}") from exc
     record = {
@@ -169,16 +180,19 @@ def plan(
         raise ThemeError(f"--app {', '.join(unknown)}: not under theme.apps")
     existing = profile_dir(theme, profile)
     old_apps = _applied_apps(existing)
+    link = existing / WALLPAPER_LINK
+    current_wallpaper = Path(os.readlink(link)) if link.is_symlink() else None
     wallpaper = None
     if palette is None:
         palette = applied_palette(theme, profile)
-        link = existing / WALLPAPER_LINK
-        wallpaper = Path(os.readlink(link)) if link.is_symlink() else None
+        wallpaper = current_wallpaper
     palette = apply_contrast(palette, contrast)
     names = list(only) or list(theme.apps)
     if not names:
         logger.warning("no apps under theme.apps: only the palette is written")
-    rendered = [render_app(name, theme.apps[name], palette, variant) for name in names]
+    # The picture the profile will hold: under --app the copy keeps the current one.
+    picture = current_wallpaper if only else wallpaper
+    rendered = [render_app(name, theme.apps[name], palette, variant, picture) for name in names]
     apps = {} if not only else {k: v for k, v in old_apps.items() if k in theme.apps}
     apps.update({item.app: item.record for item in rendered})
     copy_from = None
@@ -209,7 +223,7 @@ def write(plan: Plan, directory: Path) -> None:
     if plan.wallpaper is not None:
         (directory / WALLPAPER_LINK).symlink_to(plan.wallpaper)
     theme = {
-        "applied": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "applied": datetime.now(UTC).isoformat(timespec="seconds"),
         "palette": plan.palette.name,
         "apps": plan.apps,
     }
@@ -225,7 +239,7 @@ def apply(config: Config, plan: Plan, *, activate: bool) -> Path:
     link = profile_dir(theme, plan.profile)
     if link.exists() and not link.is_symlink():
         raise ThemeError(f"{link} is not amontillado's: move it away and apply again")
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S-")
     new = Path(tempfile.mkdtemp(prefix=stamp, dir=generations))
     try:
         if plan.copy_from is not None:

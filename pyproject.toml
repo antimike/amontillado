@@ -3,7 +3,7 @@ name = "amontillado"
 version = "0.1.0"
 description = "A local wallpaper library: fetch from Wallhaven, measure each image's colour and detail, and query the collection by how it looks"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE.md"]
 authors = [{ name = "Michael Haynes" }]
@@ -14,7 +14,6 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -43,6 +42,7 @@ Issues = "https://github.com/antimike/amontillado/issues"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pywal16==3.8.15",
     "ruff>=0.6",
 ]
 
@@ -56,7 +56,7 @@ module-root = "src"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "RUF"]

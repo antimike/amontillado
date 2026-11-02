@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -229,9 +229,9 @@ def _usage(conn: sqlite3.Connection) -> list[tuple[str, int, str]]:
 
 def test_record_shown_counts_and_keeps_the_latest(config: Config) -> None:
     conn = connect(config.index_path)
-    record_shown(conn, "aa", datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc))
-    record_shown(conn, "aa", datetime(2026, 10, 28, 9, 30, tzinfo=timezone.utc))
-    record_shown(conn, "bb", datetime(2026, 10, 28, 9, 31, tzinfo=timezone.utc))
+    record_shown(conn, "aa", datetime(2026, 10, 27, 18, 0, tzinfo=UTC))
+    record_shown(conn, "aa", datetime(2026, 10, 28, 9, 30, tzinfo=UTC))
+    record_shown(conn, "bb", datetime(2026, 10, 28, 9, 31, tzinfo=UTC))
     assert sorted(_usage(conn)) == [
         ("aa", 2, "2026-10-28T09:30:00+00:00"),
         ("bb", 1, "2026-10-28T09:31:00+00:00"),
@@ -240,7 +240,7 @@ def test_record_shown_counts_and_keeps_the_latest(config: Config) -> None:
 
 def test_record_shown_defaults_to_now(config: Config) -> None:
     conn = connect(config.index_path)
-    before = datetime.now(timezone.utc).replace(microsecond=0)
+    before = datetime.now(UTC).replace(microsecond=0)
     record_shown(conn, "aa")
     assert datetime.fromisoformat(_usage(conn)[0][2]) >= before
 

@@ -19,7 +19,7 @@ just install-dev        # editable pipx install of `amontillado` / `amo`
 Tooling enforces what it can (ruff's rule set and line length are in `pyproject.toml`); the rest
 is here.
 
-- **Python 3.10+.** `from __future__ import annotations` first in every module; PEP 604 unions
+- **Python 3.11+.** `from __future__ import annotations` first in every module; PEP 604 unions
   (`int | None`) and built-in generics (`list[str]`). Type hints on every function signature.
 - **`pathlib.Path`**, not `os.path` string handling.
 - **CLI:** argparse only (no click or typer), with the shared `HelpFormatter` in `cli.py`; every
@@ -58,4 +58,6 @@ is here.
 
 [Semantic Versioning](https://semver.org/). To release: move the `[Unreleased]` entries under the
 new version in `CHANGELOG.md`, set `version` in `pyproject.toml`, commit, and tag `vX.Y.Z` on
-that commit. Installs pin a tag: `pipx install git+https://github.com/antimike/amontillado@vX.Y.Z`.
+that commit. Before a release, `just registry --update` moves the template pins; if it moves
+pywal16's, set the `pywal16` dev dependency to the release with the same `pywal/export.py` and
+`pywal/util.py` and run `just test` (`tests/test_pywal_parity.py` compares the renderer with it). Installs pin a tag: `pipx install git+https://github.com/antimike/amontillado@vX.Y.Z`.

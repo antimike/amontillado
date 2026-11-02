@@ -24,7 +24,7 @@ import tempfile
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
@@ -239,7 +239,7 @@ def _keep(
         record = Record(
             uuid.uuid4().hex,
             source=_source(wallpaper, tags),
-            fetched=datetime.now(timezone.utc).replace(microsecond=0),
+            fetched=datetime.now(UTC).replace(microsecond=0),
             files={file.name: FileEntry(sha256, width, height, metrics)},
         )
         write_record(directory / INFO_NAMES[0], record)
