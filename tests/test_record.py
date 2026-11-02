@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -30,7 +30,7 @@ def _record() -> Record:
         id=RECORD_ID,
         name="night-city",
         source={"site": "wallhaven", "id": "abc123", "purity": "sfw"},
-        fetched=datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc),
+        fetched=datetime(2026, 10, 27, 18, 0, tzinfo=UTC),
         files={
             "night-city.png": FileEntry(SHA, 3840, 2160, METRICS),
             "night-city-21x9.png": FileEntry(

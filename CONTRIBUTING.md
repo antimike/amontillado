@@ -19,7 +19,7 @@ just install-dev        # editable pipx install of `amontillado` / `amo`
 Tooling enforces what it can (ruff's rule set and line length are in `pyproject.toml`); the rest
 is here.
 
-- **Python 3.10+.** `from __future__ import annotations` first in every module; PEP 604 unions
+- **Python 3.11+.** `from __future__ import annotations` first in every module; PEP 604 unions
   (`int | None`) and built-in generics (`list[str]`). Type hints on every function signature.
 - **`pathlib.Path`**, not `os.path` string handling.
 - **CLI:** argparse only (no click or typer), with the shared `HelpFormatter` in `cli.py`; every

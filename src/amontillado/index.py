@@ -14,7 +14,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
@@ -353,7 +353,7 @@ def _record_at(conn: sqlite3.Connection, path: Path) -> str:
 
 def record_shown(conn: sqlite3.Connection, record_id: str, when: datetime | None = None) -> None:
     """Count one showing of the record with `record_id`, at `when` (default now, UTC)."""
-    when = when or datetime.now(timezone.utc)
+    when = when or datetime.now(UTC)
     conn.execute("BEGIN")
     try:
         conn.execute(_RECORD_SHOWN, (record_id, when.isoformat(timespec="seconds")))

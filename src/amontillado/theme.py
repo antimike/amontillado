@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
@@ -223,7 +223,7 @@ def write(plan: Plan, directory: Path) -> None:
     if plan.wallpaper is not None:
         (directory / WALLPAPER_LINK).symlink_to(plan.wallpaper)
     theme = {
-        "applied": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "applied": datetime.now(UTC).isoformat(timespec="seconds"),
         "palette": plan.palette.name,
         "apps": plan.apps,
     }
@@ -239,7 +239,7 @@ def apply(config: Config, plan: Plan, *, activate: bool) -> Path:
     link = profile_dir(theme, plan.profile)
     if link.exists() and not link.is_symlink():
         raise ThemeError(f"{link} is not amontillado's: move it away and apply again")
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S-")
     new = Path(tempfile.mkdtemp(prefix=stamp, dir=generations))
     try:
         if plan.copy_from is not None:
