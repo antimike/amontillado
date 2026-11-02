@@ -40,6 +40,8 @@ All notable changes to amontillado are documented here. The format follows
 - pywal-format templates (pywal16's `{color0.rgba}` markers, with its colour properties and
   `lighten`, `darken`, `saturate`, `foxify`, `adjust_alpha`), rendered by amontillado over
   `color0`-`color15` by the base24 ANSI table, so `source: pywal` apps apply.
+- `docs/examples/nvim/`: a lush.nvim spec over the applied `palette.lua` (roles for the interface,
+  base24 hues for syntax) and a watcher that re-runs `:colorscheme` after each `amo theme apply`.
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).
