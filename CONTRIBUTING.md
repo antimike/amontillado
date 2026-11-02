@@ -10,6 +10,7 @@ uv sync                 # create .venv with the dev dependencies
 pre-commit install      # gitleaks on every commit
 just test               # pytest
 just lint               # ruff check + format check (what CI runs)
+just lint-lua           # stylua check of docs/examples/nvim (needs stylua on PATH)
 just fmt                # format and apply safe fixes
 just install-dev        # editable pipx install of `amontillado` / `amo`
 ```

@@ -13,6 +13,10 @@ lint:
     uv run ruff check .
     uv run ruff format --check .
 
+# Check the Lua examples' formatting (stylua on PATH; docs/examples/nvim/stylua.toml).
+lint-lua:
+    stylua --check docs/examples/nvim
+
 # Format and apply safe lint fixes.
 fmt:
     uv run ruff format .

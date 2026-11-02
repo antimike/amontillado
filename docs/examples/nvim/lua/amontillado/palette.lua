@@ -16,7 +16,8 @@ function M.load(cache)
   local path = vim.fs.joinpath(cache, "current", "palette.lua")
   local ok, palette = pcall(dofile, path)
   if not ok then
-    error(("amontillado: cannot read %s (run amo theme apply with an nvim app): %s"):format(path, palette))
+    local hint = "run amo theme apply with an nvim app"
+    error(("amontillado: cannot read %s (%s): %s"):format(path, hint, palette))
   end
   return palette
 end

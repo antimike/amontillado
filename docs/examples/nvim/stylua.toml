@@ -1,0 +1,5 @@
+# stylua (the nvim examples): lush specs call groups with a bare table, `Normal { ... }`.
+indent_type = "Spaces"
+indent_width = 2
+column_width = 100
+call_parentheses = "NoSingleTable"
