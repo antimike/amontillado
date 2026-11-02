@@ -142,10 +142,10 @@ def wallhaven() -> FakeWeb:
     for purity in ("100", "110", "101", "111"):
         web.add(_search_url(purity, 1), fixture_json("wallhaven-search-1.json"))
         web.add(_search_url(purity, 2), fixture_json("wallhaven-search-2.json"))
-    for wallpaper_id, rgb, fmt in (
-        ("aaa111", (0, 0, 0), "JPEG"),
-        ("bbb222", (255, 255, 255), "PNG"),
-        ("ccc333", (8, 8, 8), "JPEG"),
+    for wallpaper_id, rgb, fmt, tag in (
+        ("aaa111", (0, 0, 0), "JPEG", "night sky"),
+        ("bbb222", (255, 255, 255), "PNG", "snow"),
+        ("ccc333", (8, 8, 8), "JPEG", "cave"),
     ):
         prefix = wallpaper_id[:2]
         ext = ".png" if fmt == "PNG" else ".jpg"
@@ -153,5 +153,6 @@ def wallhaven() -> FakeWeb:
         web.add(thumb, image_bytes(rgb, (432, 243), "JPEG"))
         full = f"https://w.wallhaven.cc/full/{prefix}/wallhaven-{wallpaper_id}{ext}"
         web.add(full, image_bytes(rgb, (128, 72), fmt))
-        web.add(f"{API}/w/{wallpaper_id}", {"data": {"tags": [{"name": f"tag-{wallpaper_id}"}]}})
+        tags = [{"name": tag, "category": "Nature"}]
+        web.add(f"{API}/w/{wallpaper_id}", {"data": {"tags": tags}})
     return web

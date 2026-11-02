@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import sqlite3
 import tempfile
+import unicodedata
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -33,11 +35,11 @@ from PIL import Image
 from amontillado.classes import Look, classify
 from amontillado.config import Config
 from amontillado.index import add as add_to_index
-from amontillado.index import files_with_hash, source_ids
+from amontillado.index import files_with_hash, names, source_ids
 from amontillado.library import Entry, file_stat, source_ids_on_disk
 from amontillado.metrics import Metrics, image_size, measure_file
 from amontillado.record import INFO_NAMES, FileEntry, Record, sha256_file, write_record
-from amontillado.wallhaven import Client, Search, WallhavenError, Wallpaper
+from amontillado.wallhaven import Client, Search, Tag, WallhavenError, Wallpaper
 
 logger = getLogger(__name__)
 
@@ -46,6 +48,18 @@ SITE = "wallhaven"
 BUSY_CLASSES = ("busy", "sparse")
 # The visual extremes a palette generator is compared on (docs/design.md, "Test set").
 TEST_SET = ("dark", "light", "muted", "saturated", "busy", "sparse", "monochrome", "multi-hue")
+# Record names from tags (docs/design.md, "Names of fetched records"; *initial*, from the
+# amo-3fg.5 sample of 400). Tags in these categories say how the picture was made or credit
+# someone, not what it shows.
+NAME_SKIP_CATEGORIES = frozenset({"Artists", "Companies & Logos", "Digital", "Photography"})
+# Tags that describe nearly every picture, as slugs.
+NAME_SKIP_TAGS = frozenset({
+    "2d", "artwork", "black-background", "digital-art", "fan-art", "illustration", "pc-gaming",
+    "screen-shot", "simple-background", "video-game-art", "video-games", "watermarked",
+    "white-background",
+})  # fmt: skip
+NAME_MAX_TAGS = 3
+NAME_MAX_LENGTH = 40  # of the tag part, before "-<id>"
 
 
 class FetchError(Exception):
@@ -197,6 +211,40 @@ def _classes(metrics: Metrics) -> str:
     return ", ".join(classify(metrics)) or "no class"
 
 
+def record_name(tags: list[Tag], category: str, wallpaper_id: str) -> str:
+    """A record name from a wallpaper's tags: up to NAME_MAX_TAGS of them, in Wallhaven's
+    order, as slugs, then the Wallhaven id (`cyberpunk-interior-technology-x8ye3z`); the
+    category stands in when no tag is usable (`general-x8ye3z`). A tag whose words all appear
+    in a chosen tag is passed over, and one that holds all of a chosen tag's words takes its
+    place (`anime girls` over `anime`)."""
+    chosen: list[str] = []
+    for tag in tags:
+        if tag.category in NAME_SKIP_CATEGORIES:
+            continue
+        slug = _slug(tag.name)
+        if not slug or slug in NAME_SKIP_TAGS:
+            continue
+        words = set(slug.split("-"))
+        if any(words <= set(c.split("-")) for c in chosen):
+            continue
+        kept = [c for c in chosen if not set(c.split("-")) <= words]
+        if len("-".join([*kept, slug])) > NAME_MAX_LENGTH:
+            continue
+        chosen = [*kept, slug]
+        if len(chosen) == NAME_MAX_TAGS:
+            break
+    return "-".join([*(chosen or [_slug(category) or "wallhaven"]), _slug(wallpaper_id)])
+
+
+def _slug(text: str) -> str:
+    """`text` as lowercase ASCII words joined by hyphens, a trailing qualifier in brackets
+    dropped: `Joker (DC)` is `joker`, `Pokémon` is `pokemon`, `Assassin's Creed` is
+    `assassins-creed`."""
+    text = re.sub(r"\s*\([^)]*\)\s*$", "", text).replace("'", "").replace("\u2019", "")
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
 def _keep(
     config: Config,
     conn: sqlite3.Connection,
@@ -209,15 +257,12 @@ def _keep(
     metrics, or None if `accept` refuses them and `discard_mismatches` deleted it. Nothing is
     left behind on failure."""
     root = config.library_roots[0] if wallpaper.purity == "sfw" else config.nsfw_root
-    directory = root / f"wallhaven-{wallpaper.id}"
-    if directory.exists():
-        raise FetchError(f"{directory} already exists; run `amo index`")
     data = client.download(wallpaper.image_url)
     root.mkdir(parents=True, exist_ok=True)
     # Not an image suffix, so a scan of the root never takes it for a loose image.
-    fd, name = tempfile.mkstemp(dir=root, prefix=f".{wallpaper.file_name}.", suffix=".part")
-    temporary = Path(name)
-    file = directory / wallpaper.file_name
+    fd, part = tempfile.mkstemp(dir=root, prefix=f".{wallpaper.file_name}.", suffix=".part")
+    temporary = Path(part)
+    directory: Path | None = None  # set once this call has made it
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(data)
@@ -234,19 +279,30 @@ def _keep(
         if duplicates:
             raise FetchError(f"same content as {duplicates[0]}")
         tags = client.tags(wallpaper.id)
-        directory.mkdir(parents=True)
+        name: str | None = record_name(tags, wallpaper.category, wallpaper.id)
+        if name in names(conn):
+            logger.warning("%s: name %s is taken; the record has none", wallpaper.id, name)
+            name = None
+        target = root / (name or f"wallhaven-{wallpaper.id}")
+        if target.exists():
+            raise FetchError(f"{target} already exists; run `amo index`")
+        target.mkdir(parents=True)
+        directory = target
+        file = directory / wallpaper.file_name
         os.replace(temporary, file)
         record = Record(
             uuid.uuid4().hex,
-            source=_source(wallpaper, tags),
+            name,
+            source=_source(wallpaper, [tag.name for tag in tags]),
             fetched=datetime.now(UTC).replace(microsecond=0),
             files={file.name: FileEntry(sha256, width, height, metrics)},
         )
         write_record(directory / INFO_NAMES[0], record)
     except BaseException:
-        file.unlink(missing_ok=True)
-        if directory.is_dir() and not any(directory.iterdir()):
-            directory.rmdir()
+        if directory is not None:
+            (directory / wallpaper.file_name).unlink(missing_ok=True)
+            if not any(directory.iterdir()):
+                directory.rmdir()
         raise
     finally:
         temporary.unlink(missing_ok=True)

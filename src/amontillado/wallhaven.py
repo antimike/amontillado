@@ -167,6 +167,14 @@ class Wallpaper:
         return f"wallhaven-{self.id}{_EXTENSIONS[self.file_type]}"
 
 
+@dataclass(frozen=True)
+class Tag:
+    """A wallpaper's tag: its name and Wallhaven's category for it ("" if none)."""
+
+    name: str
+    category: str
+
+
 def _str(value: object) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{value!r} is not a string")
@@ -218,13 +226,17 @@ class Client:
                 params["seed"] = meta["seed"]
             page += 1
 
-    def tags(self, wallpaper_id: str) -> list[str]:
-        """The tag names of a wallpaper (one more API call)."""
+    def tags(self, wallpaper_id: str) -> list[Tag]:
+        """The tags of a wallpaper, in Wallhaven's order (one more API call)."""
         data = self._api(f"/w/{wallpaper_id}", {}).get("data")
         tags = data.get("tags") if isinstance(data, dict) else None
         if not isinstance(tags, list):
             raise WallhavenError(f"{wallpaper_id}: no tags in the response")
-        return [tag["name"] for tag in tags if isinstance(tag, dict) and "name" in tag]
+        return [
+            Tag(tag["name"], tag["category"] if isinstance(tag.get("category"), str) else "")
+            for tag in tags
+            if isinstance(tag, dict) and isinstance(tag.get("name"), str)
+        ]
 
     def download(self, url: str) -> bytes:
         """The bytes at `url` (a thumbnail or an image; not paced, not an API call)."""
