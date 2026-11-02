@@ -15,8 +15,11 @@ import argparse
 import math
 import random
 import re
+import shlex
+import shutil
 import sqlite3
 import sys
+import tempfile
 from collections.abc import Callable, Iterable
 from contextlib import closing
 from logging import getLogger
@@ -33,7 +36,14 @@ from rich_argparse import RawDescriptionRichHelpFormatter
 from amontillado import __version__
 from amontillado.builtin import BUILTINS
 from amontillado.classes import CLASSES, Look, classify, has_aspect
-from amontillado.config import API_KEY_VARIABLE, Config, ConfigError, api_key, load_config
+from amontillado.config import (
+    API_KEY_VARIABLE,
+    Config,
+    ConfigError,
+    api_key,
+    check_profile,
+    load_config,
+)
 from amontillado.contrast import apply_contrast, check
 from amontillado.fetch import TEST_SET, fetch
 from amontillado.fetch import Options as FetchOptions
@@ -57,6 +67,17 @@ from amontillado.library import PURITIES, AddError, Report, add_picture, heal_li
 from amontillado.metrics import HUE_NAMES, measure_file
 from amontillado.palette import PaletteError, dump_palette, load_palette, palette_from_schemes
 from amontillado.record import sha256_file
+from amontillado.theme import (
+    ThemeError,
+    current_profile,
+    find_palette,
+    reload_commands,
+    run_reloads,
+)
+from amontillado.theme import apply as apply_theme
+from amontillado.theme import describe as describe_theme
+from amontillado.theme import plan as theme_plan
+from amontillado.theme import write as write_theme
 from amontillado.wallhaven import (
     CATEGORY_FLAGS,
     Client,
@@ -372,6 +393,65 @@ def build_parser() -> argparse.ArgumentParser:
     templates.add_argument("app", nargs="?", metavar="APP", help="A template's name.")
     templates.set_defaults(func=cmd_theme_templates)
 
+    apply = theme_commands.add_parser(
+        "apply",
+        help="Render every app from a palette, swap the profile in, reload.",
+        description="Render each app under theme.apps from a palette into a new generation of "
+        "the profile, swap it in for <cache>/<profile> and point <cache>/current at it, then "
+        "run each app's reload command and the wallpaper hook (a failing reload warns). A "
+        "render error changes nothing. Without --palette, re-render the profile's own palette "
+        "(after a config change). No network.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(apply, argparse.SUPPRESS)
+    apply.add_argument(
+        "--palette",
+        metavar="NAME|FILE",
+        help="A palette file, or a preset in $XDG_CONFIG_HOME/amontillado/palettes/.",
+    )
+    apply.add_argument("--profile", metavar="P", help="The profile (default: theme.profile).")
+    apply.add_argument(
+        "--variant",
+        choices=("auto", "dark", "light"),
+        help="The variant for every app without its own (default: theme.variant).",
+    )
+    apply.add_argument(
+        "--app",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Re-render only this app (repeatable); the others keep their files.",
+    )
+    apply.add_argument(
+        "--no-adjust",
+        action="store_true",
+        help="Report failing contrast pairs instead of adjusting them.",
+    )
+    apply.add_argument(
+        "--no-activate", action="store_true", help="Leave current where it is; reload nothing."
+    )
+    apply.add_argument("--no-reload", action="store_true", help="Run no reload commands.")
+    apply.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Render into a temporary directory, print its path and the reload commands; "
+        "change nothing.",
+    )
+    apply.set_defaults(func=cmd_theme_apply)
+
+    current = theme_commands.add_parser(
+        "current",
+        help="Show the applied palette, picture and time.",
+        description="Print the profile's palette name, picture and the time it was applied, "
+        "and warn when its apps were rendered from different palettes (an --app apply).",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(current, argparse.SUPPRESS)
+    current.add_argument(
+        "--profile", metavar="P", help="The profile (default: the one current points to)."
+    )
+    current.set_defaults(func=cmd_theme_current)
+
     return parser
 
 
@@ -640,6 +720,53 @@ def cmd_theme_templates(args: argparse.Namespace) -> None:
             f"{template.name:<{width}}  {kind:<9}  {template.output:<{output_width}}  "
             f"{template.description}"
         )
+
+
+def cmd_theme_apply(args: argparse.Namespace) -> None:
+    config = _load_config()
+    profile = args.profile if args.profile is not None else config.theme.profile
+    mode = config.theme.contrast
+    if args.no_adjust and mode == "adjust":
+        mode = "report"
+    try:
+        check_profile(profile, "--profile")
+        palette = None if args.palette is None else load_palette(find_palette(args.palette))
+        plan = theme_plan(
+            config,
+            palette,
+            profile=profile,
+            variant=args.variant or config.theme.variant,
+            contrast=mode,
+            only=args.app,
+        )
+        if args.dry_run:
+            directory = Path(tempfile.mkdtemp(prefix="amo-theme-"))
+            if plan.copy_from is not None:
+                shutil.copytree(plan.copy_from, directory, symlinks=True, dirs_exist_ok=True)
+            write_theme(plan, directory)
+            print(directory)
+            for command in reload_commands(config, plan, directory):
+                print(f"would run: {shlex.join(command)}")
+            return
+        directory = apply_theme(config, plan, activate=not args.no_activate)
+    except (ConfigError, ThemeError, PaletteError, OSError) as exc:
+        sys.exit(f"amontillado: {exc}")
+    logger.info("applied %s to profile %s", plan.palette.name, profile)
+    if not args.no_reload and not args.no_activate:
+        run_reloads(reload_commands(config, plan, directory))
+
+
+def cmd_theme_current(args: argparse.Namespace) -> None:
+    config = _load_config()
+    profile = args.profile if args.profile is not None else current_profile(config.theme)
+    try:
+        info, palettes = describe_theme(config.theme, profile)
+    except ThemeError as exc:
+        sys.exit(f"amontillado: {exc}")
+    for key, value in info.items():
+        print(f"{key}: {value}")
+    if palettes:
+        logger.warning("apps rendered from different palettes: %s", ", ".join(palettes))
 
 
 def cmd_add(args: argparse.Namespace) -> None:

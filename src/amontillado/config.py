@@ -248,7 +248,7 @@ def _theme(value: object) -> ThemeConfig:
             outputs[app.output] = name
     return ThemeConfig(
         cache=_default_cache() if cache is None else _path("theme.cache", cache),
-        profile=_profile(theme.get("profile", "default")),
+        profile=check_profile(theme.get("profile", "default")),
         generator=_choice("theme.generator", theme.get("generator"), GENERATORS),
         variant=_choice("theme.variant", theme.get("variant", "auto"), VARIANT_CHOICES),
         contrast=_choice("theme.contrast", _off(theme.get("contrast", "adjust")), CONTRAST_CHOICES),
@@ -330,8 +330,9 @@ def _text(key: str, value: object) -> str | None:
     raise ConfigError(f"{key}: {value!r} is not a name")
 
 
-def _profile(value: object) -> str:
-    # A profile is a directory beside `.<profile>.new` and the `current` symlink.
+def check_profile(value: object, key: str = "theme.profile") -> str:
+    """`value` if it can name a profile: a symlink in the cache beside `current` and the
+    hidden `.profiles` directory. Raises ConfigError naming `key`."""
     if (
         not isinstance(value, str)
         or not value
@@ -339,7 +340,7 @@ def _profile(value: object) -> str:
         or value.startswith(".")
         or value == "current"
     ):
-        raise ConfigError(f"theme.profile: {value!r} is not a profile name")
+        raise ConfigError(f"{key}: {value!r} is not a profile name")
     return value
 
 

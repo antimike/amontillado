@@ -24,6 +24,15 @@ All notable changes to amontillado are documented here. The format follows
   syntax): kitty, gtk (`@define-color`, for waybar, swaync, wlogout and GTK), rofi, hyprland (a
   Lua table), hyprlock, sway, dunst (a small complete `dunstrc.d` drop-in), nvim
   (`palette.lua`), shell and json. `amo theme templates [APP]` lists them, or one's variables.
+- `amo theme apply [--palette NAME|FILE]`: render every app under `theme.apps` (built-in
+  templates, or `source: path` mustache files) into a new generation of the profile and swap
+  it in atomically (`<cache>/<profile>` and `current` are symlinks), then run each app's reload
+  command and the wallpaper hook; a render error changes nothing, a failing reload warns.
+  `--palette` takes a file or a preset in `$XDG_CONFIG_HOME/amontillado/palettes/`; without it
+  the profile's palette is re-rendered. `--profile`, `--variant`, `--app NAME` (re-render a
+  subset), `--no-adjust`, `--no-activate`, `--no-reload`, `--dry-run`.
+- `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
+  were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).
 
 ### Changed
