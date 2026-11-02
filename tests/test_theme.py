@@ -95,7 +95,10 @@ def test_unsupported_sources_are_errors(tmp_path: Path) -> None:
     for app, message in [
         (AppConfig(source="tinted"), "tinted has no template 'x'"),
         (AppConfig(format="matugen", render_with="matugen"), "render_with: matugen"),
-        (AppConfig(source="path", path=tmp_path / "t", format="pywal", output="o"), "format pywal"),
+        (
+            AppConfig(source="path", path=tmp_path / "t", format="matugen", output="o"),
+            "format matugen",
+        ),
     ]:
         with pytest.raises(ThemeError, match=message):
             _apply(_config(tmp_path, x=app), _palette())
