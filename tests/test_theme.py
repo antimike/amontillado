@@ -83,7 +83,9 @@ def test_render_error_changes_nothing(tmp_path: Path) -> None:
     _apply(config, _palette("one"))
     before = (tmp_path / "cache" / "default").resolve()
     broken = _config(tmp_path, kitty=AppConfig(), bad=AppConfig(template="nope"))
-    with pytest.raises(ThemeError, match=re.escape("theme.apps.bad: no built-in template 'nope'")):
+    with pytest.raises(
+        ThemeError, match=re.escape("theme.apps.bad: no source has a template 'nope'")
+    ):
         _apply(broken, _palette("two"))
     assert (tmp_path / "cache" / "default").resolve() == before
     assert len(list((tmp_path / "cache" / ".profiles" / "default").iterdir())) == 1
@@ -91,9 +93,9 @@ def test_render_error_changes_nothing(tmp_path: Path) -> None:
 
 def test_unsupported_sources_are_errors(tmp_path: Path) -> None:
     for app, message in [
-        (AppConfig(source="tinted"), "source tinted is not supported yet"),
+        (AppConfig(source="tinted"), "tinted has no template 'x'"),
         (AppConfig(format="matugen", render_with="matugen"), "render_with: matugen"),
-        (AppConfig(source="path", path=tmp_path / "t", format="mustache"), "needs an output"),
+        (AppConfig(source="path", path=tmp_path / "t", format="pywal", output="o"), "format pywal"),
     ]:
         with pytest.raises(ThemeError, match=message):
             _apply(_config(tmp_path, x=app), _palette())

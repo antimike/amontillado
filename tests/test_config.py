@@ -155,8 +155,9 @@ theme:
     rofi-alt: {{source: tinted, template: rofi, variant: light, output: rofi-light.rasi}}
     nvim:     {{}}
     bare:
-    mytool:   {{source: path, path: ~/.config/mytool/theme.mustache, format: mustache}}
-    pinned:   {{source: url, url: "https://x.org/t.mustache", sha256: {SHA}, format: mustache}}
+    mytool:   {{source: path, path: ~/.config/mytool/theme.mustache, format: mustache, output: m}}
+    pinned:   {{source: url, url: "https://x.org/t.mustache", sha256: {SHA}, format: mustache,
+              output: t}}
 """
 
 
@@ -235,6 +236,7 @@ def _app(line: str) -> str:
         (_app("{output: sub/file.css}"), "is not a file name"),
         (_app("{output: .hidden}"), "is not a file name"),
         (_app("{output: theme.yaml}"), "amontillado's own"),
+        (_app("{source: path, path: /t, format: mustache}"), "a.output: source path needs"),
         ("theme:\n  apps:\n    a: {output: x.css}\n    b: {output: x.css}\n", "also a's"),
     ],
 )
@@ -245,7 +247,10 @@ def test_bad_theme(home: Path, text: str, message: str) -> None:
 
 
 def test_render_with_matugen_for_a_matugen_path_template(home: Path) -> None:
-    write_config(home, _app("{source: path, path: /t.css, format: matugen, render_with: matugen}"))
+    write_config(
+        home,
+        _app("{source: path, path: /t.css, format: matugen, render_with: matugen, output: t.css}"),
+    )
     assert load_config().theme.apps["a"].render_with == "matugen"
 
 

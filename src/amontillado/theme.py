@@ -21,12 +21,14 @@ from pathlib import Path
 
 import yaml
 
-from amontillado.builtin import BUILTINS
 from amontillado.classes import LIGHT_MIN
 from amontillado.config import AppConfig, Config, ThemeConfig, xdg_dir
 from amontillado.contrast import apply_contrast
 from amontillado.palette import Palette, dump_palette, load_palette
+from amontillado.registry import RegistryError
 from amontillado.render import RenderError, mustache_view, render_mustache
+from amontillado.sources import resolve
+from amontillado.sources import text as template_text
 
 logger = getLogger(__name__)
 
@@ -104,44 +106,34 @@ def choose_variant(palette: Palette, wanted: str) -> str:
 
 
 def render_app(name: str, app: AppConfig, palette: Palette, variant: str) -> Rendered:
-    """`app` rendered from `palette`. Raises ThemeError for what cannot be rendered yet."""
-    source = app.source or "builtin"
+    """`app` rendered from `palette`. Raises ThemeError for what cannot be rendered (yet), and
+    for a fetched template `amo theme sync` has not kept."""
     if app.render_with != "amontillado":
         raise ThemeError(f"theme.apps.{name}: render_with: {app.render_with} is not supported yet")
-    if source == "builtin":
-        template_name = app.template or name
-        builtin = BUILTINS.get(template_name)
-        if builtin is None:
-            raise ThemeError(
-                f"theme.apps.{name}: no built-in template {template_name!r} "
-                "(amo theme templates lists them)"
-            )
-        template, output = builtin.text(), app.output or builtin.output
-    elif source == "path":
-        if app.format != "mustache":
-            raise ThemeError(f"theme.apps.{name}: format {app.format} is not supported yet")
-        if app.output is None:
-            raise ThemeError(f"theme.apps.{name}: source: path needs an output")
-        try:
-            template = app.path.read_text()  # type: ignore[union-attr]  # config requires it
-        except OSError as exc:
-            raise ThemeError(f"theme.apps.{name}: {exc}") from exc
-        template_name, output = str(app.path), app.output
-    else:
-        raise ThemeError(f"theme.apps.{name}: source {source} is not supported yet")
+    try:
+        template = resolve(name, app)
+        if template.format != "mustache":
+            raise ThemeError(f"theme.apps.{name}: format {template.format} is not supported yet")
+        source_text = template_text(template)
+    except RegistryError as exc:
+        raise ThemeError(str(exc)) from exc
     variant = choose_variant(palette, app.variant or variant)
     try:
-        text = render_mustache(template, mustache_view(palette, variant))
+        text = render_mustache(source_text, mustache_view(palette, variant))
     except RenderError as exc:
-        raise ThemeError(f"theme.apps.{name}: {template_name}: {exc}") from exc
+        raise ThemeError(f"theme.apps.{name}: {template.name}: {exc}") from exc
     record = {
-        "source": source,
-        "template": template_name,
-        "output": output,
+        "source": template.source,
+        "template": template.name,
+        "output": template.output,
         "variant": variant,
         "palette": palette.name,
     }
-    return Rendered(name, output, text, record)
+    if template.commit is not None:
+        record["commit"] = template.commit
+    if template.sha256 is not None:
+        record["sha256"] = template.sha256
+    return Rendered(name, template.output, text, record)
 
 
 @dataclass(frozen=True)

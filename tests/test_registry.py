@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from amontillado.builtin import BUILTINS
 from amontillado.palette import BASE24_KEYS, ROLES, Palette, complete_variant
+from amontillado.registry import FETCHED, RegistryError, find, parse, registry, text, variables
 from amontillado.render import mustache_view, render_mustache
 
+BUILTINS = registry()["builtin"]
 DARK = {f"base{i:02X}": f"#{i * 16:02x}{i * 8:02x}{255 - i * 16:02x}" for i in range(16)}
 
 
@@ -21,7 +22,7 @@ def _palette() -> Palette:
 
 def _render(name: str, variant: str = "dark") -> str:
     palette = _palette()
-    return render_mustache(BUILTINS[name].text(), mustache_view(palette, variant))
+    return render_mustache(text(find("builtin", name)), mustache_view(palette, variant))
 
 
 @pytest.mark.parametrize("name", list(BUILTINS))
@@ -34,16 +35,16 @@ def test_every_template_renders(name: str, variant: str) -> None:
 
 @pytest.mark.parametrize("name", [n for n, t in BUILTINS.items() if n not in ("kitty", "dunst")])
 def test_variables_only_templates_hold_every_key_and_role(name: str) -> None:
-    variables = set(BUILTINS[name].variables())
+    used = set(variables(text(BUILTINS[name])))
     assert BUILTINS[name].complete is False
     for colour in (*BASE24_KEYS, *ROLES):
-        assert f"{colour}-hex" in variables
+        assert f"{colour}-hex" in used
 
 
 def test_variables_in_order_of_first_use() -> None:
-    variables = BUILTINS["json"].variables()
-    assert variables[:3] == ["scheme-slug", "scheme-variant", "base00-hex"]
-    assert len(variables) == len(set(variables))
+    used = variables(text(BUILTINS["json"]))
+    assert used[:3] == ["scheme-slug", "scheme-variant", "base00-hex"]
+    assert len(used) == len(set(used))
 
 
 def test_kitty_colours() -> None:
@@ -79,3 +80,41 @@ def test_shell_exports(tmp_path: Path) -> None:
         check=True,
     )
     assert result.stdout == f"dark {_palette().variants['dark'].roles['on_accent']}"
+
+
+def test_builtin_files_match_the_registry() -> None:
+    shipped = Path(__file__).parent.parent / "src" / "amontillado" / "templates"
+    assert {path.stem for path in shipped.glob("*.mustache")} == set(BUILTINS)
+
+
+def test_every_fetched_entry_is_pinned() -> None:
+    for source in FETCHED:
+        for entry in registry()[source].values():
+            assert entry.commit and len(entry.commit) == 40, entry
+            assert entry.sha256 and len(entry.sha256) == 64, entry
+            assert entry.url == (
+                f"https://raw.githubusercontent.com/{entry.repository}/{entry.commit}/{entry.path}"
+            )
+
+
+def test_find_defaults_to_the_first_source_with_the_template() -> None:
+    assert find(None, "kitty").source == "builtin"
+    assert find(None, "foot").source == "tinted"
+    assert find(None, "zed").source == "matugen-themes"
+    assert find("pywal", "kitty").format == "pywal"
+    with pytest.raises(RegistryError, match="no source has a template 'nope'"):
+        find(None, "nope")
+    with pytest.raises(RegistryError, match="tinted has no template 'hyprlock'"):
+        find("tinted", "hyprlock")
+
+
+def test_parse_rejects_an_unlisted_repository() -> None:
+    data = {
+        "version": 1,
+        "repositories": {},
+        "sources": {
+            "tinted": {"x": {"repository": "a/b", "path": "t", "output": "o", "complete": True}}
+        },
+    }
+    with pytest.raises(RegistryError, match=r"sources\.tinted\.x: needs a listed repository"):
+        parse(data)

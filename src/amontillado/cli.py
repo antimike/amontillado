@@ -34,7 +34,6 @@ from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
-from amontillado.builtin import BUILTINS
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
     API_KEY_VARIABLE,
@@ -67,6 +66,12 @@ from amontillado.library import PURITIES, AddError, Report, add_picture, heal_li
 from amontillado.metrics import HUE_NAMES, measure_file
 from amontillado.palette import PaletteError, dump_palette, load_palette, palette_from_schemes
 from amontillado.record import sha256_file
+from amontillado.registry import RegistryError, registry
+from amontillado.registry import text as registry_text
+from amontillado.registry import variables as template_variables
+from amontillado.sources import check as sources_check
+from amontillado.sources import needed as sources_needed
+from amontillado.sources import sync as sources_sync
 from amontillado.theme import (
     ThemeError,
     current_profile,
@@ -80,10 +85,12 @@ from amontillado.theme import plan as theme_plan
 from amontillado.theme import write as write_theme
 from amontillado.wallhaven import (
     CATEGORY_FLAGS,
+    USER_AGENT,
     Client,
     Search,
     WallhavenError,
     Wallpaper,
+    http_get,
     nearest_swatch,
 )
 
@@ -384,14 +391,33 @@ def build_parser() -> argparse.ArgumentParser:
     templates = theme_commands.add_parser(
         "templates",
         help="List the templates and their variables.",
-        description="Without APP, print each built-in template: its name, whether it is "
-        "variables-only or a complete theme, its default output file and what it holds. With "
-        "APP, print the variables that template uses, one per line.",
+        description="Print each template of the registry: its name (the app it is for), "
+        "source, whether it is variables-only or a complete theme, its default output file "
+        "and what it holds or where it comes from. With APP, only that app's, each mustache "
+        "one followed by the variables it uses.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(templates, argparse.SUPPRESS)
     templates.add_argument("app", nargs="?", metavar="APP", help="A template's name.")
     templates.set_defaults(func=cmd_theme_templates)
+
+    sync = theme_commands.add_parser(
+        "sync",
+        help="Fetch every template the config needs.",
+        description="Download each template the apps under theme.apps use from a fetched "
+        "source (tinted, matugen-themes, pywal: at the registry's pinned commit; url: the "
+        "configured URL) into $XDG_CACHE_HOME/amontillado/sources/, one HTTPS request per "
+        "file not already there. A file whose sha256 differs from the registry's (or the "
+        "config's) is not kept. amo theme apply never uses the network.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(sync, argparse.SUPPRESS)
+    sync.add_argument(
+        "--check",
+        action="store_true",
+        help="Fetch nothing: fail if a template is missing or does not match its hash.",
+    )
+    sync.set_defaults(func=cmd_theme_sync)
 
     apply = theme_commands.add_parser(
         "apply",
@@ -705,21 +731,51 @@ def _check_palette(path: Path) -> None:
 
 
 def cmd_theme_templates(args: argparse.Namespace) -> None:
+    entries = [entry for source in registry().values() for entry in source.values()]
     if args.app is not None:
-        template = BUILTINS.get(args.app)
-        if template is None:
+        entries = [entry for entry in entries if entry.name == args.app]
+        if not entries:
             sys.exit(f"amontillado: no template {args.app!r} (amo theme templates lists them)")
-        for variable in template.variables():
-            print(variable)
-        return
-    width = max(len(name) for name in BUILTINS)
-    output_width = max(len(template.output) for template in BUILTINS.values())
-    for template in BUILTINS.values():
-        kind = "complete" if template.complete else "variables"
+    widths = [
+        max(len(entry.name) for entry in entries),
+        max(len(entry.source) for entry in entries),
+        max(len(entry.output) for entry in entries),
+    ]
+    for entry in entries:
+        kind = "complete" if entry.complete else "variables"
         print(
-            f"{template.name:<{width}}  {kind:<9}  {template.output:<{output_width}}  "
-            f"{template.description}"
+            f"{entry.name:<{widths[0]}}  {entry.source:<{widths[1]}}  {kind:<9}  "
+            f"{entry.output:<{widths[2]}}  {entry.summary}"
         )
+        if args.app is None or entry.format != "mustache":
+            continue
+        try:
+            names = template_variables(registry_text(entry))
+        except RegistryError:
+            print("    (not synced: amo theme sync)")
+            continue
+        for name in names:
+            print(f"    {name}")
+
+
+def cmd_theme_sync(args: argparse.Namespace) -> None:
+    config = _load_config()
+    try:
+        templates = sources_needed(config)
+    except RegistryError as exc:
+        sys.exit(f"amontillado: {exc}")
+    if args.check:
+        problems = sources_check(templates)
+    else:
+        try:
+            problems = sources_sync(templates, http_get, {"User-Agent": USER_AGENT})
+        except (WallhavenError, OSError) as exc:
+            sys.exit(f"amontillado: {exc}")
+    for problem in problems:
+        logger.error("%s", problem)
+    if problems:
+        sys.exit(f"amontillado: {_count(len(problems), 'template')} not synced")
+    logger.info("%s synced", _count(len(templates), "template"))
 
 
 def cmd_theme_apply(args: argparse.Namespace) -> None:

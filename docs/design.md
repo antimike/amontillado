@@ -612,15 +612,38 @@ source colour, so neighbours collapse (on an orange picture red `#ffb595` beside
 | `url` | stated | one file at a commit URL, with its `sha256` |
 | `path` | stated | a local file (the user's own template) |
 
-**The registry** (`amontillado/registry.yaml`, shipped) maps each app to its template in each
-source: repository, path in it, pinned commit, and the file's `sha256`; and per entry whether the
-result is a complete theme or variables only. A release of amontillado moves the pins
-(`tools/registry.py` checks for new commits and records hashes); the user's config can override
-an entry. `amo theme sync` downloads each file the config needs (one HTTPS request per file at
-the pinned commit, no git) into `$XDG_CACHE_HOME/amontillado/sources/` and checks its hash; a
-mismatch is an error and nothing is kept. Templates fetched this way are not redistributed by
-amontillado; any template copied into `builtin` keeps its copyright notice in
-`THIRD-PARTY.md`.
+**The registry** (`amontillado/registry.yaml`, shipped) names per source its templates, each by
+the app it is for (`sources.tinted.rofi`; a second template for one app gets a suffix:
+`rofi-colors`, `hyprland-conf`, `rofi-light`), with its output file and whether the result is a
+complete theme or variables only; a fetched source's entry also has its repository, path in it
+and the file's `sha256`, and each repository one pinned commit. The built-in templates are
+entries of `builtin`. A release of amontillado moves the pins: `tools/registry.py --update`
+takes each repository's default-branch head, fetches every registered file at it and records
+its hash, and checks that a tinted template is one its `templates/config.yaml` builds for base16
+or base24 (not `tinted8`, whose variables differ). The user's config overrides an entry with
+`source: url` (its own pinned URL and hash) or `source: path`. `amo theme sync` downloads each
+file the config needs (one HTTPS request per file at the pinned commit, no git) into
+`$XDG_CACHE_HOME/amontillado/sources/`, named by its `sha256`: a file kept there is the right
+one when its name matches its content, so a pin that moves fetches anew and an unchanged file is
+never fetched twice. A file whose hash differs is an error and is not kept; `--check` fetches
+nothing and fails on a missing or changed file. `amo theme apply` checks each file's hash
+again as it reads it. `theme.yaml` records each app's source, template, and for a fetched one
+the pinned commit and hash. Templates fetched this way are not redistributed by amontillado;
+any template copied into `builtin` keeps its copyright notice in `THIRD-PARTY.md` (none is, so
+far).
+
+Initial registry (2026-11-01): `tinted`: kitty and foot (tinted-terminal's base24 templates),
+rofi and rofi-colors (base16-rofi), dunst, waybar (variables), shell (tinted-shell, base24);
+`matugen-themes`: kitty, gtk, css, rofi, dunst, sway, swaybar, hyprland (Lua), hyprland-conf,
+mako, foot, tmux, nvim (`nvim-colors.vim`), nvim-lua (`neovim/matugen.lua`, a colourscheme of
+`nvim_set_hl` calls over Material roles; the directory's `init.lua` is example glue and
+`template.lua` needs the `nvim-base16` plugin), zed; `pywal`: kitty, waybar, css, rofi,
+rofi-light, sway, hyprland-conf, mako, shell, json. Not taken: tinted-nvim's templates (each
+renders `require("tinted-nvim").load("base24-<slug>")`, which loads only a scheme the plugin
+bundles; the plugin can instead take amontillado's palette as a custom scheme, `setup({ schemes
+= { ["base24-amo"] = dofile(".../palette.lua") } })`, needing no template), and
+base16-gtk-flatcolor (GTK 2 and 3 legacy colour names for the FlatColor theme, which its README
+has the user clone and patch by hand to import them; nothing for libadwaita).
 
 **Built-in templates** (variables-only, every role included, initial set from the chezmoi plan's
 app table): `kitty` (`color0`-`color15`, background, foreground, cursor, selection; an `include`
@@ -712,8 +735,8 @@ theme:
     kitty:    {reload: "pkill -USR1 kitty"}                   # source defaults to builtin
     rofi:     {source: tinted}                                 # complete theme from base16-rofi
     waybar:   {source: builtin, template: gtk, output: waybar-colors.css, reload: "pkill -USR2 waybar"}
-    hyprland: {source: matugen-themes, template: hyprland-colors.lua, reload: "hyprctl reload"}
-    zed:      {source: matugen-themes, template: zed-colors.json, render_with: matugen}
+    hyprland: {source: matugen-themes, reload: "hyprctl reload"}  # hyprland-colors.lua
+    zed:      {source: matugen-themes, render_with: matugen}
     rofi-alt: {source: tinted, template: rofi, variant: light, output: rofi-light.rasi}
     nvim:     {}                                               # palette.lua, for a lush spec
     mytool:   {source: path, path: ~/.config/mytool/theme.mustache, format: mustache, output: mytool.conf}
@@ -726,7 +749,8 @@ theme:
 - `format`: from the source; required for `url` and `path`.
 - `url` + `sha256` for `source: url` (a commit URL; an unpinned template would run someone else's
   code at every theme switch, since some outputs are code: `hyprland.lua`, sourced shell files).
-- `output`: the file name in the profile directory; default from the registry.
+- `output`: the file name in the profile directory; default from the registry, required for
+  `url` and `path`.
 - `reload`: a command run after the swap, split as a shell would split it and run without one
   (as `api_key_command`); `{wallpaper}`, `{profile}` and `{dir}` are substituted. No shell, so
   a pipeline needs a script.

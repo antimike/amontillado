@@ -22,6 +22,10 @@ fmt:
 calibrate *args:
     uv run tools/calibrate.py {{args}}
 
+# Move the template registry's pins to each repository's head (tools/registry.py; needs the network).
+registry *args:
+    uv run tools/registry.py {{args}}
+
 # Install from this checkout into a pipx venv (a snapshot).
 install:
     -pipx uninstall amontillado
