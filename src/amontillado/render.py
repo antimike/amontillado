@@ -97,7 +97,9 @@ PYWAL_ALPHA = "100"
 class PywalColour:
     """pywal16's `Color`: a hex colour and the alpha its alpha properties report. The
     properties and functions below mirror pywal16's (`pywal/util.py`, MIT), including its
-    arithmetic: channel values are truncated, not rounded."""
+    arithmetic: channel values are truncated, not rounded, and every function but
+    `adjust_alpha` returns a new colour at the default alpha (so an adjusted alpha is lost by
+    a later `lighten`). tests/test_pywal_parity.py checks them against pywal16 itself."""
 
     hex: str
     alpha: str = PYWAL_ALPHA
@@ -149,26 +151,26 @@ def _hex(channels: tuple[float, float, float] | list[float]) -> str:
 
 def _lighten(colour: PywalColour, percent: float) -> PywalColour:
     amount = _percent(percent)
-    return replace(colour, hex=_hex([c + (255 - c) * amount for c in colour.rgb_values]))
+    return PywalColour(_hex([c + (255 - c) * amount for c in colour.rgb_values]))
 
 
 def _darken(colour: PywalColour, percent: float) -> PywalColour:
     amount = _percent(percent)
-    return replace(colour, hex=_hex([c * (1 - amount) for c in colour.rgb_values]))
+    return PywalColour(_hex([c * (1 - amount) for c in colour.rgb_values]))
 
 
 def _saturate(colour: PywalColour, percent: float) -> PywalColour:
     # pywal16 sets the HLS saturation to the amount; it does not add to it.
     hue, lightness, _ = colorsys.rgb_to_hls(*(c / 255 for c in colour.rgb_values))
     rgb = colorsys.hls_to_rgb(hue, lightness, _percent(percent))
-    return replace(colour, hex=_hex([c * 255 for c in rgb]))
+    return PywalColour(_hex([c * 255 for c in rgb]))
 
 
 def _foxify(colour: PywalColour, amount: float) -> PywalColour:
     # pywalfox's lightening, as pywal16 has it.
     factor = float(amount)
     channels = [max(c, 10) for c in colour.rgb_values]
-    return replace(colour, hex=_hex([min(max(0, int(c + c * factor)), 255) for c in channels]))
+    return PywalColour(_hex([min(max(0, int(c + c * factor)), 255) for c in channels]))
 
 
 def _adjust_alpha(colour: PywalColour, alpha: float = 100) -> PywalColour:

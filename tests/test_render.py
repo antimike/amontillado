@@ -161,6 +161,9 @@ def test_pywal_view() -> None:
         ("{color4.adjust_alpha(80).hex_argb}", "#CC7cafc2"),
         ("{color4.adjust_alpha().alpha}", "[100]#7cafc2"),
         ("{color4.lighten(10).darken(10).strip}", "7ba4b4"),
+        # Every function but adjust_alpha returns a colour at the default alpha (pywal16 does).
+        ("{color4.adjust_alpha(0.5).lighten(20).rgba}", "rgba(150,191,206,1.0)"),
+        ("{color4.lighten(20).adjust_alpha(0.5).rgba}", "rgba(150,191,206,0.5)"),
         ("{alpha}", "100"),
         ("{{literal}} {{color4}} x{color4}x", "{literal} {color4} x#7cafc2x"),
         ('{{ "a": "{color4}" }}', '{ "a": "#7cafc2" }'),
