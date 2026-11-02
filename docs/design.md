@@ -691,8 +691,11 @@ Each format gets a *view* of the palette: the variables its templates expect.
   `alpha_hex`, `decimal`, `octal` and their `_strip` forms, `red`/`green`/`blue` and their
   `_hex`/`_dec` forms, `w3_luminance`) and the functions `lighten`, `darken`, `saturate` (sets
   the HLS saturation), `foxify` and `adjust_alpha`, chained (`{color4.lighten(10).strip}`),
-  with pywal16's arithmetic: channels truncated, and a percentage stripped of every non-digit
-  (`lighten(2.5)` is 25 %, `darken(-10)` is 10 %). `{{` and `}}` are literal braces. Where
+  with pywal16's arithmetic: channels truncated, a percentage stripped of every non-digit
+  (`lighten(2.5)` is 25 %, `darken(-10)` is 10 %), and an `adjust_alpha` undone by any later
+  function (each returns a new colour at the default alpha). `tests/test_pywal_parity.py`
+  checks every property and function against pywal16 itself (a dev dependency pinned to the
+  release matching the registry's commit). `{{` and `}}` are literal braces. Where
   pywal16 logs and goes on, amontillado fails: a `{...}` that does not parse (pywal16 skips the
   whole file), an unknown colour or property, a function on `wallpaper`, `alpha` or `checksum`,
   and arithmetic that leaves 0-255 (pywal16 prints a three-digit channel). Markers are replaced

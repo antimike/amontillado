@@ -23,6 +23,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pywal16" },
     { name = "ruff" },
 ]
 
@@ -39,6 +40,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
+    { name = "pywal16", specifier = "==3.8.15" },
     { name = "ruff", specifier = ">=0.6" },
 ]
 
@@ -379,6 +381,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
+]
+
+[[package]]
+name = "pywal16"
+version = "3.8.15"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/20/051723abec22086f7d808064a148568880878f251a6edeff0e46dfe785c7/pywal16-3.8.15.tar.gz", hash = "sha256:aa01949f21e9a2a3d72305f19c5e366df81da9806ad3321da294d68b48d6ddd0", size = 97198, upload-time = "2026-04-11T05:32:14.841Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/bb/6ffe31b21e9f5c06e2eb2b194662e3bae8a37fa7c812625d0b2e0a04c7bb/pywal16-3.8.15-py3-none-any.whl", hash = "sha256:7b463c184bffd5c015743f0e9fa0c5983f31928325ca74a011db2c8d70c80a68", size = 166349, upload-time = "2026-04-11T05:32:13.567Z" },
 ]
 
 [[package]]
