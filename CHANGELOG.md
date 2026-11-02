@@ -31,6 +31,12 @@ All notable changes to amontillado are documented here. The format follows
   `--palette` takes a file or a preset in `$XDG_CONFIG_HOME/amontillado/palettes/`; without it
   the profile's palette is re-rendered. `--profile`, `--variant`, `--app NAME` (re-render a
   subset), `--no-adjust`, `--no-activate`, `--no-reload`, `--dry-run`.
+- The template registry: per source (builtin; tinted-theming, matugen-themes and pywal16
+  templates, pinned to a commit with each file's sha256), the templates for each app, their
+  output files and whether each is a complete theme or variables only. `amo theme sync
+  [--check]` downloads the templates the config uses (one HTTPS request per file, hash-checked,
+  nothing kept on a mismatch); `amo theme apply` renders tinted, `url` and `path` mustache
+  templates and never uses the network. `amo theme templates [APP]` lists every source.
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).

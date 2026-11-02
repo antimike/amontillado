@@ -289,6 +289,8 @@ def _app(where: str, value: object) -> AppConfig:
             raise ConfigError(f"{where}.output: {output!r} is not a file name")
         if output in RESERVED_OUTPUTS:
             raise ConfigError(f"{where}.output: {output} is amontillado's own")
+    elif source in ("url", "path"):
+        raise ConfigError(f"{where}.output: source {source} needs an output file name")
     return AppConfig(
         source=source,
         template=_text(f"{where}.template", app.get("template")),
