@@ -51,7 +51,7 @@ id: 3f2a9c1e0b7d4e8f9a6b5c4d3e2f1a0b   # generated once (uuid4), never changes; 
 name: night-city                    # optional; unique in the library; [a-z0-9][a-z0-9._-]*
 default_file: night-city.png        # optional; see below
 thumbnail: .amo/thumbnail.jpg       # derived; a small preview, never one of `files`
-source:                             # null for pictures added by hand
+source:                             # Wallhaven's; for hand-added pictures see "Provenance"
   site: wallhaven
   id: abc123
   url: https://wallhaven.cc/w/abc123
@@ -138,6 +138,24 @@ or the NSFW root with `--nsfw`), moves the file in, and writes `info.yaml`. A ha
 directory with images and an empty or partial `info.yaml` is a record too: `amo index` fills
 in the rest.
 
+**Provenance** (amo-k9j; ticket from chezmoi, 2026-10-30). `amo add` records where a picture
+came from in `source`, from options (`--source-url`, `--image-url`, `--site`, `--title`,
+`--author`, `--license`, `--purity`, `--category`, `--tags`, `--uploaded`) or, for several
+pictures, `--from-json FILE`: a list of objects with `file` (relative to the JSON file),
+optional `name` and `nsfw`, and the same keys (`url`, `image_url`, `site`, `title`, `author`,
+`license`, `purity`, `category`, `tags` as a list, `uploaded`), unknown keys refused. Only the
+keys given are written, in that order; with none, `source` is null as before. `url` is the
+picture's page and `image_url` the file downloaded, as for Wallhaven; `site` defaults to the
+URL's host (`commons.wikimedia.org`). Three keys are new, and only hand-added pictures have them
+so far: `license` (an SPDX identifier, `CC0-1.0`, `CC-BY-4.0`, ..., or `public-domain`, which
+SPDX lacks; US spelling as in SPDX and PyPI), `author` (the creator; `source.source` stays the
+uploader's credited source) and `title`. No record schema bump: `source` is an authored mapping
+that every version keeps as written. `fetched` stays null: amontillado did not download the
+picture, so it does not know when it was. A `--purity` other than sfw puts a file from outside
+the roots in the NSFW root and is refused for a file under a library root, which default
+queries would show. Wallhaven's API gives no licence and only the uploader, so fetched records
+have none of the three.
+
 **Healing** (`amo index`) splits the fields in two:
 
 - **Derived** fields are recomputed whenever they are missing, invalid or out of date, without
@@ -176,14 +194,15 @@ One database, `$XDG_STATE_HOME/amontillado/index.sqlite` (state, not cache: the 
 cannot be rebuilt):
 
 - `records`: one row per record (id, name, directory, root, whether it is under the NSFW root,
-  purity, category, tags as JSON, source site and id, thumbnail path), and `files`: one row per
-  file present (path, record id, sha256 (indexed), whether it is the default file, size, every
-  metric, and for the hash cache its size in bytes and mtime in ns).
+  purity, category, tags as JSON, source site and id, thumbnail path, license, author, title),
+  and `files`: one row per file present (path, record id, sha256 (indexed), whether it is the
+  default file, size, every metric, and for the hash cache its size in bytes and mtime in ns).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (4); a newer one than the
+  table. The database's `PRAGMA user_version` is its schema version (5); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
-  thumbnail column; upgrading adds them empty, for the next `amo index` to fill.
+  thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`;
+  upgrading adds them empty, for the next `amo index` to fill.
 - `usage`: `id` (the record's), `shown_count`, `last_shown` (ISO 8601, UTC); later perhaps a
   rating. Keyed by record, so it follows a picture through renames and moves. Kept across
   rebuilds. The only mutable data; never written to info files, which keeps them stable under
@@ -389,7 +408,8 @@ amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N] [--format path|ro
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
-amo add FILE... [--name N] [--nsfw] [--force] [--dry-run]   make each file a record of its own
+amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
+amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
 amo crop PICTURE W:H [--at F] [--force] [--dry-run]         crop a record's original; prints it
 ```
 
