@@ -223,7 +223,9 @@ nsfw_root: ~/private/wallpapers-nsfw     # replaces the default NSFW root
 api_key_command: pass show wallhaven/api-key
 ```
 
-Paths must be absolute (`~` is expanded). The NSFW root may not be, contain, or lie inside a
+Every key is described in the commented template `amo config init` writes
+([`config.template.yaml`](../src/amontillado/config.template.yaml)). Paths must be absolute (`~`
+is expanded). The NSFW root may not be, contain, or lie inside a
 library root, symlinks resolved; that is a config error, since a recursive search would then
 reach NSFW images. Unknown keys are warned about and ignored. The API key comes from
 `WALLHAVEN_API_KEY` first, then the first line printed by `api_key_command` (split into words
@@ -912,34 +914,24 @@ theme:
     mytool:   {source: path, path: ~/.config/mytool/theme.mustache, format: mustache, output: mytool.conf}
 ```
 
-- `source`: as in the table. Default per app: the first source with a template in the registry,
-  in the order builtin, tinted, matugen-themes, pywal (most role-aware first).
-- `template`: the registry entry within the source, when the app has several; defaults to the
-  app's name.
-- `format`: from the source; required for `url` and `path`.
-- `url` + `sha256` for `source: url` (a commit URL; an unpinned template would run someone else's
-  code at every theme switch, since some outputs are code: `hyprland.lua`, sourced shell files).
-- `output`: the file name in the profile directory; default from the registry, required for
-  `url` and `path`.
-- `reload`: a command run after the swap, split as a shell would split it and run without one
-  (as `api_key_command`); `{wallpaper}`, `{profile}` and `{dir}` are substituted. No shell, so
-  a pipeline needs a script.
-- `variant`: this app's variant, over `theme.variant` and `--variant` ("Palette").
-- `render_with`: `amontillado` (default) or `matugen`, for `format: matugen` only. With `matugen`,
-  amontillado writes a matugen config holding every such app's template and runs matugen once
-  per apply and variant those apps ask for (`matugen image PICTURE --source-color-index 0 -m
-  MODE`, or `matugen color hex ACCENT -m MODE` with the variant's accent for a palette without a
-  picture), in a throwaway config, cache and state home; it reads the rendered files back and
-  writes them with the others, so the profile still swaps in whole and a failing matugen run
-  stops the apply. `theme.yaml` records the app's `renderer` (`matugen 4.2.0`). **Caveats**: the
-  colours are matugen's own, not the palette's, since matugen cannot take colours in
-  (`--import-json` only adds variables): the app misses the contrast adjustments and the named
-  hues, and with a preset or wallust palette it gets colours of the same accent hue but not the
-  same colours (checked 2026-11-03: on one picture matugen's surface `#1a1110` against the
-  palette's `base00` `#15100f`). matugen ≥ 4 must be installed for every apply. Config-only, no
-  CLI override. Built (amo-aqp.14, `amontillado.generators.matugen_render`).
-- `wallpaper.reload`: run last, with the picture's path. Setting a wallpaper stays the user's
-  command; amontillado only knows which picture belongs to the theme.
+Each key's meaning, default and trade-offs are in the commented template `amo config init`
+writes, [`src/amontillado/config.template.yaml`](../src/amontillado/config.template.yaml),
+generated from one table in code (`amontillado.config_keys`, which also writes the `--help` of
+each flag that overrides a key; `just config-template` regenerates the file, and a test fails
+when it is stale). Not repeated here. What the keys do that the template does not say:
+
+- `url` + `sha256` pin a template, since some outputs are code (`hyprland.lua`, sourced shell
+  files): an unpinned template would run someone else's code at every theme switch.
+- `render_with: matugen` (amo-aqp.14, `amontillado.generators.matugen_render`): amontillado
+  writes a matugen config holding every such app's template and runs matugen once per apply and
+  variant those apps ask for (`matugen image PICTURE --source-color-index 0 -m MODE`, or `matugen
+  color hex ACCENT -m MODE` with the variant's accent for a palette without a picture), in a
+  throwaway config, cache and state home; it reads the rendered files back and writes them with
+  the others, so the profile still swaps in whole and a failing matugen run stops the apply.
+  `theme.yaml` records the app's `renderer` (`matugen 4.2.0`). The colours are matugen's own,
+  since matugen cannot take colours in (`--import-json` only adds variables): checked
+  2026-11-03, on one picture matugen's surface was `#1a1110` against the palette's `base00`
+  `#15100f`. Config-only, no CLI override.
 
 The block is checked whenever the config is loaded (any `amo` command), so a mistake fails at
 once, naming its key (`theme.apps.kitty.reload: ...`); unknown keys warn, as at the top level.
@@ -948,6 +940,10 @@ start with `.` and is not `current` (both name other things in the cache); `outp
 file name, not `palette.yaml`, `theme.yaml` or `wallpaper`, and no two apps give the same one;
 `url` is `https://`; a reload command names no placeholder other than the three; `render_with:
 matugen` needs `format: matugen` (or `source: matugen-themes`, whose format it is).
+
+`amo config check [FILE]` loads a config as every command does and fails on an error, an
+unknown key, an app whose template cannot be found or read (a fetched one not yet synced), or
+two apps that would write one output file.
 
 Whether a result is complete or variables-only comes from the registry (`amo theme templates`
 shows it); a variables-only file does nothing until the app's own config maps the variables.
@@ -1023,6 +1019,8 @@ amo theme apply [PICTURE | --palette NAME|FILE] [--profile P] [--variant V] [--h
 amo theme sync [--check]                       fetch (or verify) every template the config needs
 amo theme templates [APP]                      registry entries, sources and their variables
 amo theme current [--profile P]                the applied palette's name, picture and time
+amo config init [--stdout] [--force]           write the commented config template
+amo config check [FILE]                        validate a config file
 ```
 
 PICTURE is any form under "Lookup": its record's default file, or the file named; without one,
@@ -1092,12 +1090,8 @@ Agreed with MH, 2026-10-30:
    from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,
    pywal), without running tinty: [research/tinted-theming.md](research/tinted-theming.md).
    Design agreed 2026-10-30: "Theme engine (v0.2)".
-   Also for v0.2, **a commented config template**: `amo config init` writes `config.yaml` from a
-   template shipped in the package, every key commented with its meaning and trade-offs (e.g.
-   `render_with: matugen`'s caveats); `amo config check` validates a config. The key
-   descriptions live in one table in code that generates the template's comments and the
-   `--help` text of any flag overriding a key; this document links to the template rather than
-   repeating it.
+   Also for v0.2, **a commented config template** (built, amo-aqp.18): `amo config init`,
+   `amo config check` ("Per-app configuration").
 4. git-annex libraries (epic `amo-qnn`): each root a git-annex repository, info files in git,
    images annexed (SHA-256 keys, the same hash as each file's `sha256`); the index stays outside, in
    `$XDG_STATE_HOME`. Encryption of the NSFW library off-machine is a spike (git-remote-gcrypt
