@@ -3,8 +3,8 @@
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
 implemented, test sets included; class thresholds calibrated (2026-10-28). v0.2's theme engine is
 agreed (2026-10-30) and being built: the palette model, `amo palette --from-scheme` and
-`amo palette PICTURE` (matugen) are implemented, with contrast checks and the `theme:` config
-block; "Theme engine (v0.2)". Values marked
+`amo palette PICTURE` (matugen, named hues calibrated) are implemented, with contrast checks
+and the `theme:` config block; "Theme engine (v0.2)". Values marked
 *initial* are starting points to calibrate on real images; change them here when they change in code.
 
 ## Scope
@@ -667,8 +667,8 @@ need one say so):
   and refuses rather than parse an untested format. The adapter (`amontillado.generators`) runs
   matugen in a throwaway config, cache and state home and takes, per variant: `accent` and
   `secondary` from `colors.primary` and `colors.secondary`; the ramp `base00`-`base07` from
-  `palettes.neutral` at tones 10, 15, 25, 50, 70, 90, 95, 98 for dark and 98, 95, 90, 50, 40,
-  20, 15, 10 for light (*initial*); its own sixteen colours from `base16`. On a cloudscape from
+  `palettes.neutral` at tones 5, 10, 20, 50, 70, 95, 98, 100 for dark and 98, 95, 90, 50, 40,
+  10, 5, 0 for light (*initial*, calibrated below); its own sixteen colours from `base16`. On a cloudscape from
   the library (2026-11-03) `base16`'s `base08`-`base0F` were all near-black (`#03080c` to
   `#090e12`), darker than the ramp's `base00`, so the contrast check could not fix them: it
   moves a foreground away from its background, here darker, and black is not far enough.
@@ -689,14 +689,42 @@ colours 1-6 and 9-14:
   (no blending toward the picture); its chroma follows the picture's (the accent's, scaled) and
   its lightness a target per variant (both *initial*); the contrast check then adjusts as for
   any palette. The picture shows in the ramp, the accent and the chroma: a named hue cannot
-  follow the picture's hue and stay that colour. To calibrate with chezmoi's `palette-compare`
-  on the test set, against the generators' raw output.
+  follow the picture's hue and stay that colour. Values (`amontillado.hues`, *initial*):
+
+  | | red `base08` | orange `09` | yellow `0A` | green `0B` | cyan `0C` | blue `0D` | magenta `0E` | brown `0F` |
+  |---|---|---|---|---|---|---|---|---|
+  | hue of | `#ff0000` 29° | `#ff8000` 53° | `#ffff00` 110° | `#00ff00` 143° | `#00ffff` 195° | `#0000ff` 264° | `#ff00ff` 328° | orange's |
+  | L dark | 0.72 | 0.76 | 0.86 | 0.76 | 0.80 | 0.625 | 0.74 | 0.62 |
+  | L light | 0.50 | 0.53 | 0.53 | 0.45 | 0.50 | 0.52 | 0.48 | 0.42 |
+
+  Chroma is the accent's (scale 1.0) within 0.09-0.16, brown at 0.6 of it; a colour outside
+  sRGB loses chroma. Every target passes 4.5:1 on `base01` before adjusting; yellow sits
+  lighter than green (their hues are 33° apart, "Accent metrics"); the dark variant's blue is
+  the darkest accent because terminals use it as a background under `base05` (fast-syntax-
+  highlighting's paired brackets, less's prompt), which needs 3:1 while blue still needs 4.5:1
+  on `base01`. That pair of constraints set the ramp: with `base00`/`base01` at tones 5/10
+  (Material's surface is 6) and `base05` at 95 the window for blue is L 0.62-0.63; at tones
+  10/15 and 90 there is none.
+
+  **Calibration** (2026-11-03, the 13 library pictures including the 8 of the test set, scored
+  with chezmoi's `palette-compare` metrics, contrast adjusted):
+
+  | | tc fails | fg/bg | accent min | distinct | hues |
+  |---|---|---|---|---|---|
+  | Blazer (the live kitty baseline) | 0 | 13.89 | 4.43 | 7.9 | 6/6 |
+  | `amontillado`, dark | 0 | 16.6-16.7 | 5.25-5.29 | 8.9-11.0 | 6/6 |
+  | `amontillado`, light | 2 | 16.3-16.4 | 4.95-4.98 | 9.2-9.5 | 6/6 |
+  | `generator` (matugen `base16`), dark | 1-25 | 13.2-13.3 | 1.01-6.84 | 0.0-5.4 | 0-2/6 |
+
+  The dark variant matches or beats the baseline on every picture with no colour adjusted.
+  The light variant's two failures are fast-syntax-highlighting styles on 256-colour cube
+  entries (`bg=18`, `fg=113`), which no 16-colour palette sets and which assume a dark
+  terminal; its 5-6 adjusted colours are all the bright `base12`-`base17` (L +0.08 from their
+  base colour), so the bright step for a light variant may want to be darker (open, under
+  "Contrast checks").
 - `generator`: the generator's own sixteen colours (matugen's `base16` block; wallust's ANSI
   settings above), then the contrast check, which fixes contrast but not a wrong or collapsed
   hue. For comparison, or for a user who prefers them.
-
-Until the named-hue synthesis is built (amo-aqp.20), `hues: amontillado` is refused with a
-message naming `--hues generator`; the default stays `amontillado`.
 
 `source.hues` in the palette records which. Rejected: matugen's `custom_colors` with
 `blend = true` (Material's harmonization), checked on 3 pictures 2026-10-30. It solves contrast

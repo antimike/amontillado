@@ -7,7 +7,7 @@ are detected at run time; the commands that need one say so when none is install
 
 matugen (>= 4.0) gives both variants in one run: its Material `primary` and `secondary` are the
 accents, its `neutral` tonal palette the ramp. Its `base16` block is pywal-style clustering, not
-named hues.
+named hues: `picture_palette` uses it only under `hues: generator`.
 """
 
 from __future__ import annotations
@@ -26,16 +26,20 @@ from pathlib import Path
 
 from amontillado.colour import HEX_PATTERN
 from amontillado.config import GENERATORS
-from amontillado.palette import BASE16_KEYS, VARIANTS, Palette, PaletteError, complete_variant
+from amontillado.hues import named_hues
+from amontillado.palette import BASE16_KEYS, VARIANTS, Palette, complete_variant
 
 logger = getLogger(__name__)
 
 MATUGEN_MINIMUM = (4, 0)
-# The neutral tones that make the ramp base00-base07, per variant (*initial*): a dark
-# background to a near-white foreground, and the reverse.
+# The neutral tones that make the ramp base00-base07, per variant (*initial*, calibrated
+# 2026-11-03): a near-black background (Material's surface is tone 6) to a near-white
+# foreground, and the reverse. The text is that far from the background so that it stays
+# legible on an accent used as a background (base05 on base0D at 3:1) while the accent still
+# reaches 4.5:1 on base01.
 RAMP_TONES = {
-    "dark": (10, 15, 25, 50, 70, 90, 95, 98),
-    "light": (98, 95, 90, 50, 40, 20, 15, 10),
+    "dark": (5, 10, 20, 50, 70, 95, 98, 100),
+    "light": (98, 95, 90, 50, 40, 10, 5, 0),
 }
 # matugen 4.2's config must hold both tables; an empty [config] alone does not parse.
 _MATUGEN_CONFIG = "[config]\n\n[templates]\n"
@@ -179,19 +183,19 @@ def picture_palette(
 ) -> Palette:
     """The palette, both variants, completed from what a generator gave for a picture.
 
-    `hues` says who assigns base08-base0F (`generator`: its own colours); `hue` is the
-    picture's hue metric, for a role the generator does not give. `source` (the picture's id,
-    file and lightness) is recorded with the generator, the hues and the time. Raises
-    PaletteError.
+    `hues` says who assigns base08-base0F: `amontillado` (fixed named hues, amontillado.hues)
+    or `generator` (its own colours); `hue` is the picture's hue metric, for a role the
+    generator does not give. `source` (the picture's id, file and lightness) is recorded with
+    the generator, the hues and the time.
     """
-    if hues != "generator":
-        raise PaletteError(
-            f"theme.hues: {hues} is not built yet: use --hues generator (or theme.hues: generator)"
-        )
-    variants = {
-        variant: complete_variant(variant, {**given.base16, **given.ramp}, given.roles, hue=hue)
-        for variant, given in generated.variants.items()
-    }
+    variants = {}
+    for variant, given in generated.variants.items():
+        if hues == "amontillado":
+            accents = named_hues(variant, given.roles["accent"])
+        else:
+            accents = {key: given.base16[key] for key in BASE16_KEYS[8:]}
+        colours = {**given.ramp, **accents}
+        variants[variant] = complete_variant(variant, colours, given.roles, hue=hue)
     recorded = {
         **source,
         "generator": generated.generator,

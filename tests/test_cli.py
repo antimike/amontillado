@@ -835,7 +835,7 @@ def test_palette_from_a_picture(
     assert set(palette["variants"]) == {"dark", "light"}
     dark = palette["variants"]["dark"]
     assert dark["roles"]["accent"] == "#99ccfa"
-    assert dark["base24"]["base00"] == "#1a1c1e"
+    assert dark["base24"]["base00"] == "#0f1113"
     assert len(dark["base24"]) == 24
     # matugen ran on the record's default file.
     assert f"image {red} " in fake_matugen.read_text()
@@ -853,12 +853,11 @@ def test_palette_from_a_picture_is_contrast_checked(
 def test_palette_hues_from_the_config(
     indexed: dict[str, Path], home: Path, fake_matugen: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with pytest.raises(SystemExit) as exc:
-        main(["palette", str(indexed["red"])])
-    assert exc.value.code == (
-        "amontillado: theme.hues: amontillado is not built yet: use --hues generator "
-        "(or theme.hues: generator)"
-    )
+    main(["palette", str(indexed["red"])])
+    palette = yaml.safe_load(capsys.readouterr().out)
+    assert palette["source"]["hues"] == "amontillado"
+    # Named hues pass the contrast check as they are.
+    assert "adjusted" not in palette["variants"]["dark"]
     _write_config(home, {"theme": {"hues": "generator"}})
     main(["palette", str(indexed["red"]), "--no-adjust"])
     assert yaml.safe_load(capsys.readouterr().out)["source"]["hues"] == "generator"
