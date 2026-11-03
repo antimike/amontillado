@@ -7,13 +7,15 @@ from conftest import fixture_json
 
 from amontillado.colour import hex_to_oklch
 from amontillado.generators import (
+    Generated,
     GeneratorError,
     choose_generator,
     generate,
     parse_matugen,
+    picture_palette,
     run_matugen,
 )
-from amontillado.palette import BASE16_KEYS
+from amontillado.palette import BASE16_KEYS, PaletteError
 
 
 def test_parse_matugen_gives_both_variants() -> None:
@@ -95,3 +97,19 @@ def test_no_generator_installed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 def test_generate_without_an_adapter(tmp_path: Path) -> None:
     with pytest.raises(GeneratorError, match="wallust: no adapter yet"):
         generate(tmp_path / "a.jpg", "wallust")
+
+
+def test_picture_palette() -> None:
+    generated = Generated("matugen 4.2.0", parse_matugen(fixture_json("matugen-4.2.0.json")))
+    palette = picture_palette(
+        generated, name="sea", hues="generator", hue=200.0, source={"picture": "abc"}
+    )
+    assert palette.name == "sea"
+    assert list(palette.source) == ["picture", "generator", "hues", "generated"]
+    dark = palette.variants["dark"]
+    # The generator's own colours under hues: generator; its accent, not one derived.
+    assert dark.base24["base08"] == generated.variants["dark"].base16["base08"]
+    assert dark.roles["accent"] == "#99ccfa"
+    assert len(dark.base24) == 24
+    with pytest.raises(PaletteError, match=r"theme\.hues: amontillado is not built yet"):
+        picture_palette(generated, name="sea", hues="amontillado", hue=None, source={})

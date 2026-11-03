@@ -20,12 +20,13 @@ import subprocess
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
 from amontillado.colour import HEX_PATTERN
 from amontillado.config import GENERATORS
-from amontillado.palette import BASE16_KEYS, VARIANTS
+from amontillado.palette import BASE16_KEYS, VARIANTS, Palette, PaletteError, complete_variant
 
 logger = getLogger(__name__)
 
@@ -166,3 +167,35 @@ def _hex(value: object, label: str) -> str:
     if not HEX_PATTERN.fullmatch(colour):
         raise GeneratorError(f"{label}: {value!r} is not a #rrggbb colour")
     return colour
+
+
+def picture_palette(
+    generated: Generated,
+    *,
+    name: str,
+    hues: str,
+    hue: float | None,
+    source: dict[str, object],
+) -> Palette:
+    """The palette, both variants, completed from what a generator gave for a picture.
+
+    `hues` says who assigns base08-base0F (`generator`: its own colours); `hue` is the
+    picture's hue metric, for a role the generator does not give. `source` (the picture's id,
+    file and lightness) is recorded with the generator, the hues and the time. Raises
+    PaletteError.
+    """
+    if hues != "generator":
+        raise PaletteError(
+            f"theme.hues: {hues} is not built yet: use --hues generator (or theme.hues: generator)"
+        )
+    variants = {
+        variant: complete_variant(variant, {**given.base16, **given.ramp}, given.roles, hue=hue)
+        for variant, given in generated.variants.items()
+    }
+    recorded = {
+        **source,
+        "generator": generated.generator,
+        "hues": hues,
+        "generated": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    return Palette(name, variants, recorded)
