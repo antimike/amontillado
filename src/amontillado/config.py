@@ -36,13 +36,14 @@ FORMATS = ("mustache", "matugen", "pywal")
 GENERATORS = ("matugen", "wallust")
 VARIANT_CHOICES = ("auto", "dark", "light")
 CONTRAST_CHOICES = ("adjust", "report", "off")
+HUES_CHOICES = ("amontillado", "generator")
 RENDERERS = ("amontillado", "matugen")
 # What a reload command may name, substituted when it runs.
 RELOAD_PLACEHOLDERS = frozenset({"wallpaper", "profile", "dir"})
 # Names in a profile directory that amontillado writes itself.
 RESERVED_OUTPUTS = frozenset({"palette.yaml", "theme.yaml", "wallpaper"})
 _THEME_KEYS = frozenset(
-    {"cache", "profile", "generator", "variant", "contrast", "wallpaper", "apps"}
+    {"cache", "profile", "generator", "hues", "variant", "contrast", "wallpaper", "apps"}
 )
 _APP_KEYS = frozenset(
     {
@@ -96,6 +97,8 @@ class ThemeConfig:
     profile: str = "default"
     # None: the first installed of GENERATORS.
     generator: str | None = None
+    # Who assigns base08-base0F of a picture palette.
+    hues: str = "amontillado"
     variant: str = "auto"
     contrast: str = "adjust"
     wallpaper_reload: tuple[str, ...] | None = None
@@ -250,6 +253,7 @@ def _theme(value: object) -> ThemeConfig:
         cache=_default_cache() if cache is None else _path("theme.cache", cache),
         profile=check_profile(theme.get("profile", "default")),
         generator=_choice("theme.generator", theme.get("generator"), GENERATORS),
+        hues=_choice("theme.hues", theme.get("hues", "amontillado"), HUES_CHOICES),
         variant=_choice("theme.variant", theme.get("variant", "auto"), VARIANT_CHOICES),
         contrast=_choice("theme.contrast", _off(theme.get("contrast", "adjust")), CONTRAST_CHOICES),
         wallpaper_reload=_command("theme.wallpaper.reload", wallpaper.get("reload")),

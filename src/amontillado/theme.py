@@ -170,9 +170,11 @@ def plan(
     variant: str,
     contrast: str,
     only: Sequence[str] = (),
+    wallpaper: Path | None = None,
 ) -> Plan:
     """Render the apps (all, or `only`) of `config` for `profile`, after the contrast check
     (`contrast`: adjust, report or off). `palette` None re-renders the profile's own palette.
+    `wallpaper` is the picture `palette` was made from, for the profile's wallpaper link.
     Raises ThemeError before anything is written."""
     theme = config.theme
     unknown = [name for name in only if name not in theme.apps]
@@ -182,7 +184,6 @@ def plan(
     old_apps = _applied_apps(existing)
     link = existing / WALLPAPER_LINK
     current_wallpaper = Path(os.readlink(link)) if link.is_symlink() else None
-    wallpaper = None
     if palette is None:
         palette = applied_palette(theme, profile)
         wallpaper = current_wallpaper

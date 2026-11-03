@@ -145,6 +145,7 @@ theme:
   cache: ~/.cache/theme
   profile: laptop
   generator: matugen
+  hues: generator
   variant: auto
   contrast: report
   wallpaper: {{reload: "hyprctl hyprpaper reload ,{{wallpaper}}"}}
@@ -164,11 +165,12 @@ theme:
 def test_theme_defaults(home: Path) -> None:
     theme = load_config().theme
     assert theme == ThemeConfig(cache=home / ".cache/theme")
-    assert (theme.profile, theme.variant, theme.contrast, theme.generator) == (
+    assert (theme.profile, theme.variant, theme.contrast, theme.generator, theme.hues) == (
         "default",
         "auto",
         "adjust",
         None,
+        "amontillado",
     )
 
 
@@ -180,10 +182,11 @@ def test_theme_cache_follows_xdg(home: Path, monkeypatch: pytest.MonkeyPatch) ->
 def test_theme_block(home: Path) -> None:
     write_config(home, THEME)
     theme = load_config().theme
-    assert (theme.cache, theme.profile, theme.generator, theme.contrast) == (
+    assert (theme.cache, theme.profile, theme.generator, theme.hues, theme.contrast) == (
         home / ".cache/theme",
         "laptop",
         "matugen",
+        "generator",
         "report",
     )
     assert theme.wallpaper_reload == ("hyprctl", "hyprpaper", "reload", ",{wallpaper}")
@@ -210,6 +213,7 @@ def _app(line: str) -> str:
         ("theme: {profile: .hidden}\n", "theme.profile"),
         ("theme: {profile: a/b}\n", "theme.profile"),
         ("theme: {generator: pywal}\n", "theme.generator: 'pywal' is not one of matugen, wallust"),
+        ("theme: {hues: picture}\n", "theme.hues: 'picture' is not one of amontillado, generator"),
         ("theme: {variant: dusk}\n", "theme.variant"),
         ("theme: {contrast: strict}\n", "theme.contrast"),
         ("theme: {wallpaper: swaybg}\n", "theme.wallpaper must be a mapping"),

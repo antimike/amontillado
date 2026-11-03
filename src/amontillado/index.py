@@ -96,7 +96,7 @@ SELECT f.path, f.record_id, r.purity, r.nsfw_root, f.is_default, f.width, f.heig
     r.thumbnail, f.lightness, f.chroma, f.colourful_share, f.hue, f.hue_name, f.hue_share,
     f.hue_spread, f.warmth, f.busy
 FROM files f JOIN records r ON r.id = f.record_id
-ORDER BY f.path
+{where}ORDER BY f.path
 """
 
 
@@ -271,8 +271,12 @@ def _text(value: object) -> str | None:
     return str(value)
 
 
-def files(conn: sqlite3.Connection) -> list[IndexedFile]:
-    """Every indexed file, by path."""
+def files(conn: sqlite3.Connection, record_id: str | None = None) -> list[IndexedFile]:
+    """Every indexed file (or every file of the record `record_id`), by path."""
+    if record_id is None:
+        rows = conn.execute(_SELECT_FILES.format(where=""))
+    else:
+        rows = conn.execute(_SELECT_FILES.format(where="WHERE f.record_id = ?\n"), (record_id,))
     return [
         IndexedFile(
             path=Path(path),
@@ -286,9 +290,15 @@ def files(conn: sqlite3.Connection) -> list[IndexedFile]:
             metrics=Metrics(*metrics),
         )
         for path, record_id, purity, nsfw_root, is_default, width, height, thumbnail, *metrics in (
-            conn.execute(_SELECT_FILES)
+            rows
         )
     ]
+
+
+def record_name(conn: sqlite3.Connection, record_id: str) -> str | None:
+    """The name of the record `record_id`, if it has one."""
+    row = conn.execute("SELECT name FROM records WHERE id = ?", (record_id,)).fetchone()
+    return None if row is None else row[0]
 
 
 def names(conn: sqlite3.Connection) -> set[str]:

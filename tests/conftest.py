@@ -156,3 +156,22 @@ def wallhaven() -> FakeWeb:
         tags = [{"name": tag, "category": "Nature"}]
         web.add(f"{API}/w/{wallpaper_id}", {"data": {"tags": tags}})
     return web
+
+
+@pytest.fixture
+def fake_matugen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A `matugen` on PATH that prints $FAKE_MATUGEN_VERSION (default 4.2.0) for --version and
+    the recorded 4.2.0 JSON otherwise, logging each command line to the returned file."""
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    log = tmp_path / "matugen.log"
+    script = bin_dir / "matugen"
+    script.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@ XDG_CACHE_HOME=$XDG_CACHE_HOME" >> "{log}"\n'
+        'if [ "$1" = --version ]; then echo "matugen ${FAKE_MATUGEN_VERSION:-4.2.0}"; exit; fi\n'
+        f'cat "{FIXTURES / "matugen-4.2.0.json"}"\n'
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    return log

@@ -814,3 +814,106 @@ def test_fetch_test_set_takes_no_look_filters_or_count(
         main(["fetch", "--test-set", *args])
     assert exc.value.code == "amontillado: --test-set takes no look filters or --count"
     assert web.requests == []
+
+
+def _write_config(home: Path, data: dict[str, object]) -> None:
+    path = home / ".config" / "amontillado" / "config.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data))
+
+
+def test_palette_from_a_picture(
+    indexed: dict[str, Path], fake_matugen: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    red = indexed["red"]
+    main(["palette", str(red.parent), "--hues", "generator", "--no-adjust"])
+    palette = yaml.safe_load(capsys.readouterr().out)
+    assert palette["name"] == _id(red)
+    source = palette["source"]
+    assert (source["picture"], source["file"], source["lightness"]) == (_id(red), "red.png", 0.628)
+    assert (source["generator"], source["hues"]) == ("matugen 4.2.0", "generator")
+    assert set(palette["variants"]) == {"dark", "light"}
+    dark = palette["variants"]["dark"]
+    assert dark["roles"]["accent"] == "#99ccfa"
+    assert dark["base24"]["base00"] == "#1a1c1e"
+    assert len(dark["base24"]) == 24
+    # matugen ran on the record's default file.
+    assert f"image {red} " in fake_matugen.read_text()
+
+
+def test_palette_from_a_picture_is_contrast_checked(
+    indexed: dict[str, Path], fake_matugen: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["palette", str(indexed["red"]), "--hues", "generator"])
+    palette = yaml.safe_load(capsys.readouterr().out)
+    # matugen's base16 block is near-black on this picture; adjusting moves what it can.
+    assert palette["variants"]["dark"]["adjusted"]
+
+
+def test_palette_hues_from_the_config(
+    indexed: dict[str, Path], home: Path, fake_matugen: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", str(indexed["red"])])
+    assert exc.value.code == (
+        "amontillado: theme.hues: amontillado is not built yet: use --hues generator "
+        "(or theme.hues: generator)"
+    )
+    _write_config(home, {"theme": {"hues": "generator"}})
+    main(["palette", str(indexed["red"]), "--no-adjust"])
+    assert yaml.safe_load(capsys.readouterr().out)["source"]["hues"] == "generator"
+
+
+def test_palette_from_a_picture_errors(
+    library: Path, home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", "x"])
+    assert "run `amo index` first" in exc.value.code
+    main(["index"])
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", "nothing", "--hues", "generator"])
+    assert exc.value.code == "amontillado: nothing: no such file, and no record has that name or id"
+    image = _record(library / "a")
+    main(["index"])
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", str(image), "--hues", "generator"])
+    assert exc.value.code == (
+        "amontillado: no palette generator installed: install one of matugen, wallust"
+    )
+
+
+def test_theme_apply_a_picture(indexed: dict[str, Path], home: Path, fake_matugen: Path) -> None:
+    _write_config(home, {"theme": {"hues": "generator", "apps": {"json": {}}}})
+    red = indexed["red"]
+    main(["theme", "apply", _id(red)[:10]])
+    profile = home / ".cache" / "theme" / "default"
+    assert Path(profile / "wallpaper").readlink() == red
+    palette = yaml.safe_load((profile / "palette.yaml").read_text())
+    assert palette["source"]["picture"] == _id(red)
+    assert (profile / "palette.json").is_file()
+    assert _usage(home) == [(_id(red), 1)]
+    # Re-rendering keeps the picture.
+    main(["theme", "apply"])
+    assert Path(profile / "wallpaper").readlink() == red
+    assert _usage(home) == [(_id(red), 1)]
+    # Behind an inactive profile the picture is not shown.
+    main(["theme", "apply", str(red), "--profile", "other", "--no-activate"])
+    assert Path(home / ".cache/theme/other/wallpaper").readlink() == red
+    assert _usage(home) == [(_id(red), 1)]
+    with pytest.raises(SystemExit) as exc:
+        main(["theme", "apply", str(red), "--app", "json"])
+    assert exc.value.code == "amontillado: PICTURE with --app: a new picture re-renders every app"
+    with pytest.raises(SystemExit):
+        main(["theme", "apply", str(red), "--palette", "p"])
+
+
+def test_theme_apply_dry_run_records_nothing(
+    indexed: dict[str, Path], home: Path, fake_matugen: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_config(home, {"theme": {"hues": "generator"}})
+    main(["theme", "apply", str(indexed["red"]), "--dry-run"])
+    directory = Path(capsys.readouterr().out.splitlines()[0])
+    assert Path(directory / "wallpaper").readlink() == indexed["red"]
+    assert _usage(home) == []
