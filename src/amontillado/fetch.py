@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 import unicodedata
@@ -38,7 +39,14 @@ from amontillado.index import add as add_to_index
 from amontillado.index import files_with_hash, names, source_ids
 from amontillado.library import Entry, file_stat, source_ids_on_disk
 from amontillado.metrics import Metrics, image_size, measure_file
-from amontillado.record import INFO_NAMES, FileEntry, Record, sha256_file, write_record
+from amontillado.record import (
+    INFO_NAMES,
+    THUMBNAIL_PATH,
+    FileEntry,
+    Record,
+    sha256_file,
+    write_record,
+)
 from amontillado.wallhaven import Client, Search, Tag, WallhavenError, Wallpaper
 
 logger = getLogger(__name__)
@@ -141,7 +149,8 @@ def fetch(
             continue
         report.examined += 1
         try:
-            thumbnail = measure_file(io.BytesIO(client.download(wallpaper.thumbnail)))
+            thumbnail_bytes = client.download(wallpaper.thumbnail)
+            thumbnail = measure_file(io.BytesIO(thumbnail_bytes))
         except (WallhavenError, OSError, Image.DecompressionBombError) as exc:
             _failed(report, wallpaper, f"thumbnail: {exc}")
             continue
@@ -161,6 +170,7 @@ def fetch(
                 conn,
                 client,
                 wallpaper,
+                thumbnail_bytes,
                 lambda m: _slot(slots, m) is not None,
                 options.discard_mismatches,
             )
@@ -250,12 +260,14 @@ def _keep(
     conn: sqlite3.Connection,
     client: Client,
     wallpaper: Wallpaper,
+    thumbnail: bytes,
     accept: Callable[[Metrics], bool],
     discard_mismatches: bool,
 ) -> tuple[Path, Metrics] | None:
-    """Download a wallpaper and make it a record; returns its file and the full image's
-    metrics, or None if `accept` refuses them and `discard_mismatches` deleted it. Nothing is
-    left behind on failure."""
+    """Download a wallpaper and make it a record, keeping `thumbnail` (Wallhaven's, as
+    served) as its thumbnail; returns its file and the full image's metrics, or None if
+    `accept` refuses them and `discard_mismatches` deleted it. Nothing is left behind on
+    failure."""
     root = config.library_roots[0] if wallpaper.purity == "sfw" else config.nsfw_root
     data = client.download(wallpaper.image_url)
     root.mkdir(parents=True, exist_ok=True)
@@ -290,19 +302,20 @@ def _keep(
         directory = target
         file = directory / wallpaper.file_name
         os.replace(temporary, file)
+        (directory / THUMBNAIL_PATH).parent.mkdir()
+        (directory / THUMBNAIL_PATH).write_bytes(thumbnail)
         record = Record(
             uuid.uuid4().hex,
             name,
             source=_source(wallpaper, [tag.name for tag in tags]),
             fetched=datetime.now(UTC).replace(microsecond=0),
             files={file.name: FileEntry(sha256, width, height, metrics)},
+            thumbnail=THUMBNAIL_PATH,
         )
         write_record(directory / INFO_NAMES[0], record)
     except BaseException:
         if directory is not None:
-            (directory / wallpaper.file_name).unlink(missing_ok=True)
-            if not any(directory.iterdir()):
-                directory.rmdir()
+            shutil.rmtree(directory, ignore_errors=True)
         raise
     finally:
         temporary.unlink(missing_ok=True)

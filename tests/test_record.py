@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -114,6 +115,23 @@ def test_not_a_mapping(tmp_path: Path) -> None:
 def test_invalid_authored_fields(change: dict[str, object], message: str) -> None:
     with pytest.raises(RecordError, match=re.escape(message)):
         parse({"id": RECORD_ID, **change})
+
+
+def test_thumbnail_round_trips_after_default_file(tmp_path: Path) -> None:
+    path = tmp_path / "info.yaml"
+    record = dataclasses.replace(_record(), default_file="night-city.png", thumbnail=".amo/t.jpg")
+    write_record(path, record)
+    assert read_record(path) == record
+    data = yaml.safe_load(path.read_text())
+    assert list(data)[:5] == ["schema", "id", "name", "default_file", "thumbnail"]
+    assert record.extra == {}
+
+
+@pytest.mark.parametrize(
+    "value", [5, "", "/etc/thumb.jpg", "../other/t.jpg", ".amo/../t.jpg", "a//t.jpg", "a\\t.jpg"]
+)
+def test_a_thumbnail_outside_the_record_is_left_for_recomputation(value: object) -> None:
+    assert parse({"thumbnail": value}).thumbnail is None
 
 
 def test_invalid_derived_fields_are_left_for_recomputation() -> None:
