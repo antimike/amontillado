@@ -116,6 +116,37 @@ files:
   that needs `amo index`, an original of that ratio already, and without `--force` a record
   with a file of that ratio; `--force` replaces an earlier crop of the same name, never a file
   that is not a crop.
+- **Interactive crops** (`amo crop --interactive`, amo-cmj): after the same refusals, the
+  original is shown with the box drawn (the rest darkened), starting from the box `--at` gives.
+  Arrows or `hjkl` move it by 5% of its size (shifted, or `HJKL`: 25%), `+` and `-` zoom it
+  (×0.9 per step, down to 0.1 of the largest box, *initial*; about its centre, never past the
+  picture), `0` resets it, Enter writes the crop as above (the exact box recorded in `crop`),
+  Esc (or `q`, or the end of input) writes nothing and exits non-zero. The box is the largest
+  of the ratio times a scale (0 < s <= 1) at a 2-D place (`crop_box`); the keys drive a pure
+  state machine (`amontillado.cropper.press`) over its unrounded centre, so zooming in and out
+  again returns the same box. Keys come from stdin in cbreak mode, the preview and status go
+  to stderr: stdout still carries only the new file's path. Needs stdin and stderr to be
+  terminals. The preview (`crop.preview`, with `auto` the default):
+  - `kitty`: drawn in the terminal's alternate screen with the kitty graphics protocol (PNG,
+    direct transmission in 4096-byte base64 chunks, so it works over ssh; replaced on each key;
+    sized to the terminal in cells from `TIOCGWINSZ`), the status on the last line. `auto`
+    picks it when `KITTY_WINDOW_ID` is set, `TERM` is `xterm-kitty` or `xterm-ghostty`, or
+    `TERM_PROGRAM` is `WezTerm` or `ghostty`: from the environment only, since a protocol query
+    would need a reply read before cbreak input starts.
+  - `viewer`: the preview (at most 1600 pixels a side) written atomically to
+    `$XDG_CACHE_HOME/amontillado/crop-preview.png` after each key and shown by `crop.viewer`
+    (default `xdg-open {file}`), started once; the viewer must reload a changed file (eog,
+    gThumb and Gwenview do; feh needs `--reload`). The file is removed afterwards; the viewer
+    is left running.
+
+  `amo list --aspect` offers the same: its prompt is `crop: [c]entred, [i]nteractively, [N]o?`,
+  and `i` places each picture's box in turn. Machine-specific choices (which viewer) belong in
+  the user's config, not here. External editors are out of scope (amo-rqr). **Decision**
+  (amo-cmj, MH 2026-11-03: position and zoom): the kitty graphics protocol where the terminal
+  speaks it, else a regenerated preview file in a viewer, chosen by `crop.preview`; sixel and
+  a GUI of amontillado's own were not taken (sixel: no zoomed redraw without flicker in the
+  terminals at hand, and kitty, the user's terminal, prefers its own protocol; a GUI: a
+  toolkit dependency for one command).
 - `info.yaml` is loaded with a loader that rejects duplicate keys: `yaml.safe_load` silently
   keeps the last, which would drop a file listed twice.
 - **Thumbnail** (amo-hq0): a path relative to the record directory naming a small image, for
@@ -414,7 +445,7 @@ amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
 amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
-amo crop PICTURE W:H [--at F] [--force] [--dry-run]         crop a record's original; prints it
+amo crop PICTURE W:H [--at F] [--interactive] [--force] [--dry-run]   crop a record's original; prints it
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read,
@@ -433,8 +464,9 @@ test uses the current config and resolves symlinks, so a stale index cannot leak
 Opposite class flags (`--dark --light`) are rejected. Indexed files that are gone are skipped
 with a warning. No match exits non-zero, so a pipeline into a wallpaper setter notices.
 `--aspect W:H` picks each record's file as in "Records". Records left without a matching file
-(after `--random`, so only what is printed) are offered a centred crop each, in one question,
-when a prompt is allowed ("Prompts"; `--non-interactive` never asks); a crop is printed in
+(after `--random`, so only what is printed) are offered a crop each, centred or placed by hand
+("Interactive crops"), in one question, when a prompt is allowed ("Prompts";
+`--non-interactive` never asks); a crop is printed in
 place of its default file. Otherwise, or declined, they take the fallback (the default file,
 one warning).
 `--format rofi` follows each path with its record's thumbnail as the icon
