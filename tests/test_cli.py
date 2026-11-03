@@ -334,6 +334,69 @@ def test_list_aspect(
         _list(capsys, "--aspect", "21:9", "--dark")
 
 
+def test_crop_then_list(
+    indexed: dict[str, Path], library: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    capsys.readouterr()
+    main(["crop", str(library / "red"), "1:1"])
+    crop = library / "red" / "red-1x1.png"
+    assert capsys.readouterr().out == f"{crop}\n"
+    with Image.open(crop) as image:
+        assert image.size == (36, 36)
+    # The index knows it at once: no `amo index` needed.
+    assert _list(capsys, "--aspect", "1:1", "--hue", "red") == {"red-1x1"}
+    with pytest.raises(SystemExit, match="1:1 already; --force"):
+        main(["crop", str(indexed["red"]), "1:1"])
+
+
+def test_crop_unknown_picture(indexed: dict[str, Path]) -> None:
+    with pytest.raises(SystemExit, match="no record has that name"):
+        main(["crop", "nothing", "1:1"])
+
+
+def _terminal(monkeypatch: pytest.MonkeyPatch, answer: str) -> None:
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(cli.sys.stderr, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda: answer)
+
+
+def test_list_aspect_offers_crops_on_a_terminal(
+    indexed: dict[str, Path],
+    library: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _terminal(monkeypatch, "y")
+    assert _list(capsys, "--aspect", "1:1", "--dark") == {"black-1x1"}
+    assert (library / "black" / "black-1x1.png").is_file()
+    assert "no file of that aspect ratio" not in caplog.text
+    # Indexed: the next list finds it without asking.
+    _terminal(monkeypatch, "no answer expected")
+    assert _list(capsys, "--aspect", "1:1", "--dark") == {"black-1x1"}
+
+
+def test_list_aspect_declined_or_not_asked(
+    indexed: dict[str, Path],
+    library: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _terminal(monkeypatch, "n")
+    assert _list(capsys, "--aspect", "1:1", "--dark") == {"black"}
+    assert "no file of that aspect ratio for 1 picture" in caplog.text
+
+    def never() -> str:
+        raise AssertionError("asked")
+
+    monkeypatch.setattr("builtins.input", never)
+    assert _list(capsys, "--aspect", "1:1", "--dark", "--non-interactive") == {"black"}
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False, raising=False)
+    assert _list(capsys, "--aspect", "1:1", "--dark") == {"black"}
+    assert not (library / "black" / "black-1x1.png").exists()
+
+
 def test_list_random(indexed: dict[str, Path], capsys: pytest.CaptureFixture[str]) -> None:
     picked = _list(capsys, "--random", "2")
     assert len(picked) == 2

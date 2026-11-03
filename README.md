@@ -52,8 +52,9 @@ From a checkout, for development: `just install-dev` (an editable pipx install),
 amo fetch --dark --sparse --count 3        # keep 3 dark, uncluttered wallpapers from Wallhaven
 amo fetch --hue blue --ratio 21:9 --dry-run   # show what would be kept; download nothing
 amo fetch --test-set                       # one wallpaper per bucket: dark, light, muted, ...
-amo add ~/Downloads/forest.jpg             # make your own image a record
+amo add --name forest ~/Downloads/forest.jpg   # make your own image a record
 amo index                                  # heal records and rebuild the index
+amo crop forest 21:9                       # a 21:9 crop of a record, for an ultrawide
 amo list --dark --muted --random 1         # a path, for a wallpaper setter
 amo shown "$(amo list --dark --random 1)"  # count a showing in the usage history
 amo list --dark --format rofi | rofi -dmenu -show-icons   # pick one, with thumbnails

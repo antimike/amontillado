@@ -22,6 +22,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterable
 from contextlib import closing
+from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
 from typing import NoReturn, TypeVar
@@ -57,15 +58,28 @@ from amontillado.index import (
     known_hashes,
     names,
     rebuild,
+    record_location,
     record_shown,
 )
 from amontillado.index import (
     add as add_to_index,
 )
-from amontillado.library import PURITIES, AddError, Report, add_picture, heal_library, place
+from amontillado.index import (
+    replace as replace_in_index,
+)
+from amontillado.library import (
+    PURITIES,
+    AddError,
+    CropError,
+    Report,
+    add_picture,
+    crop_picture,
+    heal_library,
+    place,
+)
 from amontillado.metrics import HUE_NAMES, measure_file
 from amontillado.palette import PaletteError, dump_palette, load_palette, palette_from_schemes
-from amontillado.record import sha256_file
+from amontillado.record import RecordError, sha256_file
 from amontillado.registry import RegistryError, registry
 from amontillado.registry import text as registry_text
 from amontillado.registry import variables as template_variables
@@ -198,7 +212,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=_aspect,
         metavar="W:H",
         help="Print each record's file of this aspect ratio (within 3%%), filtering on its "
-        "metrics; records without one fall back to their default file, with a warning.",
+        "metrics; records without one fall back to their default file, with a warning (on a "
+        "terminal, after an offer to crop them: see amo crop).",
+    )
+    list_.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Never ask (as when stdin or stderr is not a terminal): take the fallback.",
     )
     list_.add_argument(
         "--random", type=_positive, metavar="N", help="Print N matches chosen at random."
@@ -260,6 +280,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Log what would be added; change nothing."
     )
     add.set_defaults(func=cmd_add)
+
+    crop = commands.add_parser(
+        "crop",
+        help="Crop a picture to an aspect ratio.",
+        description="Write the largest W:H crop of a record's original (its default file, if "
+        "that is not a crop itself) beside it, as <stem>-<W>x<H>.<ext> in the same format, "
+        "and record it in info.yaml (derived_from, crop) and the index. amo list --aspect W:H "
+        "then prints it. Prints the new file's path.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(crop, argparse.SUPPRESS)
+    crop.add_argument(
+        "picture", metavar="PICTURE", help="A file, record directory, name or id (or prefix)."
+    )
+    crop.add_argument("aspect", type=_aspect, metavar="W:H", help="The aspect ratio, e.g. 21:9.")
+    crop.add_argument(
+        "--at",
+        type=_fraction,
+        default=0.5,
+        metavar="F",
+        help="Where the crop sits along the side it cuts: 0 left or top, 0.5 centred, 1 right "
+        "or bottom.",
+    )
+    crop.add_argument(
+        "--force",
+        action="store_true",
+        help="Crop even if the record has a file of that ratio; replaces an earlier crop of the "
+        "same name.",
+    )
+    crop.add_argument(
+        "--dry-run", action="store_true", help="Log what would be cropped; change nothing."
+    )
+    crop.set_defaults(func=cmd_crop)
 
     fetch = commands.add_parser(
         "fetch",
@@ -538,7 +591,15 @@ def _color(value: str) -> str:
     return value.removeprefix("#").lower()
 
 
-def _aspect(value: str) -> float:
+@dataclass(frozen=True)
+class Aspect:
+    """An aspect ratio as given: `label` names crop files (21:9 is `21x9`)."""
+
+    ratio: float
+    label: str
+
+
+def _aspect(value: str) -> Aspect:
     width, _, height = value.partition(":")
     try:
         ratio = float(width) / float(height)
@@ -546,7 +607,14 @@ def _aspect(value: str) -> float:
         raise argparse.ArgumentTypeError("must be W:H, for example 21:9") from None
     if not (math.isfinite(ratio) and ratio > 0):
         raise argparse.ArgumentTypeError("must be W:H, for example 21:9")
-    return ratio
+    return Aspect(ratio, f"{width.strip()}x{height.strip()}")
+
+
+def _fraction(value: str) -> float:
+    number = float(value)
+    if not 0 <= number <= 1:
+        raise argparse.ArgumentTypeError("must be from 0 to 1")
+    return number
 
 
 def _positive(value: str) -> int:
@@ -632,16 +700,10 @@ def cmd_list(args: argparse.Namespace) -> None:
                 by_record.setdefault(row.record_id, []).append(row)
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
-    rows = [_pick(group, args.aspect) for group in by_record.values()]
+    ratio = args.aspect.ratio if args.aspect is not None else None
+    rows = [_pick(group, ratio) for group in by_record.values()]
     look = _look(args)
     matches = [row for row in rows if _matches(row, args, look, config)]
-    if args.aspect is not None:
-        fallbacks = sum(not has_aspect(row.width, row.height, args.aspect) for row in matches)
-        if fallbacks:
-            logger.warning(
-                "no file of that aspect ratio for %s; using the default file",
-                _count(fallbacks, "picture"),
-            )
     present = [row for row in matches if row.path.is_file()]
     if len(present) < len(matches):
         gone = len(matches) - len(present)
@@ -651,11 +713,70 @@ def cmd_list(args: argparse.Namespace) -> None:
         matches = random.sample(matches, min(args.random, len(matches)))
     if not matches:
         sys.exit("amontillado: no matching pictures")
+    paths = {row.path: row.path for row in matches}
+    if args.aspect is not None:
+        fallbacks = [row for row in matches if not has_aspect(row.width, row.height, ratio)]
+        if (
+            fallbacks
+            and _may_ask(args)
+            and _confirm(
+                f"no {args.aspect.label.replace('x', ':')} file for "
+                f"{_count(len(fallbacks), 'picture')}; crop (centred)?"
+            )
+        ):
+            paths.update(_crop_all(config, fallbacks, args.aspect))
+            fallbacks = [row for row in fallbacks if paths[row.path] == row.path]
+        if fallbacks:
+            logger.warning(
+                "no file of that aspect ratio for %s; using the default file",
+                _count(len(fallbacks), "picture"),
+            )
     for row in matches:
+        path = paths[row.path]
         if args.format == "rofi" and row.thumbnail is not None and row.thumbnail.is_file():
-            print(f"{row.path}\0icon\x1f{row.thumbnail}")
+            print(f"{path}\0icon\x1f{row.thumbnail}")
         else:
-            print(row.path)
+            print(path)
+
+
+def _may_ask(args: argparse.Namespace) -> bool:
+    """Whether a prompt is allowed: stdin and stderr are terminals (stdout may be a pipe: it
+    carries data) and --non-interactive was not given."""
+    return not args.non_interactive and sys.stdin.isatty() and sys.stderr.isatty()
+
+
+def _confirm(question: str) -> bool:
+    """Ask a yes/no question on stderr; anything but y or yes (or end of input) is no."""
+    STDERR.print(f"{question} [y/N] ", end="", markup=False, highlight=False)
+    try:
+        answer = input()
+    except EOFError:
+        return False
+    return answer.strip().lower() in ("y", "yes")
+
+
+def _crop_all(config: Config, rows: list[IndexedFile], aspect: Aspect) -> dict[Path, Path]:
+    """Crop the records of `rows` to `aspect`, centred; maps each default file printed to its
+    crop. A record that cannot be cropped is logged and left out."""
+    crops: dict[Path, Path] = {}
+    try:
+        with closing(connect(config.index_path)) as conn:
+            for row in rows:
+                try:
+                    directory, root = record_location(conn, row.record_id)
+                    entry, name = crop_picture(config, directory, root, aspect.ratio, aspect.label)
+                except (CropError, LookupFailed, RecordError) as exc:
+                    logger.error("%s", exc)
+                    continue
+                except (OSError, Image.DecompressionBombError) as exc:
+                    logger.error("%s: %s", row.path, exc)
+                    continue
+                replace_in_index(conn, entry)
+                logger.info("cropped %s", directory / name)
+                crops[row.path] = directory / name
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    return crops
 
 
 def _pick(group: list[IndexedFile], aspect: float | None) -> IndexedFile:
@@ -879,6 +1000,37 @@ def _add_one(
     entry = add_picture(config, placement, name=args.name)
     add_to_index(conn, entry)
     logger.info("added %s as %s", file, entry.directory)
+
+
+def cmd_crop(args: argparse.Namespace) -> None:
+    config = _load_config()
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    try:
+        with closing(connect(config.index_path)) as conn:
+            try:
+                directory, root = record_location(conn, find_record(conn, args.picture))
+                entry, name = crop_picture(
+                    config,
+                    directory,
+                    root,
+                    args.aspect.ratio,
+                    args.aspect.label,
+                    at=args.at,
+                    force=args.force,
+                    dry_run=args.dry_run,
+                )
+            except (CropError, LookupFailed, RecordError) as exc:
+                sys.exit(f"amontillado: {exc}")
+            except (OSError, Image.DecompressionBombError) as exc:
+                sys.exit(f"amontillado: {args.picture}: {exc}")
+            if args.dry_run:
+                logger.info("would crop %s", directory / name)
+                return
+            replace_in_index(conn, entry)
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    print(directory / name)
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:
