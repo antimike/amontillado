@@ -22,6 +22,10 @@ lint:
 lint-lua:
     stylua --check docs/examples/nvim
 
+# Regenerate the shipped config template from the key table (amontillado.config_keys).
+config-template:
+    uv run python -c "from amontillado.config_keys import template; print(template(), end='')" > src/amontillado/config.template.yaml
+
 # Format and apply safe lint fixes.
 fmt:
     uv run ruff format .

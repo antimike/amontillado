@@ -8,6 +8,7 @@ Locations follow the XDG base directory spec; docs/design.md, "Storage", has the
     api_key_command: pass show wallhaven/api-key   # prints the Wallhaven API key
     theme: {...}                             # the theme engine (v0.2), below
 
+`amontillado.config_keys` describes every key (the template `amo config init` writes).
 `theme` is docs/design.md, "Theme engine (v0.2)", "Per-app configuration": every key is
 checked here, so that a mistake fails `amo` at once with the key named, not at the next theme
 switch; unknown keys warn.
@@ -129,10 +130,11 @@ def config_path() -> Path:
     return xdg_dir("XDG_CONFIG_HOME", ".config") / APP / "config.yaml"
 
 
-def load_config() -> Config:
-    """Read the config file if there is one and resolve every location."""
+def load_config(path: Path | None = None) -> Config:
+    """Read the config file (`path`, default config_path()) if there is one and resolve every
+    location."""
     data_home = xdg_dir("XDG_DATA_HOME", ".local/share") / APP
-    settings = _read_settings(config_path())
+    settings = _read_settings(config_path() if path is None else path)
 
     roots = [(data_home / "library").resolve()]
     for root in _path_list(settings, "library_roots"):

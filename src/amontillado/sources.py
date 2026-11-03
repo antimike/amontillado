@@ -104,6 +104,24 @@ def text(template: Template) -> str:
     return registry_text(find("builtin", template.name))
 
 
+def check_apps(config: Config) -> list[str]:
+    """A problem per app whose template cannot be found or read (a fetched one not yet
+    synced), and per output file two apps would both write."""
+    problems = []
+    outputs: dict[str, str] = {}
+    for name, app in config.theme.apps.items():
+        try:
+            template = resolve(name, app)
+            text(template)
+        except RegistryError as exc:
+            problems.append(str(exc))
+            continue
+        other = outputs.setdefault(template.output, name)
+        if other != name:
+            problems.append(f"theme.apps.{name}: output {template.output} is also {other}'s")
+    return problems
+
+
 def needed(config: Config) -> list[Template]:
     """The fetched templates the config's apps use, each file once."""
     templates: dict[str, Template] = {}
