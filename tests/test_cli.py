@@ -79,11 +79,25 @@ def _palette_file(path: Path, base03: str) -> Path:
 
 def test_palette_check(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     main(["palette", "--check", str(_palette_file(tmp_path / "good.yaml", "#707070"))])
-    assert capsys.readouterr().out == ""
+    assert capsys.readouterr().out == "dark: hues 6/6, distinct 13.3\n"
     with pytest.raises(SystemExit) as exc:
         main(["palette", "--check", str(_palette_file(tmp_path / "bad.yaml", "#202020"))])
     assert exc.value.code == "amontillado: 1 pair below the contrast minimum"
-    assert capsys.readouterr().out.startswith("dark: base03 on base00: 1.")
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "dark: hues 6/6, distinct 13.3"
+    assert lines[1].startswith("dark: base03 on base00: 1.")
+
+
+def test_palette_check_reports_accents_without_failing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Green as a second red: off its hue and close to red, but every pair passes.
+    path = _palette_file(tmp_path / "p.yaml", "#707070")
+    data = yaml.safe_load(path.read_text())
+    data["variants"]["dark"]["base24"]["base0B"] = "#ff8484"
+    path.write_text(yaml.safe_dump(data))
+    main(["palette", "--check", str(path)])
+    assert capsys.readouterr().out == "dark: hues 5/6, distinct 0.8\n"
 
 
 def _scheme_file(path: Path, base03: str) -> Path:
