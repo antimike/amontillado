@@ -67,6 +67,8 @@ role on a few groups (`CursorLineNr`, `FloatBorder`, `PmenuSel`, ...), and yours
   nvim app's `variant`) chooses.
 - **The third way** (docs/design.md, "nvim and lush"): matugen-themes' `neovim/matugen.lua`,
   rendered by amontillado (`template: nvim-lua`), uses `watch.lua` the same way.
-- **Tested** (2026-11-02, headless nvim 0.11.7, lush.nvim and tinted-nvim v1.0.0, four real
-  applies each: dark, light, dark, and `--no-activate` or `--app`): one callback per apply, and
-  `Normal`, the accent and `@string` matching `palette.lua` exactly each time.
+- **Tested** by `tests/test_nvim.py` (`just test-nvim`; nvim 0.11.7, lush.nvim and tinted-nvim
+  v1.0.0 on 2026-11-02): one callback per apply, including `--no-activate` and `--app`, none for
+  another profile, quick applies debounced to one; `Normal`, the accent and `@string` matching
+  the palette exactly after each apply; tinted-nvim's background, accent overrides (yours
+  winning) and telescope's border.

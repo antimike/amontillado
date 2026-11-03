@@ -8,6 +8,11 @@ default:
 test *args:
     uv run pytest {{args}}
 
+# Run only the nvim integration tests (nvim on PATH; plugins from AMO_TEST_NVIM_PLUGINS,
+# default lazy.nvim's directory).
+test-nvim *args:
+    uv run pytest -m nvim {{args}}
+
 # Lint and check formatting (what CI runs).
 lint:
     uv run ruff check .
