@@ -24,6 +24,7 @@ import yaml
 from amontillado.classes import LIGHT_MIN
 from amontillado.config import AppConfig, Config, ThemeConfig, xdg_dir
 from amontillado.contrast import apply_contrast
+from amontillado.matugen import MatugenError, material_view, render_matugen
 from amontillado.palette import Palette, dump_palette, load_palette
 from amontillado.registry import RegistryError
 from amontillado.render import (
@@ -120,8 +121,6 @@ def render_app(
         raise ThemeError(f"theme.apps.{name}: render_with: {app.render_with} is not supported yet")
     try:
         template = resolve(name, app)
-        if template.format not in ("mustache", "pywal"):
-            raise ThemeError(f"theme.apps.{name}: format {template.format} is not supported yet")
         source_text = template_text(template)
     except RegistryError as exc:
         raise ThemeError(str(exc)) from exc
@@ -129,9 +128,11 @@ def render_app(
     try:
         if template.format == "pywal":
             text = render_pywal(source_text, pywal_view(palette, variant, wallpaper))
+        elif template.format == "matugen":
+            text = render_matugen(source_text, material_view(palette, variant, wallpaper))
         else:
             text = render_mustache(source_text, mustache_view(palette, variant))
-    except RenderError as exc:
+    except (RenderError, MatugenError) as exc:
         raise ThemeError(f"theme.apps.{name}: {template.name}: {exc}") from exc
     record = {
         "source": template.source,

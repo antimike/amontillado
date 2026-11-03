@@ -95,10 +95,6 @@ def test_unsupported_sources_are_errors(tmp_path: Path) -> None:
     for app, message in [
         (AppConfig(source="tinted"), "tinted has no template 'x'"),
         (AppConfig(format="matugen", render_with="matugen"), "render_with: matugen"),
-        (
-            AppConfig(source="path", path=tmp_path / "t", format="matugen", output="o"),
-            "format matugen",
-        ),
     ]:
         with pytest.raises(ThemeError, match=message):
             _apply(_config(tmp_path, x=app), _palette())
@@ -110,6 +106,22 @@ def test_path_source(tmp_path: Path) -> None:
     app = AppConfig(source="path", path=template, format="mustache", output="mine.conf")
     directory = _apply(_config(tmp_path, mine=app), _palette())
     assert (directory / "mine.conf").read_text() == "bg=101010 dark\n"
+
+
+def test_matugen_format(tmp_path: Path) -> None:
+    template = tmp_path / "mine.css"
+    template.write_text(
+        "@define-color primary {{colors.primary.default.hex}};\n"
+        "@define-color bg {{colors.surface.dark.rgba | set_alpha: 0.5}}; /* {{mode}} */\n"
+    )
+    app = AppConfig(source="path", path=template, format="matugen", output="mine.css")
+    directory = _apply(_config(tmp_path, mine=app), _palette())
+    assert (directory / "mine.css").read_text() == (
+        "@define-color primary #80b0ff;\n@define-color bg rgba(16, 16, 16, 0.5); /* dark */\n"
+    )
+    template.write_text("<* for name, p in palettes *>{{name}}<* endfor *>")
+    with pytest.raises(ThemeError, match=r"theme\.apps\.mine: .*unknown variable 'palettes'"):
+        _apply(_config(tmp_path, mine=app), _palette())
 
 
 def test_not_amontillados_profile_is_refused(tmp_path: Path) -> None:

@@ -132,7 +132,8 @@ def test_apply_renders_a_synced_tinted_template(home: Path) -> None:
     cached_path(entry.sha256).write_bytes(TEMPLATE)
     with pytest.raises(ThemeError, match="does not match its hash"):
         render_app("rofi", app, palette, "dark")
-    with pytest.raises(ThemeError, match="format matugen is not supported yet"):
+    # matugen-themes templates render too, once synced.
+    with pytest.raises(ThemeError, match=r"matugen-themes kitty\): not synced"):
         render_app("kitty", AppConfig(source="matugen-themes"), palette, "dark")
 
 

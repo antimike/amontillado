@@ -1,0 +1,14 @@
+plain {{colors.primary.default.hex}} {{ colors.primary.dark.hex }} {{colors.primary.light.hex}}
+fields {{colors.tertiary.default.hex_stripped}} {{colors.tertiary.default.rgb}} {{colors.tertiary.default.rgba}} {{colors.tertiary.default.hex_alpha}} {{colors.tertiary.default.hsl}} {{colors.tertiary.default.hsla}}
+channels {{colors.on_surface.default.red}} {{ colors.on_surface.default.green }} {{colors.on_surface.default.blue}}
+replace {{colors.secondary.dark.rgb | replace: "rgb(", "" | replace: ")", "" | replace: ", ", " "}}
+auto {{colors.error.dark.hex | auto_lightness: 15 }} {{colors.surface.dark.hex| auto_lightness: 10 }} {{colors.primary.dark.hex        | auto_lightness: -5 }} {{colors.surface.default.hex | auto_lightness: 30.0}}
+saturate {{ colors.primary.default.hex | saturate: 20.0, hsl }} {{ colors.surface.default.hex | saturate: 70.0, hsl }} {{ colors.primary.default.hex | auto_lightness: 10.0 | saturate: 15.0, hsl }}
+lightness {{colors.surface_dim.default.rgb | set_lightness: 15.0}} {{colors.primary.default.rgb | set_lightness: -10.0}} {{colors.inverse_primary .default.rgb | set_lightness: 5.0}} {{colors.primary.default.hex | lighten: -15.0}}
+alpha {{colors.primary.default.rgba | set_alpha: 0.10}} {{colors.primary.default.rgba | set_alpha: 1.0}} {{colors.primary.default.rgba | set_lightness: -5.0 | set_alpha: 0.92}} {{colors.surface.default.hex_alpha|set_alpha: 0.5}}
+base16 {{ base16.base08.dark.hex }} {{base16.base0d.light.hex}} {{base16.base05.default.rgb}}
+escaped \{{ not a marker \}} and \<* not a block \*> and \\
+colors: <* for name, value in colors *>{{name}}={{value.default.hex}}<* if {{ loop.last }} *>
+.<* else *>
+, <* endif *><* endfor *>
+first: <* for name, color in base16 *><* if not {{ loop.first }} *> <* endif *>{{loop.index}}:{{name}}:{{color.light.hex_stripped}}<* endfor *>
