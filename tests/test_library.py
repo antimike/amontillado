@@ -16,6 +16,8 @@ from amontillado.config import Config
 from amontillado.library import (
     THUMBNAIL_SIZE,
     AddError,
+    Box,
+    CropCancelled,
     CropError,
     add_picture,
     additions_from_json,
@@ -548,6 +550,40 @@ def test_add_makes_a_thumbnail(config: Config, save_image: SaveImage, tmp_path: 
 )
 def test_crop_box(size: tuple[int, int], ratio: float, at: float, box: tuple[int, ...]) -> None:
     assert crop_box(*size, ratio, at) == box
+
+
+def test_crop_box_scaled_and_placed_on_both_axes() -> None:
+    assert crop_box(3840, 2160, 1.0, (0.0, 1.0), 0.5) == (0, 1080, 1080, 1080)
+    assert crop_box(3840, 2160, 1.0, 0.5, 0.5) == (1380, 540, 1080, 1080)
+    assert crop_box(200, 100, 1.0, 0.5, 0.001) == (100, 50, 1, 1)
+
+
+def test_crop_picture_with_a_chosen_box(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    asked = []
+
+    def choose(path: Path, width: int, height: int, box: Box) -> Box:
+        asked.append((path.name, width, height, box))
+        return (150, 50, 50, 50)
+
+    _crop(config, info.parent, at=0.0, choose=choose)
+    assert asked == [("pic.png", 200, 100, (0, 0, 100, 100))]
+    crop = read_record(info).files["pic-1x1.png"]
+    assert (crop.crop, crop.width, crop.height) == ((150, 50, 50, 50), 50, 50)
+    assert crop.metrics is not None and crop.metrics.hue_name == "blue"
+
+
+def test_crop_picture_cancelled_writes_nothing(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    before = info.read_text()
+    with pytest.raises(CropCancelled, match="cancelled; nothing written"):
+        _crop(config, info.parent, choose=lambda *_: None)
+    assert info.read_text() == before
+    assert not (info.parent / "pic-1x1.png").exists()
 
 
 def _halves(path: Path) -> Path:

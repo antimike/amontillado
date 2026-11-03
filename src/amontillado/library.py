@@ -605,15 +605,40 @@ class CropError(Exception):
     """A crop cannot be made; the message says why."""
 
 
-def crop_box(width: int, height: int, ratio: float, at: float) -> tuple[int, int, int, int]:
-    """The largest box of `ratio` (width / height) in a `width` x `height` image, as (x, y,
-    width, height): placed along the axis it is cut on at `at`, from 0 (left or top) through
-    0.5 (centred) to 1 (right or bottom)."""
+class CropCancelled(CropError):
+    """The crop was not chosen (Esc in `amo crop --interactive`); nothing was written."""
+
+
+Box = tuple[int, int, int, int]
+# Shows the image, lets the user place a box, and returns it, or None to write nothing: called
+# with the original's path, its size (as displayed) and the box to start from.
+Choose = Callable[[Path, int, int, Box], "Box | None"]
+
+
+def crop_box(
+    width: int,
+    height: int,
+    ratio: float,
+    at: float | tuple[float, float] = 0.5,
+    scale: float = 1.0,
+) -> Box:
+    """A box of `ratio` (width / height) in a `width` x `height` image, as (x, y, width,
+    height): the largest such box times `scale` (0 < scale <= 1, never under one pixel), placed
+    at `at` along each axis, from 0 (left or top) through 0.5 (centred) to 1 (right or bottom).
+    One `at` places both axes; at scale 1 only the axis the box is cut on has room to move."""
+    at_x, at_y = (at, at) if isinstance(at, (int, float)) else at
     if width / height > ratio:
-        crop_width = min(width, max(1, round(height * ratio)))
-        return round((width - crop_width) * at), 0, crop_width, height
-    crop_height = min(height, max(1, round(width / ratio)))
-    return 0, round((height - crop_height) * at), width, crop_height
+        full_width, full_height = min(width, height * ratio), height
+    else:
+        full_width, full_height = width, min(height, width / ratio)
+    crop_width = min(width, max(1, round(full_width * scale)))
+    crop_height = min(height, max(1, round(full_height * scale)))
+    return (
+        round((width - crop_width) * at_x),
+        round((height - crop_height) * at_y),
+        crop_width,
+        crop_height,
+    )
 
 
 def crop_picture(
@@ -626,12 +651,15 @@ def crop_picture(
     at: float = 0.5,
     force: bool = False,
     dry_run: bool = False,
+    choose: Choose | None = None,
 ) -> tuple[Entry, str]:
     """Crop a record's original to `ratio`, as `<stem>-<label><suffix>` beside it, and record
     the crop (`derived_from`, `crop`, measured). Returns the record as it now is, and the new
     file's name. Refuses (CropError) a record that needs `amo index`, one whose original is of
     that ratio already, and, without `force`, one with a file of that ratio; `force` replaces
-    an earlier crop of the same name, never a file that is not a crop."""
+    an earlier crop of the same name, never a file that is not a crop. `choose`, if given,
+    places the box after those checks (starting from the one `at` gives); it returning None
+    raises CropCancelled."""
     path = info_path(directory)
     if path is None:
         raise CropError(f"{directory}: not a record")
@@ -669,6 +697,11 @@ def crop_picture(
             f"{directory / found} is {label.replace('x', ':')} already; --force crops anyway"
         )
     box = crop_box(entry.width, entry.height, ratio, at)
+    if choose is not None:
+        chosen = choose(directory / source, entry.width, entry.height, box)
+        if chosen is None:
+            raise CropCancelled(f"{directory / source}: cancelled; nothing written")
+        box = chosen
     if dry_run:
         return _entry(config, directory, root, record, present), name
     target = directory / name
