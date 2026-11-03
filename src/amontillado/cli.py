@@ -12,6 +12,7 @@ docs/design.md has the record format, the metric and class definitions, and the 
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 import random
 import re
@@ -23,6 +24,7 @@ import tempfile
 from collections.abc import Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass
+from importlib.resources import files as package_files
 from logging import getLogger
 from pathlib import Path
 from typing import NoReturn, TypeVar
@@ -41,12 +43,15 @@ from amontillado.config import (
     API_KEY_VARIABLE,
     GENERATORS,
     HUES_CHOICES,
+    VARIANT_CHOICES,
     Config,
     ConfigError,
     api_key,
     check_profile,
+    config_path,
     load_config,
 )
+from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check
 from amontillado.fetch import TEST_SET, fetch
 from amontillado.fetch import Options as FetchOptions
@@ -99,6 +104,7 @@ from amontillado.registry import RegistryError, registry
 from amontillado.registry import text as registry_text
 from amontillado.registry import variables as template_variables
 from amontillado.sources import check as sources_check
+from amontillado.sources import check_apps
 from amontillado.sources import needed as sources_needed
 from amontillado.sources import sync as sources_sync
 from amontillado.theme import (
@@ -147,6 +153,12 @@ class HelpFormatter(
 ):
     """Preserve description/epilog whitespace, show defaults, and style with Rich."""
 
+    def _get_help_string(self, action: argparse.Action) -> str | None:
+        # None, False and [] mean "not given": the help says what that does.
+        if action.default is None or action.default is False or action.default == []:
+            return action.help
+        return super()._get_help_string(action)
+
 
 def _add_loglevel(parser: argparse.ArgumentParser, default: str) -> None:
     parser.add_argument(
@@ -162,8 +174,11 @@ def _add_hues(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--hues",
         choices=HUES_CHOICES,
-        help="Who assigns base08-base0F of a picture's palette: amontillado (fixed named hues) "
-        "or the generator's own colours (default: theme.hues).",
+        help=flag_help(
+            "theme.hues",
+            "Who assigns base08-base0F of a picture's palette: amontillado (fixed named hues) "
+            "or the generator's own colours",
+        ),
     )
 
 
@@ -505,13 +520,12 @@ def build_parser() -> argparse.ArgumentParser:
     palette.add_argument(
         "--no-adjust",
         action="store_true",
-        help="Report failing pairs instead of adjusting them (theme.contrast: report, for one "
-        "run).",
+        help=flag_help("theme.contrast", "Report failing pairs instead of adjusting them"),
     )
     palette.add_argument(
         "--generator",
         choices=GENERATORS,
-        help="The generator for PICTURE (default: theme.generator, else the first installed).",
+        help=flag_help("theme.generator", "The generator for PICTURE"),
     )
     _add_hues(palette)
     palette.set_defaults(func=cmd_palette)
@@ -583,11 +597,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="A palette file, or a preset in $XDG_CONFIG_HOME/amontillado/palettes/.",
     )
     _add_hues(apply)
-    apply.add_argument("--profile", metavar="P", help="The profile (default: theme.profile).")
+    apply.add_argument(
+        "--profile", metavar="P", help=flag_help("theme.profile", "The profile to write")
+    )
     apply.add_argument(
         "--variant",
-        choices=("auto", "dark", "light"),
-        help="The variant for every app without its own (default: theme.variant).",
+        choices=VARIANT_CHOICES,
+        help=flag_help("theme.variant", "The variant for every app without its own"),
     )
     apply.add_argument(
         "--app",
@@ -599,7 +615,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument(
         "--no-adjust",
         action="store_true",
-        help="Report failing contrast pairs instead of adjusting them.",
+        help=flag_help("theme.contrast", "Report failing contrast pairs instead of adjusting them"),
     )
     apply.add_argument(
         "--no-activate", action="store_true", help="Leave current where it is; reload nothing."
@@ -625,6 +641,43 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile", metavar="P", help="The profile (default: the one current points to)."
     )
     current.set_defaults(func=cmd_theme_current)
+
+    config = commands.add_parser(
+        "config",
+        help="Write or check the config file.",
+        description=f"The config file, {config_path()} (every key optional).",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(config, argparse.SUPPRESS)
+    config.set_defaults(func=lambda _args: config.print_help())
+    config_commands = config.add_subparsers(title="commands", metavar="COMMAND")
+
+    init = config_commands.add_parser(
+        "init",
+        help="Write the commented config template.",
+        description="Write the config template, every key commented out at its default or "
+        "with an example, under its meaning and trade-offs, to the config file (or stdout). "
+        "Refuses to replace a config file that exists.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(init, argparse.SUPPRESS)
+    init.add_argument("--stdout", action="store_true", help="Print the template instead.")
+    init.add_argument("--force", action="store_true", help="Replace an existing config file.")
+    init.set_defaults(func=cmd_config_init)
+
+    check_ = config_commands.add_parser(
+        "check",
+        help="Validate a config file.",
+        description="Load a config file as every command does, and fail if it has an error, an "
+        "unknown key, an app whose template cannot be found or read (a fetched one: run amo "
+        "theme sync), or two apps writing one output file. Changes nothing.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(check_, argparse.SUPPRESS)
+    check_.add_argument(
+        "file", nargs="?", type=Path, metavar="FILE", help="The file (default: the config file)."
+    )
+    check_.set_defaults(func=cmd_config_check)
 
     return parser
 
@@ -1125,6 +1178,53 @@ def cmd_theme_current(args: argparse.Namespace) -> None:
         print(f"{key}: {value}")
     if palettes:
         logger.warning("apps rendered from different palettes: %s", ", ".join(palettes))
+
+
+def cmd_config_init(args: argparse.Namespace) -> None:
+    template = (package_files("amontillado") / "config.template.yaml").read_text()
+    if args.stdout:
+        print(template, end="")
+        return
+    path = config_path()
+    if path.exists() and not args.force:
+        sys.exit(f"amontillado: {path} exists: --force replaces it, --stdout prints the template")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(template)
+    logger.info("wrote %s", path)
+
+
+class _Collect(logging.Handler):
+    """Keeps the messages of the records it handles."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def cmd_config_check(args: argparse.Namespace) -> None:
+    path = config_path() if args.file is None else args.file
+    if not path.is_file():
+        sys.exit(f"amontillado: no config file {path}")
+    # Unknown keys only warn when a command loads the config; here they are problems.
+    collect = _Collect()
+    config_logger = logging.getLogger("amontillado.config")
+    config_logger.addHandler(collect)
+    try:
+        config = load_config(path)
+    except ConfigError as exc:
+        sys.exit(f"amontillado: {exc}")
+    finally:
+        config_logger.removeHandler(collect)
+    problems = check_apps(config)
+    for problem in problems:
+        logger.error("%s", problem)
+    count = len(problems) + len(collect.messages)
+    if count:
+        sys.exit(f"amontillado: {path}: {_count(count, 'problem')}")
+    logger.info("%s: ok (%s)", path, _count(len(config.theme.apps), "app"))
 
 
 # The provenance options that name one picture, so take one FILE (as --name does).

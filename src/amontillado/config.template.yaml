@@ -1,0 +1,94 @@
+# amontillado's config file, $XDG_CONFIG_HOME/amontillado/config.yaml. Written by
+# `amo config init`; `amo config check` validates it. Every key is optional and
+# commented out at its default or with an example: uncomment and change what you need.
+
+# Library roots searched in addition to the default, $XDG_DATA_HOME/amontillado/library (where amo
+# fetch and amo add put pictures). Absolute paths; ~ is expanded.
+# library_roots: [~/Pictures/wallpapers]
+
+# Where sketchy and nsfw pictures live, instead of $XDG_DATA_HOME/amontillado/library-nsfw. It may
+# not be, contain or lie inside a library root (symlinks resolved), since a recursive search would
+# then reach NSFW images.
+# nsfw_root: ~/.local/share/amontillado/library-nsfw
+
+# A command printing the Wallhaven API key on its first line, split as a shell would and run without
+# one; WALLHAVEN_API_KEY wins over it. Needed for nsfw results. The key is never logged or written
+# anywhere.
+# api_key_command: pass show wallhaven/api-key
+
+# The theme engine: amo palette and amo theme (docs/design.md, "Theme engine (v0.2)").
+theme:
+
+  # Where profiles are rendered: <cache>/<profile>/ and the current link, which app configs include
+  # from. Default $XDG_CACHE_HOME/theme.
+  # cache: ~/.cache/theme
+
+  # The profile amo theme apply writes: a name in the cache, not current and not starting with '.'.
+  # A second profile keeps its own files (another monitor, a test theme) and is activated by
+  # pointing current at it. Default: default.
+  # profile: default
+
+  # The program that makes a picture's palette (the neutral ramp and the accent): matugen or
+  # wallust. Unset: the first installed, in that order. matugen gives both variants in one run and
+  # Material's accents; wallust is the fallback without it.
+  # generator: matugen
+
+  # Who assigns base08-base0F (ANSI colours 1-6 and 9-14) of a picture's palette: amontillado (fixed
+  # named hues, so red stays red, with chroma and lightness from the picture) or generator (its own
+  # colours: matugen 4.2's are clustering, often off their hue or as dark as the background, so
+  # contrast fixes cannot save them). Default: amontillado.
+  # hues: amontillado
+
+  # Which of the palette's variants is applied: auto (light when the picture's lightness is above
+  # 0.65, else dark), dark or light. An app's own variant wins. A variant the palette lacks warns
+  # and the app gets the one it has; nothing is inverted. Default: auto.
+  # variant: auto
+
+  # What happens to a colour pair below its WCAG contrast minimum: adjust (move the foreground, then
+  # the accent as a last resort, in lightness; each change logged and listed under adjusted), report
+  # (log the pair, change nothing) or off. adjust keeps text readable at the cost of colours a
+  # little off the source's. Default: adjust.
+  # contrast: adjust
+
+  # The wallpaper hook.
+  wallpaper:
+
+    # A command run last after each apply, with {wallpaper} (the picture), {profile} and {dir}
+    # substituted; split as a shell would and run without one, so a pipeline needs a script. Setting
+    # the wallpaper stays your command: amontillado only knows which picture belongs to the theme.
+    # reload: "hyprctl hyprpaper reload ,{wallpaper}"
+
+  # The apps to theme, one entry per app by name; each renders one file into the profile, which the
+  # app's own config includes. Every key of an app is optional: {} renders the built-in template of
+  # that name. amo theme templates lists the templates.
+  apps:
+    # An app's keys:
+    #   source: Where the template comes from: builtin, tinted, matugen-themes, pywal, url or path.
+    #       builtin is shipped and variables-only; tinted (tinted-theming), matugen-themes and pywal
+    #       (pywal16) are fetched by amo theme sync, pinned; url is one file you pin; path is your
+    #       own file. Default: the first with a template for the app, in the order builtin, tinted,
+    #       matugen-themes, pywal.
+    #   template: The registry entry within the source, when it has several for the app
+    #       (rofi-colors). Default: the app's name.
+    #   format: The template's language: mustache, matugen or pywal. Default: the source's; required
+    #       for url and path.
+    #   url: For source url: the template at a commit URL (https://). Pinned, since some outputs are
+    #       code that runs at every theme switch (a Lua file, a sourced shell file).
+    #   sha256: For source url: the file's SHA-256, as hex. amo theme sync keeps no file that
+    #       differs.
+    #   path: For source path: your template file. Not resolved, so a symlink you swap is followed.
+    #   output: The file name in the profile directory. Default: the registry's; required for url
+    #       and path.
+    #   reload: A command run after the swap, as theme.wallpaper.reload. A failure warns: the app
+    #       may not be running.
+    #   variant: This app's variant, over theme.variant and --variant.
+    #   render_with: Who renders a matugen-format template: amontillado or matugen. matugen renders
+    #       from the picture with its own colours, not the palette's: the app misses the contrast
+    #       adjustments and the named hues, and with a preset palette gets colours of the same
+    #       accent hue only. Needs matugen >= 4 at every apply. Default: amontillado.
+    #
+    # kitty: {reload: "pkill -USR1 kitty"}
+    # rofi: {source: tinted}
+    # waybar: {template: gtk, output: waybar-colors.css, reload: "pkill -USR2 waybar"}
+    # zed: {source: matugen-themes, render_with: matugen}
+    # mytool: {source: path, path: ~/mytool.mustache, format: mustache, output: mytool.conf}
