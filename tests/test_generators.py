@@ -15,7 +15,8 @@ from amontillado.generators import (
     picture_palette,
     run_matugen,
 )
-from amontillado.palette import BASE16_KEYS, PaletteError
+from amontillado.hues import named_hues
+from amontillado.palette import BASE16_KEYS
 
 
 def test_parse_matugen_gives_both_variants() -> None:
@@ -32,7 +33,7 @@ def test_parse_matugen_gives_both_variants() -> None:
     light_l = [hex_to_oklch(colour)[0] for colour in light.ramp.values()]
     assert dark_l == sorted(dark_l)
     assert light_l == sorted(light_l, reverse=True)
-    assert dark.ramp["base00"] == "#1a1c1e"  # neutral tone 10
+    assert dark.ramp["base00"] == "#0f1113"  # neutral tone 5
     # base16 keys are lower-case in matugen's JSON.
     assert dark.base16["base0A"] == "#090e12"
 
@@ -111,5 +112,13 @@ def test_picture_palette() -> None:
     assert dark.base24["base08"] == generated.variants["dark"].base16["base08"]
     assert dark.roles["accent"] == "#99ccfa"
     assert len(dark.base24) == 24
-    with pytest.raises(PaletteError, match=r"theme\.hues: amontillado is not built yet"):
-        picture_palette(generated, name="sea", hues="amontillado", hue=None, source={})
+    assert palette.source["hues"] == "generator"
+    # Named hues under hues: amontillado; the ramp and accent are still the generator's.
+    named = picture_palette(generated, name="sea", hues="amontillado", hue=None, source={})
+    assert named.source["hues"] == "amontillado"
+    for variant in ("dark", "light"):
+        base24 = named.variants[variant].base24
+        assert {key: base24[key] for key in BASE16_KEYS[8:]} == named_hues(
+            variant, generated.variants[variant].roles["accent"]
+        )
+        assert base24["base00"] == generated.variants[variant].ramp["base00"]
