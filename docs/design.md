@@ -227,15 +227,18 @@ One database, `$XDG_STATE_HOME/amontillado/index.sqlite` (state, not cache: the 
 cannot be rebuilt):
 
 - `records`: one row per record (id, name, directory, root, whether it is under the NSFW root,
-  purity, category, tags as JSON, source site and id, thumbnail path, license, author, title),
+  purity, category, tags as JSON, source site and id, thumbnail path, license, author, title,
+  and the info file as JSON),
   and `files`: one row per file present (path, record id, sha256 (indexed), whether it is the
   default file, size, every metric, and for the hash cache its size in bytes and mtime in ns).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (5); a newer one than the
+  table. The database's `PRAGMA user_version` is its schema version (6); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
-  thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`;
-  upgrading adds them empty, for the next `amo index` to fill.
+  thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
+  schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`);
+  upgrading adds them empty, for the next `amo index` to fill. The `pictures` view (columns
+  under "CLI") is recreated on every open, so changing it needs no migration.
 - `usage`: `id` (the record's), `shown_count`, `last_shown` (ISO 8601, UTC); later perhaps a
   rating. Keyed by record, so it follows a picture through renames and moves. Kept across
   rebuilds. The only mutable data; never written to info files, which keeps them stable under
@@ -438,7 +441,8 @@ apply. It is the input for comparing palette generators. Decided 2026-10-28:
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check] [--rehash]       heal records, rebuild the index; --check reports only
 amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N] [--format path|rofi]
-         [--non-interactive]
+         [--non-interactive] [--tag T]... [--site S] [--category C] [--license L] [--author A]
+         [--where SQL]
                                      matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
@@ -469,6 +473,32 @@ with a warning. No match exits non-zero, so a pipeline into a wallpaper setter n
 `--non-interactive` never asks); a crop is printed in
 place of its default file. Otherwise, or declined, they take the fallback (the default file,
 one warning).
+**Provenance filters** (amo-mag) match what a record's `source` says, exactly: `--tag T`
+(repeatable; each must be one of its tags), `--site`, `--category`, `--author`, and `--license`
+in any case (`CC0-1.0` matches `cc0-1.0`). A record without the field does not match.
+`--where SQL` is a SQL boolean expression over the index's read-only `pictures` view, ANDed
+with the other filters. Its columns: `id`, `name`, `directory`, `purity`, `site`, `source_id`,
+`category`, `tags` (a JSON array), `license`, `author`, `title`, `shown_count` (0 if never
+shown), `last_shown`, and `info`, the whole info file as JSON (as fresh as the rest of the
+index: written by `amo index`). Any field is reached with SQLite's JSON functions:
+
+```text
+amo list --where "shown_count = 0"
+amo list --where "json_extract(info, '$.source.uploaded') >= '2024'"
+amo list --where "info ->> '$.files.\"night.png\".width' >= 3840"          # SQLite >= 3.38
+amo list --where "EXISTS (SELECT 1 FROM json_each(tags) WHERE value LIKE 'night%')"
+```
+
+The expression runs in one statement (a `;` is an error) with `PRAGMA query_only` and an
+authorizer that allows only reads and function calls (no `PRAGMA` functions, no
+`load_extension`); it selects records, and purity and the NSFW root are applied after it in
+Python as for every `amo list`, so no expression widens what is printed. `->` and `->>` need
+SQLite 3.38 (Python uses the system's on Linux; Ubuntu 22.04 ships 3.37, believed, unverified):
+on an older one the error says so and names `json_extract`. **Decision** (MH 2026-11-03): SQL
+over the index rather than reading each `info.yaml` per query (slow: a pure-Python YAML loader)
+and no jq runtime dependency; `sqlite-jq` was rejected (a loadable C extension: Python builds
+without loadable-extension support exist, and pipx cannot ship per-platform binaries).
+
 `--format rofi` follows each path with its record's thumbnail as the icon
 (`PATH\0icon\x1fTHUMBNAIL`, for `rofi -dmenu -show-icons`); a record without one, or whose
 thumbnail is gone, prints its path alone.
