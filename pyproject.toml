@@ -41,6 +41,7 @@ Issues = "https://github.com/antimike/amontillado/issues"
 
 [dependency-groups]
 dev = [
+    "pynvim>=0.5",
     "pytest>=8.0",
     "pywal16==3.8.15",
     "ruff>=0.6",
@@ -64,3 +65,4 @@ select = ["E", "F", "I", "B", "UP", "RUF"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = ["nvim: drives a real nvim through pynvim (just test-nvim); skipped without nvim"]
