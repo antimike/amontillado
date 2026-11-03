@@ -24,6 +24,7 @@ import yaml
 from amontillado.classes import LIGHT_MIN
 from amontillado.config import AppConfig, Config, ThemeConfig, xdg_dir
 from amontillado.contrast import apply_contrast
+from amontillado.generators import GeneratorError, matugen_render
 from amontillado.matugen import MatugenError, material_view, render_matugen
 from amontillado.palette import Palette, dump_palette, load_palette
 from amontillado.registry import RegistryError
@@ -34,7 +35,7 @@ from amontillado.render import (
     render_mustache,
     render_pywal,
 )
-from amontillado.sources import resolve
+from amontillado.sources import Template, resolve
 from amontillado.sources import text as template_text
 
 logger = getLogger(__name__)
@@ -117,13 +118,10 @@ def render_app(
 ) -> Rendered:
     """`app` rendered from `palette`. Raises ThemeError for what cannot be rendered (yet), and
     for a fetched template `amo theme sync` has not kept."""
-    if app.render_with != "amontillado":
-        raise ThemeError(f"theme.apps.{name}: render_with: {app.render_with} is not supported yet")
-    try:
-        template = resolve(name, app)
-        source_text = template_text(template)
-    except RegistryError as exc:
-        raise ThemeError(str(exc)) from exc
+    if app.render_with == "matugen":
+        (rendered,) = render_with_matugen({name: app}, palette, variant, wallpaper)
+        return rendered
+    template, source_text = _template(name, app)
     variant = choose_variant(palette, app.variant or variant)
     try:
         if template.format == "pywal":
@@ -134,6 +132,47 @@ def render_app(
             text = render_mustache(source_text, mustache_view(palette, variant))
     except (RenderError, MatugenError) as exc:
         raise ThemeError(f"theme.apps.{name}: {template.name}: {exc}") from exc
+    return Rendered(name, template.output, text, _record(template, variant, palette))
+
+
+def render_with_matugen(
+    apps: dict[str, AppConfig], palette: Palette, variant: str, wallpaper: Path | None = None
+) -> list[Rendered]:
+    """`apps` (all `render_with: matugen`) rendered by matugen itself, in `apps`' order: one
+    run per variant they ask for, from `wallpaper`, or from the variant's accent without one.
+    matugen's colours, not the palette's (docs/design.md, "Per-app configuration")."""
+    templates = {name: _template(name, app) for name, app in apps.items()}
+    variants = {name: choose_variant(palette, app.variant or variant) for name, app in apps.items()}
+    rendered = {}
+    for mode in dict.fromkeys(variants.values()):
+        names = [name for name in apps if variants[name] == mode]
+        accent = palette.variants[mode].roles["accent"]
+        try:
+            label, texts = matugen_render(
+                {name: templates[name][1] for name in names},
+                mode=mode,
+                picture=wallpaper,
+                accent=accent,
+            )
+        except GeneratorError as exc:
+            raise ThemeError(f"theme.apps.{', '.join(names)}: render_with: {exc}") from exc
+        for name in names:
+            template = templates[name][0]
+            record = {**_record(template, mode, palette), "renderer": label}
+            rendered[name] = Rendered(name, template.output, texts[name], record)
+    return [rendered[name] for name in apps]
+
+
+def _template(name: str, app: AppConfig) -> tuple[Template, str]:
+    try:
+        template = resolve(name, app)
+        return template, template_text(template)
+    except RegistryError as exc:
+        raise ThemeError(str(exc)) from exc
+
+
+def _record(template: Template, variant: str, palette: Palette) -> dict[str, str]:
+    """What theme.yaml records about one app."""
     record = {
         "source": template.source,
         "template": template.name,
@@ -145,7 +184,7 @@ def render_app(
         record["commit"] = template.commit
     if template.sha256 is not None:
         record["sha256"] = template.sha256
-    return Rendered(name, template.output, text, record)
+    return record
 
 
 @dataclass(frozen=True)
@@ -194,7 +233,16 @@ def plan(
         logger.warning("no apps under theme.apps: only the palette is written")
     # The picture the profile will hold: under --app the copy keeps the current one.
     picture = current_wallpaper if only else wallpaper
-    rendered = [render_app(name, theme.apps[name], palette, variant, picture) for name in names]
+    # Every render_with: matugen app in one matugen run per variant, in config order.
+    by_matugen = {n: theme.apps[n] for n in names if theme.apps[n].render_with == "matugen"}
+    from_matugen = {}
+    if by_matugen:
+        matugen_apps = render_with_matugen(by_matugen, palette, variant, picture)
+        from_matugen = {item.app: item for item in matugen_apps}
+    rendered = [
+        from_matugen.get(name) or render_app(name, theme.apps[name], palette, variant, picture)
+        for name in names
+    ]
     apps = {} if not only else {k: v for k, v in old_apps.items() if k in theme.apps}
     apps.update({item.app: item.record for item in rendered})
     copy_from = None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -171,6 +172,37 @@ def fake_matugen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         f'echo "$@ XDG_CACHE_HOME=$XDG_CACHE_HOME" >> "{log}"\n'
         'if [ "$1" = --version ]; then echo "matugen ${FAKE_MATUGEN_VERSION:-4.2.0}"; exit; fi\n'
         f'cat "{FIXTURES / "matugen-4.2.0.json"}"\n'
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    return log
+
+
+@pytest.fixture
+def matugen_renderer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A `matugen` on PATH that renders the templates of its `-c` config as matugen would
+    write them, each output being `<mode> <source>: ` and the template's text (the source is
+    the picture, or `hex <colour>`); exits 3 when $FAKE_MATUGEN_FAIL is set. Logs each command
+    line to the returned file."""
+    bin_dir = tmp_path / "renderer-bin"
+    bin_dir.mkdir()
+    log = tmp_path / "matugen-render.log"
+    script = bin_dir / "matugen"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys, tomllib\n"
+        "args = sys.argv[1:]\n"
+        f"open({str(log)!r}, 'a').write(' '.join(args) + '\\n')\n"
+        "if args == ['--version']:\n"
+        "    print('matugen 4.2.0'); sys.exit()\n"
+        "if os.environ.get('FAKE_MATUGEN_FAIL'):\n"
+        "    print('no colours', file=sys.stderr); sys.exit(3)\n"
+        "config = tomllib.load(open(args[args.index('-c') + 1], 'rb'))\n"
+        "mode = args[args.index('-m') + 1]\n"
+        "source = args[1] if args[0] == 'image' else ' '.join(args[1:3])\n"
+        "for t in config.get('templates', {}).values():\n"
+        "    text = open(t['input_path']).read()\n"
+        "    open(t['output_path'], 'w').write(f'{mode} {source}: {text}')\n"
     )
     script.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")

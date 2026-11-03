@@ -927,12 +927,17 @@ theme:
 - `variant`: this app's variant, over `theme.variant` and `--variant` ("Palette").
 - `render_with`: `amontillado` (default) or `matugen`, for `format: matugen` only. With `matugen`,
   amontillado writes a matugen config holding every such app's template and runs matugen once
-  per apply (`matugen image PICTURE`, or `matugen color hex ACCENT` for a palette without a
-  picture), rendering into the new profile directory. **Caveats**: the colours are matugen's own,
-  not the palette's, since matugen cannot take colours in (`--import-json` only adds variables):
-  the app misses the contrast adjustments, and with a preset or wallust palette it gets colours of
-  the same accent hue but not the same colours. matugen ≥ 4 must be installed for every apply.
-  Config-only, no CLI override.
+  per apply and variant those apps ask for (`matugen image PICTURE --source-color-index 0 -m
+  MODE`, or `matugen color hex ACCENT -m MODE` with the variant's accent for a palette without a
+  picture), in a throwaway config, cache and state home; it reads the rendered files back and
+  writes them with the others, so the profile still swaps in whole and a failing matugen run
+  stops the apply. `theme.yaml` records the app's `renderer` (`matugen 4.2.0`). **Caveats**: the
+  colours are matugen's own, not the palette's, since matugen cannot take colours in
+  (`--import-json` only adds variables): the app misses the contrast adjustments and the named
+  hues, and with a preset or wallust palette it gets colours of the same accent hue but not the
+  same colours (checked 2026-11-03: on one picture matugen's surface `#1a1110` against the
+  palette's `base00` `#15100f`). matugen ≥ 4 must be installed for every apply. Config-only, no
+  CLI override. Built (amo-aqp.14, `amontillado.generators.matugen_render`).
 - `wallpaper.reload`: run last, with the picture's path. Setting a wallpaper stays the user's
   command; amontillado only knows which picture belongs to the theme.
 

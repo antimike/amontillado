@@ -92,12 +92,82 @@ def test_render_error_changes_nothing(tmp_path: Path) -> None:
 
 
 def test_unsupported_sources_are_errors(tmp_path: Path) -> None:
-    for app, message in [
-        (AppConfig(source="tinted"), "tinted has no template 'x'"),
-        (AppConfig(format="matugen", render_with="matugen"), "render_with: matugen"),
-    ]:
-        with pytest.raises(ThemeError, match=message):
-            _apply(_config(tmp_path, x=app), _palette())
+    with pytest.raises(ThemeError, match="tinted has no template 'x'"):
+        _apply(_config(tmp_path, x=AppConfig(source="tinted")), _palette())
+
+
+def _by_matugen(tmp_path: Path, name: str, **extra: object) -> AppConfig:
+    template = tmp_path / f"{name}.in"
+    template.write_text(f"{name} {{{{colors.primary.default.hex}}}}\n")
+    return AppConfig(
+        source="path",
+        path=template,
+        format="matugen",
+        output=f"{name}.out",
+        render_with="matugen",
+        **extra,
+    )
+
+
+def test_render_with_matugen_runs_matugen_once_per_variant(
+    matugen_renderer: Path, tmp_path: Path
+) -> None:
+    apps = {
+        "a": _by_matugen(tmp_path, "a"),
+        "kitty": AppConfig(),
+        "b": _by_matugen(tmp_path, "b"),
+        "c": _by_matugen(tmp_path, "c", variant="light"),
+    }
+    picture = tmp_path / "picture.jpg"
+    config = _config(tmp_path, **apps)
+    built = plan(
+        config,
+        _palette(variants=("dark", "light")),
+        profile="default",
+        variant="dark",
+        contrast="off",
+        wallpaper=picture,
+    )
+    assert [item.app for item in built.rendered] == ["a", "kitty", "b", "c"]
+    directory = apply(config, built, activate=True)
+    # matugen's own output, the template untouched by amontillado.
+    marker = "{{colors.primary.default.hex}}"
+    assert (directory / "a.out").read_text() == f"dark {picture}: a {marker}\n"
+    assert (directory / "c.out").read_text().startswith(f"light {picture}: c ")
+    assert (directory / "kitty.conf").read_text().startswith("# amontillado p (dark)")
+    runs = [line for line in matugen_renderer.read_text().splitlines() if line != "--version"]
+    assert len(runs) == 2
+    assert runs[0].startswith(f"image {picture} --source-color-index 0 -c ")
+    assert runs[0].endswith("-m dark -q") and runs[1].endswith("-m light -q")
+    theme = yaml.safe_load((directory / "theme.yaml").read_text())
+    assert theme["apps"]["b"]["renderer"] == "matugen 4.2.0"
+    assert theme["apps"]["c"]["variant"] == "light"
+    assert "renderer" not in theme["apps"]["kitty"]
+
+
+def test_render_with_matugen_without_a_picture_uses_the_accent(
+    matugen_renderer: Path, tmp_path: Path
+) -> None:
+    directory = _apply(_config(tmp_path, a=_by_matugen(tmp_path, "a")), _palette())
+    assert (directory / "a.out").read_text().startswith("dark hex #80b0ff: a ")
+
+
+def test_render_with_matugen_failing_changes_nothing(
+    matugen_renderer: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path, a=_by_matugen(tmp_path, "a"), kitty=AppConfig())
+    monkeypatch.setenv("FAKE_MATUGEN_FAIL", "1")
+    with pytest.raises(
+        ThemeError, match=r"theme\.apps\.a: render_with: matugen failed \(exit 3\): no colours"
+    ):
+        _apply(config, _palette())
+    assert not (tmp_path / "cache" / "default").exists()
+
+
+def test_render_with_matugen_needs_matugen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    with pytest.raises(ThemeError, match=r"theme\.apps\.a: render_with: matugen is not installed"):
+        _apply(_config(tmp_path, a=_by_matugen(tmp_path, "a")), _palette())
 
 
 def test_path_source(tmp_path: Path) -> None:
