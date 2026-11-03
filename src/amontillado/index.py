@@ -317,6 +317,27 @@ def files_with_hash(conn: sqlite3.Connection, sha256: str) -> list[Path]:
     return [Path(path) for (path,) in conn.execute(query, (sha256,))]
 
 
+def replace(conn: sqlite3.Connection, entry: Entry) -> None:
+    """Replace one record's rows with `entry`, in one transaction."""
+    conn.execute("BEGIN")
+    try:
+        conn.execute("DELETE FROM files WHERE record_id = ?", (entry.id,))
+        conn.execute("DELETE FROM records WHERE id = ?", (entry.id,))
+        _insert(conn, [entry])
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def record_location(conn: sqlite3.Connection, record_id: str) -> tuple[Path, Path]:
+    """The directory and root of an indexed record; LookupFailed if it is not indexed."""
+    row = conn.execute("SELECT directory, root FROM records WHERE id = ?", (record_id,)).fetchone()
+    if row is None:
+        raise LookupFailed(f"{record_id}: not in the index; run `amo index`")
+    return Path(row[0]), Path(row[1])
+
+
 def find_record(conn: sqlite3.Connection, query: str) -> str:
     """The id of the record that `query` names: an existing file or record directory, else a
     name, an id, or a unique prefix of an id. Raises LookupFailed."""

@@ -130,6 +130,27 @@ def write_thumbnail(source: Path, target: Path, size: int) -> None:
             partial.unlink(missing_ok=True)
 
 
+def write_crop(source: Path, target: Path, box: tuple[int, int, int, int]) -> None:
+    """Write `box` (x, y, width, height, in the image as displayed: after EXIF orientation) of
+    `source` to `target` in the same format, atomically. JPEG and WebP are encoded at quality
+    95; the ICC profile is kept."""
+    x, y, width, height = box
+    with Image.open(source) as image:
+        format_ = image.format
+        icc = image.info.get("icc_profile")
+        cropped = ImageOps.exif_transpose(image).crop((x, y, x + width, y + height))
+    options: dict[str, object] = {"icc_profile": icc} if icc else {}
+    if format_ in ("JPEG", "WEBP"):
+        options["quality"] = 95
+    # Not an image suffix, so a scan never takes it for one of the record's files.
+    partial = target.with_name(f".{target.name}.part")
+    try:
+        cropped.save(partial, format_, **options)
+        partial.replace(target)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 def _request_draft(image: Image.Image) -> None:
     # The scale is the same along both axes, so this holds whatever the EXIF rotation is.
     displayed_width = image.height if _orientation(image) in _TRANSPOSED else image.width
