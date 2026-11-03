@@ -50,6 +50,7 @@ schema: 2
 id: 3f2a9c1e0b7d4e8f9a6b5c4d3e2f1a0b   # generated once (uuid4), never changes; usage keys off it
 name: night-city                    # optional; unique in the library; [a-z0-9][a-z0-9._-]*
 default_file: night-city.png        # optional; see below
+thumbnail: .amo/thumbnail.jpg       # derived; a small preview, never one of `files`
 source:                             # null for pictures added by hand
   site: wallhaven
   id: abc123
@@ -105,6 +106,15 @@ files:
   `--aspect`: the default file, with a warning) and never block.
 - `info.yaml` is loaded with a loader that rejects duplicate keys: `yaml.safe_load` silently
   keeps the last, which would drop a file listed twice.
+- **Thumbnail** (amo-hq0): a path relative to the record directory naming a small image, for
+  picker previews (`amo list --format rofi`). amontillado writes it at `.amo/thumbnail.jpg`:
+  in a sub-directory, which the scan of a record never enters, so no version of amontillado
+  (v0.1.0 included) takes it for one of the picture's files, and the record schema stays 2 (an
+  older version keeps the key as an unknown one). `amo fetch` keeps Wallhaven's `large`
+  thumbnail, as served, which it downloads anyway; `amo add` and `amo index` make one of the
+  default file: a JPEG (quality 85) at most 400 pixels on its longer side (*initial*), EXIF
+  orientation applied. A thumbnail set by hand to another path inside the record is kept. It
+  is not remade when the picture changes: delete it and `amo index` makes it again.
 
 **Finding records.** A record is a directory under a root holding `info.yaml` or `info.yml`;
 both at once is a conflict, and the record is not indexed until one is removed. Its files are
@@ -121,8 +131,9 @@ in the rest.
 **Healing** (`amo index`) splits the fields in two:
 
 - **Derived** fields are recomputed whenever they are missing, invalid or out of date, without
-  asking: `schema` and `id` when absent (a new record), and per file `sha256`, `width`,
-  `height` and `metrics`. A file whose content hash changed is measured again.
+  asking: `schema` and `id` when absent (a new record), `thumbnail` when absent, invalid or
+  naming no file (a thumbnail that cannot be made is a warning only), and per file `sha256`,
+  `width`, `height` and `metrics`. A file whose content hash changed is measured again.
   **Hash cache**: the index keeps each file's size and mtime (ns) beside its hash, and a file
   whose size and mtime both match what the last index saw is not hashed again (hashing runs at
   about 1 GB/s, so a large library would otherwise be read in full on every run). The cost: an
@@ -155,13 +166,14 @@ One database, `$XDG_STATE_HOME/amontillado/index.sqlite` (state, not cache: the 
 cannot be rebuilt):
 
 - `records`: one row per record (id, name, directory, root, whether it is under the NSFW root,
-  purity, category, tags as JSON, source site and id), and `files`: one row per file present
-  (path, record id, sha256 (indexed), whether it is the default file, size, every metric,
-  and for the hash cache its size in bytes and mtime in ns).
+  purity, category, tags as JSON, source site and id, thumbnail path), and `files`: one row per
+  file present (path, record id, sha256 (indexed), whether it is the default file, size, every
+  metric, and for the hash cache its size in bytes and mtime in ns).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (3); a newer one than the
-  program knows is refused. Schema 2 lacked the hash-cache columns; upgrading adds them empty.
+  table. The database's `PRAGMA user_version` is its schema version (4); a newer one than the
+  program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
+  thumbnail column; upgrading adds them empty, for the next `amo index` to fill.
 - `usage`: `id` (the record's), `shown_count`, `last_shown` (ISO 8601, UTC); later perhaps a
   rating. Keyed by record, so it follows a picture through renames and moves. Kept across
   rebuilds. The only mutable data; never written to info files, which keeps them stable under
@@ -298,8 +310,8 @@ outside the repository), thresholds set so each class holds roughly a fifth. Fin
 4. Download the full image to a temporary `.part` file in its root (not an image suffix, so a
    scan never takes it for a loose image), refuse it if its content is already in the index,
    call `/w/<id>` for tags, name the record from them (below), then move it into a new record
-   directory of that name (sfw: the first library root; sketchy and nsfw: the NSFW root) and
-   write the record with metrics measured on the **full** image (so stored metrics never come
+   directory of that name (sfw: the first library root; sketchy and nsfw: the NSFW root), keep
+   the thumbnail as the record's `thumbnail`, and write the record with metrics measured on the **full** image (so stored metrics never come
    from a thumbnail); add it to the index. A failure at any step leaves nothing behind; an
    existing directory of that name is refused (the index is stale: run `amo index`).
    **Every look filter is judged again on the full image**, so that `amo list` with the same
@@ -361,7 +373,8 @@ apply. It is the input for comparing palette generators. Decided 2026-10-28:
 ```text
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check] [--rehash]       heal records, rebuild the index; --check reports only
-amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N]   matching paths, one per line
+amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N] [--format path|rofi]
+                                     matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
@@ -385,6 +398,9 @@ Opposite class flags (`--dark --light`) are rejected. Indexed files that are gon
 with a warning. No match exits non-zero, so a pipeline into a wallpaper setter notices.
 `--aspect W:H` picks each record's file as in "Records"; no prompt to create a crop yet, so
 records without a matching file always take the fallback (the default file, one warning).
+`--format rofi` follows each path with its record's thumbnail as the icon
+(`PATH\0icon\x1fTHUMBNAIL`, for `rofi -dmenu -show-icons`); a record without one, or whose
+thumbnail is gone, prints its path alone.
 
 `amo shown` takes any PICTURE form under "Lookup" (a file found nowhere in the index is looked
 up by content); one that matches no record, or more than one, exits non-zero before anything is
