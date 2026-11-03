@@ -328,7 +328,8 @@ def test_matugen_themes_colourscheme_follows_each_apply(
         pytest.skip(f"neovim/matugen.lua not found at {MATUGEN_LUA} (set AMO_TEST_MATUGEN_LUA)")
     text = MATUGEN_LUA.read_text()
     # At the pin (81dbb648, also upstream's head on 2026-11-03) the file ends with a stray line
-    # `v`, which nvim refuses ("'=' expected near '<eof>'"); the test drops it.
+    # `v`, which nvim refuses ("'=' expected near '<eof>'"; InioX/matugen-themes#179); the test
+    # drops it.
     if text.endswith("\nv\n"):
         text = text.removesuffix("v\n")
     template = tmp_path / "matugen.lua"

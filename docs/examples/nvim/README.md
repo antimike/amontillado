@@ -71,9 +71,10 @@ Its custom colours (`red`, `blue`, `teal`, `lavender`, ...: matugen's `custom_co
 matugen user names in its config) come from the palette's named hues (`base08`-`base0E`, and the
 bright `base12`-`base17` for `maroon`, `mint`, `sky`, `lavender`, `pink`). **Upstream bug:** at
 the registry's pin (also upstream's head on 2026-11-03) the file ends with a stray line `v`, and
-nvim stops at it (`'=' expected near '<eof>'`). Until it is fixed upstream, give the app a
-corrected copy: `{source: path, path: ~/.config/amontillado/matugen.lua, format: matugen,
-output: matugen.lua}`.
+nvim stops at it (`'=' expected near '<eof>'`; reported as
+[InioX/matugen-themes#179](https://github.com/InioX/matugen-themes/issues/179)). Until it is
+fixed upstream, give the app a corrected copy: `{source: path, path:
+~/.config/amontillado/matugen.lua, format: matugen, output: matugen.lua}`.
 
 ## Notes
 
