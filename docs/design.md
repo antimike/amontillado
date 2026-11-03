@@ -104,6 +104,15 @@ files:
   stderr are terminals (stdout may be a pipe: `amo list` output is data) and
   `--non-interactive` is not given; otherwise they take the documented fallback (for
   `--aspect`: the default file, with a warning) and never block.
+- **Crops** (`amo crop`, amo-jak): the largest W:H box of the record's original (its default
+  file if that is not a crop, else its largest original), centred by default; `--at F` places
+  it along the side it cuts, from 0 (left or top) to 1 (right or bottom). Coordinates are in
+  the image as displayed (after EXIF orientation). Written beside the original as
+  `<stem>-<W>x<H>.<ext>` in its format (JPEG and WebP at quality 95, the ICC profile kept),
+  measured, recorded with `derived_from` and `crop`, and indexed at once. Refused: a record
+  that needs `amo index`, an original of that ratio already, and without `--force` a record
+  with a file of that ratio; `--force` replaces an earlier crop of the same name, never a file
+  that is not a crop.
 - `info.yaml` is loaded with a loader that rejects duplicate keys: `yaml.safe_load` silently
   keeps the last, which would drop a file listed twice.
 - **Thumbnail** (amo-hq0): a path relative to the record directory naming a small image, for
@@ -374,11 +383,13 @@ apply. It is the input for comparing palette generators. Decided 2026-10-28:
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check] [--rehash]       heal records, rebuild the index; --check reports only
 amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N] [--format path|rofi]
+         [--non-interactive]
                                      matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run]   make each file a record of its own
+amo crop PICTURE W:H [--at F] [--force] [--dry-run]         crop a record's original; prints it
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read,
@@ -396,8 +407,11 @@ only unless `--purity` (comma-separated: `sfw`, `sketchy`, `nsfw`) asks for more
 test uses the current config and resolves symlinks, so a stale index cannot leak an image.
 Opposite class flags (`--dark --light`) are rejected. Indexed files that are gone are skipped
 with a warning. No match exits non-zero, so a pipeline into a wallpaper setter notices.
-`--aspect W:H` picks each record's file as in "Records"; no prompt to create a crop yet, so
-records without a matching file always take the fallback (the default file, one warning).
+`--aspect W:H` picks each record's file as in "Records". Records left without a matching file
+(after `--random`, so only what is printed) are offered a centred crop each, in one question,
+when a prompt is allowed ("Prompts"; `--non-interactive` never asks); a crop is printed in
+place of its default file. Otherwise, or declined, they take the fallback (the default file,
+one warning).
 `--format rofi` follows each path with its record's thumbnail as the icon
 (`PATH\0icon\x1fTHUMBNAIL`, for `rofi -dmenu -show-icons`); a record without one, or whose
 thumbnail is gone, prints its path alone.
