@@ -94,22 +94,34 @@ def test_border_set_apart_moves_alone() -> None:
     assert after.adjusted == ("border",)
 
 
-def test_accent_moves_when_its_label_cannot() -> None:
-    # The label is dark and darker cannot reach 4.5 on this accent: the accent moves lighter.
+def test_a_label_that_cannot_go_darker_crosses_its_accent() -> None:
+    # Darker cannot reach 4.5 on this accent: the label goes light, the accent stays.
     before = _variant({"accent": "#4a6a8a", "on_accent": "#303030"})
     after, left = adjust(before, "dark")
     assert left == []
-    assert after.roles["on_accent"] == "#303030"
-    assert hex_to_oklch(after.roles["accent"])[0] > hex_to_oklch("#4a6a8a")[0]
-    assert _ratio(after, "on_accent", "accent") >= 4.5
+    assert after.roles["accent"] == "#4a6a8a"
+    assert hex_to_oklch(after.roles["on_accent"])[0] > hex_to_oklch("#4a6a8a")[0]
+    assert 4.5 <= _ratio(after, "on_accent", "accent") < 4.6
+
+
+def test_a_foreground_darker_than_a_dark_background_goes_light() -> None:
+    # amo-1xk: matugen's base16 on a cloudscape, every accent below base00 (tone 10).
+    near_black = ["#03080c", "#04090d", "#050a0e", "#060b0f", "#070c10", "#080d11", "#090e12"]
+    dark = dict(zip([f"base{n:02X}" for n in range(8, 16)], [*near_black, "#0a0f13"], strict=True))
+    before = _variant(base00="#1a1c1e", base01="#1e2022", **dark)
+    after, left = adjust(before, "dark")
+    assert left == []
+    for name in ("base08", "base0D", "base12", "base17"):
+        assert hex_to_oklch(after.base24[name])[0] > hex_to_oklch("#1e2022")[0]
+        assert 4.5 <= min(_ratio(after, name, "base00"), _ratio(after, name, "base01")) < 4.7
 
 
 def test_what_no_allowed_move_fixes_is_left_failing() -> None:
-    # Selection is a background no rule moves; its label cannot go darker enough.
-    before = _variant({"selection": "#5a5a5a", "on_selection": "#303030"})
+    # A mid-grey background: neither black nor white reaches 7 on it, and it never moves.
+    before = _variant(base00="#777777")
     after, left = adjust(before, "dark")
-    assert [(f.foreground, f.background) for f in left] == [("on_selection", "selection")]
-    assert after.roles["selection"] == "#5a5a5a"
+    assert ("base05", "base00") in [(f.foreground, f.background) for f in left]
+    assert after.base24["base00"] == "#777777"
 
 
 def test_adjust_logs_each_change(caplog: pytest.LogCaptureFixture) -> None:
@@ -134,9 +146,8 @@ def test_modes(caplog: pytest.LogCaptureFixture) -> None:
 
 
 def test_unfixable_pairs_warn_after_adjusting(caplog: pytest.LogCaptureFixture) -> None:
-    variant = _variant({"selection": "#5a5a5a", "on_selection": "#303030"})
-    apply_contrast(_palette(variant), "adjust")
-    assert "on_selection on selection" in caplog.text
+    apply_contrast(_palette(_variant(base00="#777777")), "adjust")
+    assert "base05 on base00" in caplog.text
 
 
 def test_earlier_adjustments_are_kept() -> None:

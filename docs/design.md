@@ -659,12 +659,16 @@ Each variant is checked on its own. `theme.contrast` sets what happens to a fail
 `report` for one run. `amo palette --check FILE` reports on a palette file.
 
 Adjusting moves a colour in OKLCH lightness (away from the other colour of the pair, hue kept,
-chroma lowered only to stay in gamut) by the smallest step that passes; each change is logged
-and listed under `adjusted`. What may move, in order:
+chroma lowered only to stay in gamut) by the smallest step that passes; if even the end of that
+side (black or white) does not pass, it crosses the other colour instead, to the nearest
+lightness on the far side that passes (amo-1xk: a foreground darker than a dark background goes
+light). Each change is logged and listed under `adjusted`. What may move, in order:
 
 1. the foreground of the pair;
-2. `accent` (and `secondary`), only when no foreground fixes the pair: `border` (the accent) on
-   `base00`, or an accent at middle lightness that neither `base00` nor `base07` labels at 4.5;
+2. `accent` (and `secondary`), only when no foreground fixes the pair: in practice `border`
+   (the accent) on `base00`. A label always can at 4.5, since black or white reaches 4.5 on any
+   colour (the worst, at middle luminance, still gives about 4.58), so a label on an accent
+   flips side rather than the accent moving;
 3. never the ramp backgrounds `base00`, `base01`, `base10`, `base11`.
 
 Foregrounds first, because each fix then touches one pair only: a background sits under every
@@ -673,9 +677,8 @@ link to the picture, so it moves last and as little as possible.
 
 After each move every pair is checked again, so a colour moved for one pair is seen by the
 next. A `border` that is the accent moves with it; one a palette file sets apart is a
-foreground like any other. A pair no allowed move fixes (a background other than the accent
-or secondary, such as `selection`, whose label cannot reach the minimum) stays as it is, with a
-warning. `--no-adjust` turns `adjust` into `report`; it does not turn checking back on under
+foreground like any other. A pair no allowed move fixes (body text at 7 on a background of
+middle lightness, which neither black nor white reaches) stays as it is, with a warning. `--no-adjust` turns `adjust` into `report`; it does not turn checking back on under
 `off`. `amo palette --check FILE` prints the accent metrics (below) and each failing pair
 (`dark: base03 on base00: 2.52, needs 3`) on stdout and exits non-zero if there are any; it
 never adjusts. (A first run on gruvbox,
@@ -735,8 +738,9 @@ need one say so):
   `palettes.neutral` at tones 5, 10, 20, 50, 70, 95, 98, 100 for dark and 98, 95, 90, 50, 40,
   10, 5, 0 for light (*initial*, calibrated below); its own sixteen colours from `base16`. On a cloudscape from
   the library (2026-11-03) `base16`'s `base08`-`base0F` were all near-black (`#03080c` to
-  `#090e12`), darker than the ramp's `base00`, so the contrast check could not fix them: it
-  moves a foreground away from its background, here darker, and black is not far enough.
+  `#090e12`), darker than the ramp's `base00`; the contrast check moves them across it, light
+  (it once only moved a foreground away from its background, here darker, which black could not
+  fix: amo-1xk).
 - **wallust ≥ 3.0** (second; built and checked on 3.5.1, amo-aqp.16): 16 colours clustered
   from the image, in no reliable order (red lands anywhere). Useful when matugen is not
   installed. The adapter runs it twice, in a throwaway config and cache home, with `run PICTURE
@@ -764,10 +768,12 @@ need one say so):
   |---|---|---|---|---|
   | wallust, `amontillado`, dark / light | 0 / 0 | 0 / 5-6 | 6/6 | 8.9-12.2 / 9.2-10.9 |
   | wallust, `generator`, dark / light | 0 / 0 | 3-6 / 10-12 | 6/6 | 8.7-12.8 / 7.2-8.1 |
-  | matugen, `generator`, dark / light | 0-16 / 0-2 | 0-13 / 0-12 | 0-2/6 | 0.0-5.4 / 0.0-1.9 |
+  | matugen, `generator`, dark / light | 0 / 0 | 0-13 / 0-13 | 0-2/6 | 0.0-5.4 / 0.0-1.9 |
 
   (`tc fails` here is amontillado's own contrast check, not `palette-compare`'s.) Under
   `amontillado` wallust matches matugen; under `generator` it holds every hue, matugen none.
+  (matugen's `generator` row had 0-16 / 0-2 failures before the check could cross a
+  background, amo-1xk.)
 
 `theme.generator` in the config picks one; default the first installed in that order.
 
