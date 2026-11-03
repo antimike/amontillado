@@ -53,6 +53,7 @@ from amontillado.config import (
 )
 from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check
+from amontillado.cropper import chooser
 from amontillado.fetch import TEST_SET, fetch
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
@@ -387,6 +388,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Crop even if the record has a file of that ratio; replaces an earlier crop of the "
         "same name.",
+    )
+    crop.add_argument(
+        "--interactive",
+        "-i",
+        action="store_true",
+        help="Place the box by hand: the picture is shown with the box drawn (in the terminal, "
+        "or in an image viewer: crop.preview), arrows or hjkl move it (shifted: further), + "
+        "and - zoom it, 0 resets it, Enter crops, Esc writes nothing (and fails). Starts from "
+        "--at. Needs a terminal.",
     )
     crop.add_argument(
         "--dry-run", action="store_true", help="Log what would be cropped; change nothing."
@@ -861,15 +871,14 @@ def cmd_list(args: argparse.Namespace) -> None:
     paths = {row.path: row.path for row in matches}
     if args.aspect is not None:
         fallbacks = [row for row in matches if not has_aspect(row.width, row.height, ratio)]
-        if (
-            fallbacks
-            and _may_ask(args)
-            and _confirm(
+        answer = "no"
+        if fallbacks and _may_ask(args):
+            answer = _ask_crop(
                 f"no {args.aspect.label.replace('x', ':')} file for "
-                f"{_count(len(fallbacks), 'picture')}; crop (centred)?"
+                f"{_count(len(fallbacks), 'picture')}; crop"
             )
-        ):
-            paths.update(_crop_all(config, fallbacks, args.aspect))
+        if answer != "no":
+            paths.update(_crop_all(config, fallbacks, args.aspect, answer == "interactive"))
             fallbacks = [row for row in fallbacks if paths[row.path] == row.path]
         if fallbacks:
             logger.warning(
@@ -890,26 +899,39 @@ def _may_ask(args: argparse.Namespace) -> bool:
     return not args.non_interactive and sys.stdin.isatty() and sys.stderr.isatty()
 
 
-def _confirm(question: str) -> bool:
-    """Ask a yes/no question on stderr; anything but y or yes (or end of input) is no."""
-    STDERR.print(f"{question} [y/N] ", end="", markup=False, highlight=False)
+def _ask_crop(question: str) -> str:
+    """Ask how to crop, on stderr: centred, interactive, or (anything else, or end of input)
+    no."""
+    STDERR.print(
+        f"{question}: [c]entred, [i]nteractively, [N]o? ", end="", markup=False, highlight=False
+    )
     try:
-        answer = input()
+        answer = input().strip().lower()
     except EOFError:
-        return False
-    return answer.strip().lower() in ("y", "yes")
+        return "no"
+    if answer in ("c", "centred", "centered"):
+        return "centred"
+    if answer in ("i", "interactive", "interactively"):
+        return "interactive"
+    return "no"
 
 
-def _crop_all(config: Config, rows: list[IndexedFile], aspect: Aspect) -> dict[Path, Path]:
-    """Crop the records of `rows` to `aspect`, centred; maps each default file printed to its
-    crop. A record that cannot be cropped is logged and left out."""
+def _crop_all(
+    config: Config, rows: list[IndexedFile], aspect: Aspect, interactive: bool = False
+) -> dict[Path, Path]:
+    """Crop the records of `rows` to `aspect`, centred or placed by hand; maps each default
+    file printed to its crop. A record that cannot be cropped (or whose crop is cancelled) is
+    logged and left out."""
     crops: dict[Path, Path] = {}
+    choose = chooser(config.crop, aspect.ratio, aspect.label) if interactive else None
     try:
         with closing(connect(config.index_path)) as conn:
             for row in rows:
                 try:
                     directory, root = record_location(conn, row.record_id)
-                    entry, name = crop_picture(config, directory, root, aspect.ratio, aspect.label)
+                    entry, name = crop_picture(
+                        config, directory, root, aspect.ratio, aspect.label, choose=choose
+                    )
                 except (CropError, LookupFailed, RecordError) as exc:
                     logger.error("%s", exc)
                     continue
@@ -1308,6 +1330,8 @@ def _add_one(
 
 def cmd_crop(args: argparse.Namespace) -> None:
     config = _load_config()
+    if args.interactive and not (sys.stdin.isatty() and sys.stderr.isatty()):
+        sys.exit("amontillado: --interactive needs a terminal (stdin and stderr)")
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
     try:
@@ -1323,6 +1347,9 @@ def cmd_crop(args: argparse.Namespace) -> None:
                     at=args.at,
                     force=args.force,
                     dry_run=args.dry_run,
+                    choose=chooser(config.crop, args.aspect.ratio, args.aspect.label)
+                    if args.interactive
+                    else None,
                 )
             except (CropError, LookupFailed, RecordError) as exc:
                 sys.exit(f"amontillado: {exc}")
