@@ -16,6 +16,7 @@ from amontillado.config import (
     FORMATS,
     GENERATORS,
     HUES_CHOICES,
+    PREVIEWS,
     RENDERERS,
     SOURCES,
     VARIANT_CHOICES,
@@ -68,6 +69,26 @@ KEYS: tuple[Key, ...] = (
         "and run without one; WALLHAVEN_API_KEY wins over it. Needed for nsfw results. The "
         "key is never logged or written anywhere.",
         "pass show wallhaven/api-key",
+    ),
+    Key("crop", "amo crop --interactive: how it shows the picture and the box being placed."),
+    Key(
+        "crop.preview",
+        "auto (kitty in a terminal that speaks the kitty graphics protocol, found from "
+        "KITTY_WINDOW_ID, TERM or TERM_PROGRAM: kitty, ghostty, WezTerm; else viewer), kitty "
+        "(drawn in the terminal) or viewer (a preview file, rewritten after each key, shown "
+        "by crop.viewer). kitty is immediate; a viewer works anywhere but must reload a file "
+        "that changes.",
+        "auto",
+        default="auto",
+        choices=PREVIEWS,
+    ),
+    Key(
+        "crop.viewer",
+        "The image viewer for preview: viewer, started once with {file} the preview file, "
+        "split as a shell would and run without one. It must reload the file when it changes "
+        "(eog, gThumb and Gwenview do; feh needs --reload; xdg-open opens whatever the "
+        "desktop's default is).",
+        '"xdg-open {file}"',
     ),
     Key(
         "theme",

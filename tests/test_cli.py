@@ -381,13 +381,41 @@ def test_list_aspect_offers_crops_on_a_terminal(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    _terminal(monkeypatch, "y")
+    _terminal(monkeypatch, "c")
     assert _list(capsys, "--aspect", "1:1", "--dark") == {"black-1x1"}
     assert (library / "black" / "black-1x1.png").is_file()
     assert "no file of that aspect ratio" not in caplog.text
     # Indexed: the next list finds it without asking.
     _terminal(monkeypatch, "no answer expected")
     assert _list(capsys, "--aspect", "1:1", "--dark") == {"black-1x1"}
+
+
+def test_crop_interactive_needs_a_terminal(indexed: dict[str, Path]) -> None:
+    with pytest.raises(SystemExit, match="--interactive needs a terminal"):
+        main(["crop", "black", "1:1", "--interactive"])
+
+
+def test_list_aspect_crops_interactively(
+    indexed: dict[str, Path],
+    library: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    placed = []
+
+    def chooser(config: object, ratio: float, label: str) -> object:
+        def choose(path: Path, width: int, height: int, box: tuple[int, ...]) -> tuple[int, ...]:
+            placed.append((path.name, label, box))
+            return (0, 0, 8, 8)
+
+        return choose
+
+    monkeypatch.setattr(cli, "chooser", chooser)
+    _terminal(monkeypatch, "i")
+    assert _list(capsys, "--aspect", "1:1", "--dark") == {"black-1x1"}
+    assert placed and placed[0][:2] == ("black.png", "1x1")
+    info = yaml.safe_load((library / "black" / "info.yaml").read_text())
+    assert info["files"]["black-1x1.png"]["crop"] == [0, 0, 8, 8]
 
 
 def test_list_aspect_declined_or_not_asked(

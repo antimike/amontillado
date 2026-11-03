@@ -16,6 +16,20 @@
 # anywhere.
 # api_key_command: pass show wallhaven/api-key
 
+# amo crop --interactive: how it shows the picture and the box being placed.
+crop:
+
+  # auto (kitty in a terminal that speaks the kitty graphics protocol, found from KITTY_WINDOW_ID,
+  # TERM or TERM_PROGRAM: kitty, ghostty, WezTerm; else viewer), kitty (drawn in the terminal) or
+  # viewer (a preview file, rewritten after each key, shown by crop.viewer). kitty is immediate; a
+  # viewer works anywhere but must reload a file that changes. Default: auto.
+  # preview: auto
+
+  # The image viewer for preview: viewer, started once with {file} the preview file, split as a
+  # shell would and run without one. It must reload the file when it changes (eog, gThumb and
+  # Gwenview do; feh needs --reload; xdg-open opens whatever the desktop's default is).
+  # viewer: "xdg-open {file}"
+
 # The theme engine: amo palette and amo theme (docs/design.md, "Theme engine (v0.2)").
 theme:
 
