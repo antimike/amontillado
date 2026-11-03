@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
-from conftest import fixture_json
+from conftest import FIXTURES, fixture_json
 
 from amontillado.colour import hex_to_oklch
+from amontillado.contrast import apply_contrast, check
 from amontillado.generators import (
     Generated,
     GeneratorError,
     choose_generator,
     generate,
     parse_matugen,
+    parse_wallust,
     picture_palette,
     run_matugen,
+    run_wallust,
+    tone_lightness,
+    wallust_variants,
 )
 from amontillado.hues import named_hues
 from amontillado.palette import BASE16_KEYS
@@ -96,8 +102,95 @@ def test_no_generator_installed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
 
 def test_generate_without_an_adapter(tmp_path: Path) -> None:
-    with pytest.raises(GeneratorError, match="wallust: no adapter yet"):
-        generate(tmp_path / "a.jpg", "wallust")
+    with pytest.raises(GeneratorError, match="pywal: no adapter"):
+        generate(tmp_path / "a.jpg", "pywal")
+
+
+def _wallust_runs() -> tuple[list[str], list[str]]:
+    return tuple(
+        parse_wallust((FIXTURES / f"wallust-3.5.1-{name}.txt").read_text())
+        for name in ("dark16", "ansidark16")
+    )
+
+
+def test_parse_wallust_skips_its_log_line() -> None:
+    clustered, ansi = _wallust_runs()
+    assert clustered[0] == "#393838" and len(clustered) == 16
+    assert ansi[1] == "#7f3a3a"
+    with pytest.raises(GeneratorError, match="expected 16 colours, got 2"):
+        parse_wallust("#000000\n#ffffff\n")
+
+
+def test_tone_lightness_is_a_greys_oklch_lightness() -> None:
+    assert tone_lightness(0) == 0
+    assert tone_lightness(100) == pytest.approx(1.0)
+    # matugen's neutral tone 5, #0f1113, has OKLCH lightness 0.176.
+    assert tone_lightness(5) == pytest.approx(0.177, abs=0.002)
+
+
+def test_wallust_variants() -> None:
+    clustered, ansi = _wallust_runs()
+    variants = wallust_variants(clustered, ansi)
+    dark, light = variants["dark"], variants["light"]
+    # The ramp: matugen's tones, at the background's hue, nearly grey.
+    for variant, descending in ((dark, False), (light, True)):
+        lightness = [hex_to_oklch(colour)[0] for colour in variant.ramp.values()]
+        assert lightness == sorted(lightness, reverse=descending)
+        assert all(chroma < 0.01 for _, chroma, _ in map(hex_to_oklch, variant.ramp.values()))
+    assert hex_to_oklch(dark.ramp["base00"])[0] == pytest.approx(tone_lightness(5), abs=0.01)
+    # The accent: the most chromatic of colours 1-6, at matugen's primary tones.
+    most = max(clustered[1:7], key=lambda colour: hex_to_oklch(colour)[1])
+    for variant, tone in ((dark, 80), (light, 40)):
+        lightness, _, hue = hex_to_oklch(variant.roles["accent"])
+        assert lightness == pytest.approx(tone_lightness(tone), abs=0.01)
+        assert hue == pytest.approx(hex_to_oklch(most)[2], abs=2)
+    # Its own hues: ANSI 1-6 by the table in reverse; orange and brown named.
+    assert [
+        dark.base16[k] for k in ("base08", "base0B", "base0A", "base0D", "base0E", "base0C")
+    ] == (ansi[1:7])
+    assert light.base16["base08"] == ansi[1]
+    named = named_hues("light", light.roles["accent"])
+    assert (light.base16["base09"], light.base16["base0F"]) == (named["base09"], named["base0F"])
+
+
+def test_run_wallust(fake_wallust: Path, tmp_path: Path) -> None:
+    generated = run_wallust(tmp_path / "a.jpg")
+    assert generated.generator == "wallust 3.5.1"
+    assert generated.variants == wallust_variants(*_wallust_runs())
+    calls = fake_wallust.read_text().splitlines()
+    assert calls[0].startswith("--version")
+    assert calls[1].startswith(f"run {tmp_path / 'a.jpg'} -N -n -s -T -q --print-scheme -p dark16")
+    assert "-k -c lchansi -p ansidark16" in calls[2]
+    cache = calls[1].rsplit("XDG_CACHE_HOME=", 1)[1]
+    assert "amo-wallust-" in cache and not Path(cache).exists()
+    assert generate(tmp_path / "a.jpg", "wallust").generator == "wallust 3.5.1"
+
+
+def test_wallust_2_is_refused(
+    fake_wallust: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_WALLUST_VERSION", "2.10.0")
+    with pytest.raises(GeneratorError, match=r"wallust 2\.10\.0 is too old.*>= 3\.0"):
+        run_wallust(tmp_path / "a.jpg")
+
+
+def test_wallust_is_chosen_without_matugen(
+    fake_wallust: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    which = shutil.which
+    # A system matugen (Fedora's /usr/bin, on PATH as /bin) must not count.
+    monkeypatch.setattr(shutil, "which", lambda name: None if name == "matugen" else which(name))
+    assert choose_generator(None) == "wallust"
+
+
+def test_a_wallust_palette_passes_its_contrast_checks() -> None:
+    generated = Generated("wallust 3.5.1", wallust_variants(*_wallust_runs()))
+    for hues in ("amontillado", "generator"):
+        palette = apply_contrast(
+            picture_palette(generated, name="x", hues=hues, hue=None, source={}), "adjust"
+        )
+        for variant in palette.variants.values():
+            assert check(variant) == []
 
 
 def test_picture_palette() -> None:

@@ -179,6 +179,29 @@ def fake_matugen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
+def fake_wallust(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A `wallust` on PATH that prints $FAKE_WALLUST_VERSION (default 3.5.1) for --version and
+    the recorded 3.5.1 `--print-scheme` output of the palette asked for (dark16 or ansidark16)
+    otherwise, logging each command line to the returned file."""
+    bin_dir = tmp_path / "wallust-bin"
+    bin_dir.mkdir()
+    log = tmp_path / "wallust.log"
+    script = bin_dir / "wallust"
+    script.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@ XDG_CACHE_HOME=$XDG_CACHE_HOME" >> "{log}"\n'
+        'if [ "$1" = --version ]; then\n'
+        '  echo "wallust ${FAKE_WALLUST_VERSION:-3.5.1} (VERGEN_IDEMPOTENT_OUTPUT)"; exit\n'
+        "fi\n"
+        'case "$*" in *ansidark16*) palette=ansidark16 ;; *) palette=dark16 ;; esac\n'
+        f'cat "{FIXTURES}/wallust-3.5.1-$palette.txt"\n'
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    return log
+
+
+@pytest.fixture
 def matugen_renderer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A `matugen` on PATH that renders the templates of its `-c` config as matugen would
     write them, each output being `<mode> <source>: ` and the template's text (the source is
