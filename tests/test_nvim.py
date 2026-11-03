@@ -259,3 +259,83 @@ def test_tinted_user_overrides_win(nvim: pynvim.Nvim, config: Config) -> None:
     assert _hl(nvim, "CursorLineNr")["fg"] == _variant(DARK).base24["base08"]
     # The module's other overrides stay.
     assert _hl(nvim, "PmenuSel")["bg"] == _variant(DARK).roles["accent"]
+
+
+# matugen-themes' neovim/matugen.lua at the registry's pin: never fetched by the tests. Found in
+# AMO_TEST_MATUGEN_LUA, else in amontillado's sources cache (`amo theme sync` keeps it there).
+MATUGEN_LUA_SHA = "63a1c8577a40eacbc78615af60e09efdf06e78cb2a583688732468066f1640d3"
+MATUGEN_LUA = Path(
+    os.environ.get("AMO_TEST_MATUGEN_LUA")
+    or Path.home() / ".cache" / "amontillado" / "sources" / MATUGEN_LUA_SHA
+)
+# A stand-in in matugen's format, so the module's load and watch run without the real file.
+STAND_IN = """vim.cmd("highlight clear")
+vim.o.background = "{{ mode }}"
+vim.api.nvim_set_hl(0, "Normal", { fg = "{{ colors.on_background.default.hex }}" })
+vim.api.nvim_set_hl(0, "CursorLineNr", { fg = "{{ colors.primary.default.hex }}" })
+vim.g.terminal_color_1 = "{{ colors.red.default.hex }}"
+"""
+
+
+def _matugen_config(config: Config, template: Path) -> Config:
+    app = AppConfig(source="path", path=template, format="matugen", output="matugen.lua")
+    return replace(config, theme=replace(config.theme, apps={"nvim-lua": app}))
+
+
+def _assert_matugen(nvim: pynvim.Nvim, palette: Palette) -> None:
+    variant = _variant(palette)
+    colours = {**variant.base24, **variant.roles}
+    assert nvim.exec_lua("return vim.o.background") == next(iter(palette.variants))
+    assert _hl(nvim, "Normal")["fg"] == colours["base05"]  # on_background
+    assert _hl(nvim, "CursorLineNr")["fg"] == colours["accent"]  # primary
+    assert nvim.exec_lua("return vim.g.terminal_color_1") == colours["base08"]  # red
+
+
+def _follow_with_matugen(nvim: pynvim.Nvim, config: Config) -> None:
+    _apply(config, DARK)
+    nvim.exec_lua(
+        """
+        _G.calls = 0
+        local matugen = require("amontillado.matugen")
+        local load = matugen.load
+        matugen.load = function(...)
+          load(...)
+          _G.calls = _G.calls + 1
+        end
+        matugen.start()
+        _G.calls = 0
+        """
+    )
+    _assert_matugen(nvim, DARK)
+    for count, palette in enumerate((LIGHT, DARK), start=1):
+        _apply(config, palette)
+        _wait_calls(nvim, count)
+        _assert_matugen(nvim, palette)
+
+
+def test_matugen_module_follows_each_apply(
+    nvim: pynvim.Nvim, config: Config, tmp_path: Path
+) -> None:
+    template = tmp_path / "stand-in.lua"
+    template.write_text(STAND_IN)
+    _follow_with_matugen(nvim, _matugen_config(config, template))
+
+
+def test_matugen_themes_colourscheme_follows_each_apply(
+    nvim: pynvim.Nvim, config: Config, tmp_path: Path
+) -> None:
+    if not MATUGEN_LUA.is_file():
+        pytest.skip(f"neovim/matugen.lua not found at {MATUGEN_LUA} (set AMO_TEST_MATUGEN_LUA)")
+    text = MATUGEN_LUA.read_text()
+    # At the pin (81dbb648, also upstream's head on 2026-11-03) the file ends with a stray line
+    # `v`, which nvim refuses ("'=' expected near '<eof>'"); the test drops it.
+    if text.endswith("\nv\n"):
+        text = text.removesuffix("v\n")
+    template = tmp_path / "matugen.lua"
+    template.write_text(text)
+    _follow_with_matugen(nvim, _matugen_config(config, template))
+
+
+def test_missing_matugen_lua_names_the_fix(nvim: pynvim.Nvim) -> None:
+    with pytest.raises(pynvim.NvimError, match=r"cannot run .*current/matugen\.lua.*nvim-lua"):
+        nvim.exec_lua('require("amontillado.matugen").load()')
