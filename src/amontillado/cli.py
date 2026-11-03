@@ -203,6 +203,13 @@ def build_parser() -> argparse.ArgumentParser:
     list_.add_argument(
         "--random", type=_positive, metavar="N", help="Print N matches chosen at random."
     )
+    list_.add_argument(
+        "--format",
+        choices=("path", "rofi"),
+        default="path",
+        help="path: one path per line. rofi: for rofi -dmenu -show-icons, each path followed "
+        "by its record's thumbnail as the icon (\\0icon\\x1f<thumbnail>), if it has one.",
+    )
     list_.set_defaults(func=cmd_list)
 
     shown = commands.add_parser(
@@ -645,7 +652,10 @@ def cmd_list(args: argparse.Namespace) -> None:
     if not matches:
         sys.exit("amontillado: no matching pictures")
     for row in matches:
-        print(row.path)
+        if args.format == "rofi" and row.thumbnail is not None and row.thumbnail.is_file():
+            print(f"{row.path}\0icon\x1f{row.thumbnail}")
+        else:
+            print(row.path)
 
 
 def _pick(group: list[IndexedFile], aspect: float | None) -> IndexedFile:

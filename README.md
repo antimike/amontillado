@@ -56,6 +56,7 @@ amo add ~/Downloads/forest.jpg             # make your own image a record
 amo index                                  # heal records and rebuild the index
 amo list --dark --muted --random 1         # a path, for a wallpaper setter
 amo shown "$(amo list --dark --random 1)"  # count a showing in the usage history
+amo list --dark --format rofi | rofi -dmenu -show-icons   # pick one, with thumbnails
 amo measure some.png                       # metrics and classes of any image, as YAML
 ```
 
