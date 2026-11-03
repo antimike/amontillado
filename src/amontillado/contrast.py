@@ -2,7 +2,8 @@
 
 docs/design.md, "Theme engine (v0.2)", "Contrast checks". Each variant is checked on its own.
 Adjusting moves one colour of a failing pair in OKLCH lightness, away from the other, by the
-smallest step that passes (hue kept, chroma lowered only to stay in gamut). What may move, in
+smallest step that passes (hue kept, chroma lowered only to stay in gamut), or across the
+other when going away cannot pass (a foreground darker than a dark background goes light). What may move, in
 order: the pair's foreground; then `accent` (or `secondary`), only when no foreground fixes the
 pair; never the ramp backgrounds `base00`, `base01`, `base10`, `base11`.
 """
@@ -131,15 +132,22 @@ def _fix(variant: Variant, failure: Failure) -> tuple[str, str] | None:
 
 
 def _move(colour: str, other: str, minimum: float) -> str | None:
-    """`colour` moved in OKLCH lightness away from `other` by the smallest step that gives
-    `minimum` against it, or None if even the end of the range does not."""
+    """`colour` moved in OKLCH lightness by the smallest step that gives `minimum` against
+    `other`: away from it, or, if even the end of that side does not, across it to the other
+    side (from `other`'s lightness on). None if neither end passes."""
     lightness, chroma, hue = hex_to_oklch(colour)
-    direction = 1.0 if lightness >= hex_to_oklch(other)[0] else -1.0
-    end = 1.0 if direction > 0 else 0.0
-    if contrast_ratio(oklch_to_hex(end, chroma, hue), other) < minimum:
-        return None
-    # Bisect on lightness between the colour (fails) and the end (passes).
-    failing, passing = lightness, end
+    other_lightness = hex_to_oklch(other)[0]
+    away = 1.0 if lightness >= other_lightness else 0.0
+    for start, end in ((lightness, away), (other_lightness, 1.0 - away)):
+        if contrast_ratio(oklch_to_hex(end, chroma, hue), other) >= minimum:
+            return _nearest_passing(start, end, chroma, hue, other, minimum)
+    return None
+
+
+def _nearest_passing(
+    failing: float, passing: float, chroma: float, hue: float, other: str, minimum: float
+) -> str:
+    """Bisect on lightness between `failing` and `passing` (which passes)."""
     for _ in range(30):
         middle = (failing + passing) / 2
         if contrast_ratio(oklch_to_hex(middle, chroma, hue), other) >= minimum:
