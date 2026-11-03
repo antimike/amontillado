@@ -675,13 +675,37 @@ need one say so):
   the library (2026-11-03) `base16`'s `base08`-`base0F` were all near-black (`#03080c` to
   `#090e12`), darker than the ramp's `base00`, so the contrast check could not fix them: it
   moves a foreground away from its background, here darker, and black is not far enough.
-- **wallust** (second): 16 colours clustered from the image, in no reliable order (red lands
-  anywhere). Under `hues: amontillado` they give the ramp (darkest to lightest) and the accent
-  (the most chromatic of colours 1-6, *initial*). Under `hues: generator` amontillado runs
-  `wallust -k -c lchansi -p ansidark16` (`ansilight16` for the light variant), the settings that
-  put each hue in its ANSI slot (by holding most accents fixed: yellow, magenta and cyan were
-  identical on all 8 test pictures), and maps the result onto base16 by the ANSI table in reverse.
-  Two runs, one per variant. Useful when matugen is not installed.
+- **wallust ≥ 3.0** (second; built and checked on 3.5.1, amo-aqp.16): 16 colours clustered
+  from the image, in no reliable order (red lands anywhere). Useful when matugen is not
+  installed. The adapter runs it twice, in a throwaway config and cache home, with `run PICTURE
+  -N -n -s -T -q --print-scheme` (no config, cache, terminal sequences or templates; the
+  colours on stdout after a log line):
+  - `-p dark16` gives the ramp and the accent, for both variants. The ramp is a grey at the
+    matugen ramp's tones (OKLCH lightness of Material tone T: the cube root of its luminance),
+    at the hue of wallust's background (colour 0), chroma at most 0.006 (about matugen's
+    neutral; *initial*): the named hues' lightness targets were calibrated against that ramp, so
+    the two generators share it. The accent is the most chromatic of colours 1-6 (*initial*) at
+    the lightness of Material tone 80 (dark) or 40 (light), matugen's primary tones, since the
+    clustered colour's own lightness ranged 0.30-0.71 over the library.
+  - `-k -c lchansi -p ansidark16` gives its own colours (`hues: generator`): the settings that
+    put each hue in its ANSI slot (by holding most accents fixed: green, yellow, blue, magenta
+    and cyan were identical on all 13 library pictures, red and the background follow the
+    picture), mapped onto `base08`-`base0E` by the ANSI table in reverse. ANSI has no orange or
+    brown: `base09` and `base0F` are the named hues'. **Departs**: the agreed text had a second
+    run with `ansilight16` for the light variant, but wallust 3.5.1 has no light ANSI palette
+    (`light16`, `softlight16` and the other light palettes hold 0-4 of the 6 hues on their
+    name), so both variants take these colours and the contrast check darkens them for light.
+
+  Checked 2026-11-03 on the 13 library pictures, contrast adjusted (as the calibration below):
+
+  | | tc fails | adjusted | hues | distinct |
+  |---|---|---|---|---|
+  | wallust, `amontillado`, dark / light | 0 / 0 | 0 / 5-6 | 6/6 | 8.9-12.2 / 9.2-10.9 |
+  | wallust, `generator`, dark / light | 0 / 0 | 3-6 / 10-12 | 6/6 | 8.7-12.8 / 7.2-8.1 |
+  | matugen, `generator`, dark / light | 0-16 / 0-2 | 0-13 / 0-12 | 0-2/6 | 0.0-5.4 / 0.0-1.9 |
+
+  (`tc fails` here is amontillado's own contrast check, not `palette-compare`'s.) Under
+  `amontillado` wallust matches matugen; under `generator` it holds every hue, matugen none.
 
 `theme.generator` in the config picks one; default the first installed in that order.
 
