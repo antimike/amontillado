@@ -1,0 +1,17 @@
+[[1m[34mI[39m[0m] [1m[35mconfig[39m[0m: Not using a configuration file, using default values.
+#393838
+#493720
+#4A4853
+#8B2914
+#4E5F41
+#A56535
+#999258
+#DDD9B2
+#9B987C
+#61492A
+#62606F
+#BA371B
+#687F57
+#DC8747
+#CCC375
+#DDD9B2

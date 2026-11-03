@@ -8,6 +8,11 @@ are detected at run time; the commands that need one say so when none is install
 matugen (>= 4.0) gives both variants in one run: its Material `primary` and `secondary` are the
 accents, its `neutral` tonal palette the ramp. Its `base16` block is pywal-style clustering, not
 named hues: `picture_palette` uses it only under `hues: generator`.
+
+wallust (>= 3.0, checked on 3.5.1) runs twice: `-p dark16` clusters the picture (the ramp's hue
+from its background, the accent from its most chromatic colour), and `-k -c lchansi -p
+ansidark16` puts each hue in its ANSI slot (its own colours, for `hues: generator`). wallust has
+no light ANSI palette, so both variants take the second run's hues.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
-from amontillado.colour import HEX_PATTERN
+from amontillado.colour import HEX_PATTERN, hex_to_oklch, oklch_to_hex
 from amontillado.config import GENERATORS
 from amontillado.hues import named_hues
 from amontillado.palette import BASE16_KEYS, VARIANTS, Palette, complete_variant
@@ -41,6 +46,16 @@ RAMP_TONES = {
     "dark": (5, 10, 20, 50, 70, 95, 98, 100),
     "light": (98, 95, 90, 50, 40, 10, 5, 0),
 }
+WALLUST_MINIMUM = (3, 0)
+# The wallust accent's lightness per variant: matugen's primary tones (Material's), so that a
+# wallust palette's accent sits where a matugen one does.
+ACCENT_TONES = {"dark": 80, "light": 40}
+# The wallust ramp's chroma at most: about matugen's neutral palette's (*initial*).
+NEUTRAL_CHROMA = 0.006
+# wallust's ANSI colours 1-6 onto base16 (base16-shell's table in reverse). ANSI has no orange or
+# brown: base09 and base0F come from the named hues.
+ANSI_BASE16 = {1: "base08", 2: "base0B", 3: "base0A", 4: "base0D", 5: "base0E", 6: "base0C"}
+_SCHEME_LINE = re.compile(r"^#[0-9a-fA-F]{6}$", re.MULTILINE)
 # matugen 4.2's config must hold both tables; an empty [config] alone does not parse.
 _MATUGEN_CONFIG = "[config]\n\n[templates]\n"
 _VERSION = re.compile(r"(\d+)\.(\d+)(?:\.(\d+))?")
@@ -85,7 +100,9 @@ def generate(picture: Path, name: str) -> Generated:
     """Run generator `name` on `picture`. Raises GeneratorError."""
     if name == "matugen":
         return run_matugen(picture)
-    raise GeneratorError(f"generator {name}: no adapter yet (matugen is the one supported)")
+    if name == "wallust":
+        return run_wallust(picture)
+    raise GeneratorError(f"generator {name}: no adapter (one of {', '.join(GENERATORS)})")
 
 
 def _version(text: str) -> tuple[int, ...]:
@@ -214,6 +231,62 @@ def parse_matugen(data: object, label: str = "matugen") -> dict[str, GeneratedVa
             )
     except (KeyError, TypeError) as exc:
         raise GeneratorError(f"{label}: unexpected JSON (missing {exc})") from exc
+    return variants
+
+
+def tone_lightness(tone: float) -> float:
+    """The OKLCH lightness of a grey at Material tone `tone` (CIELAB L*, 0-100)."""
+    luminance = ((tone + 16) / 116) ** 3 if tone > 8 else tone / 903.3
+    # A grey's OKLab lightness is the cube root of its luminance.
+    return luminance ** (1 / 3)
+
+
+def run_wallust(picture: Path) -> Generated:
+    """wallust's colours of `picture`, both variants. Raises GeneratorError."""
+    version = _version(_run(["wallust", "--version"]))
+    label = "wallust " + ".".join(map(str, version))
+    if version[:2] < WALLUST_MINIMUM:
+        raise GeneratorError(
+            f"{label} is too old: amontillado reads wallust >= "
+            f"{'.'.join(map(str, WALLUST_MINIMUM))}"
+        )
+    with tempfile.TemporaryDirectory(prefix="amo-wallust-") as work:
+        env = _throwaway_env(work)
+        # No config, cache, terminal sequences or templates: only the colours, on stdout.
+        command = ["wallust", "run", str(picture), "-N", "-n", "-s", "-T", "-q", "--print-scheme"]
+        clustered = parse_wallust(_run([*command, "-p", "dark16"], env), label)
+        ansi_command = [*command, "-k", "-c", "lchansi", "-p", "ansidark16"]
+        ansi = parse_wallust(_run(ansi_command, env), label)
+    return Generated(label, wallust_variants(clustered, ansi))
+
+
+def parse_wallust(output: str, label: str = "wallust") -> list[str]:
+    """Colours 0-15 from `wallust run --print-scheme`, which may also log a line or two."""
+    colours = [colour.lower() for colour in _SCHEME_LINE.findall(output)]
+    if len(colours) != 16:
+        raise GeneratorError(f"{label}: expected 16 colours, got {len(colours)}")
+    return colours
+
+
+def wallust_variants(clustered: list[str], ansi: list[str]) -> dict[str, GeneratedVariant]:
+    """Both variants from wallust's clustered colours (`-p dark16`) and its ANSI ones (`-c
+    lchansi -p ansidark16`), each colours 0-15."""
+    _, background_chroma, background_hue = hex_to_oklch(clustered[0])
+    chroma = min(background_chroma, NEUTRAL_CHROMA)
+    _, accent_chroma, accent_hue = max(
+        (hex_to_oklch(colour) for colour in clustered[1:7]), key=lambda lch: lch[1]
+    )
+    variants = {}
+    for variant in VARIANTS:
+        ramp = {
+            key: oklch_to_hex(tone_lightness(tone), chroma, background_hue)
+            for key, tone in zip(BASE16_KEYS[:8], RAMP_TONES[variant], strict=True)
+        }
+        accent = oklch_to_hex(tone_lightness(ACCENT_TONES[variant]), accent_chroma, accent_hue)
+        named = named_hues(variant, accent)
+        own = {key: ansi[index] for index, key in ANSI_BASE16.items()}
+        base16 = {**ramp, **{key: own.get(key, named[key]) for key in BASE16_KEYS[8:]}}
+        variants[variant] = GeneratedVariant(ramp, {"accent": accent}, base16)
     return variants
 
 

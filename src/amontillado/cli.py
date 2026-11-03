@@ -487,9 +487,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Make a palette.",
         description="Print a palette (per variant, the base24 colours and the roles: accent, "
         "selection, ...) as YAML, or check a palette file's contrast. A picture's palette has "
-        "both variants, from a generator (matugen). Base24 keys and roles the source leaves out "
-        "are derived; pairs below their WCAG contrast minimum are fixed as theme.contrast says "
-        "(default: adjusted, each change logged).",
+        "both variants, from a generator (matugen or wallust). Base24 keys and roles the source "
+        "leaves out are derived; pairs below their WCAG contrast minimum are fixed as "
+        "theme.contrast says (default: adjusted, each change logged).",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(palette, argparse.SUPPRESS)
