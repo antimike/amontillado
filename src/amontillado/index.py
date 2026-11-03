@@ -5,7 +5,9 @@ an info file (or implied by where a record lives), so `rebuild` drops and recrea
 schema change to them needs no migration. The `usage` table, keyed by record id, cannot be
 rebuilt and is never dropped, except once when upgrading from schema 1, whose usage rows were
 keyed by content hash. Each file's size and mtime are kept beside its hash, so that the next
-`amo index` need not hash it again (`known_hashes`).
+`amo index` need not hash it again (`known_hashes`). Each record's info file is also kept whole,
+as JSON (`records.info`), and the `pictures` view flattens what `amo list --where` filters on
+(`matching_records`).
 """
 
 from __future__ import annotations
@@ -24,7 +26,9 @@ from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
+# `->` and `->>` came in SQLite 3.38; json_extract works before.
+JSON_ARROWS = (3, 38, 0)
 
 _CREATE_RECORDS = """
 CREATE TABLE records (
@@ -41,8 +45,17 @@ CREATE TABLE records (
     thumbnail TEXT,
     license TEXT,
     author TEXT,
-    title TEXT
+    title TEXT,
+    info TEXT
 )
+"""
+# What `amo list --where` sees: a record per row, flattened, with its usage and its info file.
+_CREATE_PICTURES = """
+CREATE VIEW pictures AS
+SELECT r.id, r.name, r.directory, r.purity, r.source_site AS site, r.source_id, r.category,
+    r.tags, r.license, r.author, r.title, coalesce(u.shown_count, 0) AS shown_count,
+    u.last_shown, r.info
+FROM records r LEFT JOIN usage u ON u.id = r.id
 """
 _CREATE_FILES = """
 CREATE TABLE files (
@@ -80,7 +93,7 @@ ON CONFLICT (id) DO UPDATE SET shown_count = shown_count + 1, last_shown = exclu
 _INSERT_RECORD = """
 INSERT INTO records VALUES (
     :id, :name, :directory, :root, :nsfw_root, :purity, :category, :tags, :source_site,
-    :source_id, :thumbnail, :license, :author, :title
+    :source_id, :thumbnail, :license, :author, :title, :info
 )
 """
 _INSERT_FILE = """
@@ -132,6 +145,8 @@ def connect(path: Path) -> sqlite3.Connection:
     try:
         version = _schema_version(conn, path)
         conn.execute("BEGIN")
+        # Recreated below, after any upgrade: a view must not name a column being changed.
+        conn.execute("DROP VIEW IF EXISTS pictures")
         if version == 1:
             # Schema 1 keyed usage by content hash; records are keyed by id now.
             logger.warning("%s: upgrading from schema 1; the usage history is discarded", path)
@@ -148,9 +163,13 @@ def connect(path: Path) -> sqlite3.Connection:
             # No provenance columns before schema 5; the next `amo index` fills them in.
             for column in ("license", "author", "title"):
                 conn.execute(f"ALTER TABLE records ADD COLUMN {column} TEXT")
+        if version in (2, 3, 4, 5) and _has_table(conn, "records"):
+            # No info column before schema 6; the next `amo index` fills it in.
+            conn.execute("ALTER TABLE records ADD COLUMN info TEXT")
         if not _has_table(conn, "records"):
             _create_tables(conn)
         conn.execute(_CREATE_USAGE)
+        conn.execute(_CREATE_PICTURES)
         # PRAGMA takes no parameters; the value is a constant.
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.execute("COMMIT")
@@ -232,6 +251,8 @@ def _record_row(entry: Entry) -> dict[str, object]:
         "license": _text(source.get("license")),
         "author": _text(source.get("author")),
         "title": _text(source.get("title")),
+        # Dates in an info file load as date or datetime objects.
+        "info": json.dumps(entry.record.to_dict(), default=str, ensure_ascii=False),
     }
 
 
@@ -348,6 +369,81 @@ def replace(conn: sqlite3.Connection, entry: Entry) -> None:
     except BaseException:
         conn.execute("ROLLBACK")
         raise
+
+
+class QueryError(Exception):
+    """An `amo list` filter cannot run; the message says why."""
+
+
+# What a --where expression may do: read and call functions, nothing else.
+_ALLOWED = frozenset({sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION})
+
+
+def _authorize(action: int, *_: object) -> int:
+    return sqlite3.SQLITE_OK if action in _ALLOWED else sqlite3.SQLITE_DENY
+
+
+@dataclass(frozen=True)
+class RecordFilter:
+    """`amo list`'s filters over the `pictures` view; all must match."""
+
+    # Each must be one of the record's tags.
+    tags: tuple[str, ...] = ()
+    site: str | None = None
+    category: str | None = None
+    # Case-insensitive (CC-BY-4.0 and cc-by-4.0 are one licence).
+    license: str | None = None
+    author: str | None = None
+    # A SQL boolean expression over the view's columns.
+    where: str | None = None
+
+    def __bool__(self) -> bool:
+        return self != RecordFilter()
+
+
+def matching_records(conn: sqlite3.Connection, search: RecordFilter) -> set[str]:
+    """The ids of the records `search` matches. The --where expression runs with the database
+    read-only and an authorizer that allows only reads and function calls, in one statement.
+    It can select any record: purity and the NSFW root are for the caller to apply after.
+    Raises QueryError."""
+    clauses, parameters = [], []
+    for tag in search.tags:
+        clauses.append("EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)")
+        parameters.append(tag)
+    for column, value in (
+        ("site", search.site),
+        ("category", search.category),
+        ("author", search.author),
+    ):
+        if value is not None:
+            clauses.append(f"{column} = ?")
+            parameters.append(value)
+    if search.license is not None:
+        clauses.append("license = ? COLLATE NOCASE")
+        parameters.append(search.license)
+    if search.where is not None:
+        # On its own lines, so a trailing comment in it cannot swallow our parenthesis.
+        clauses.append(f"(\n{search.where}\n)")
+    query = "SELECT id FROM pictures WHERE " + " AND ".join(clauses or ["1"])
+    conn.execute("PRAGMA query_only = ON")
+    conn.set_authorizer(_authorize)
+    try:
+        return {record_id for (record_id,) in conn.execute(query, parameters)}
+    except (sqlite3.DatabaseError, sqlite3.ProgrammingError, sqlite3.Warning) as exc:
+        raise QueryError(_query_message(search.where, exc)) from exc
+    finally:
+        conn.set_authorizer(None)
+        conn.execute("PRAGMA query_only = OFF")
+
+
+def _query_message(where: str | None, exc: Exception) -> str:
+    message = f"--where: {exc}"
+    if where is not None and "->" in where and sqlite3.sqlite_version_info < JSON_ARROWS:
+        message += (
+            f" (this SQLite is {sqlite3.sqlite_version}; -> and ->> need 3.38: use "
+            "json_extract(info, '$.path'))"
+        )
+    return message
 
 
 def record_location(conn: sqlite3.Connection, record_id: str) -> tuple[Path, Path]:

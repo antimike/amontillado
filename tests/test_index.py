@@ -14,10 +14,13 @@ from amontillado.index import (
     SCHEMA_VERSION,
     IndexDatabaseError,
     LookupFailed,
+    QueryError,
+    RecordFilter,
     connect,
     files,
     find_record,
     known_hashes,
+    matching_records,
     rebuild,
     record_shown,
 )
@@ -125,6 +128,22 @@ def test_metric_columns_follow_the_dataclass(config: Config) -> None:
     assert metric_columns == list(Metrics.__dataclass_fields__)
 
 
+def _as_schema(conn: sqlite3.Connection, version: int) -> None:
+    """Make the index look as schema `version` left it: no view, fewer columns."""
+    conn.execute("DROP VIEW pictures")
+    dropped = {"records": ["info"], "files": []}
+    if version <= 4:
+        dropped["records"] += ["license", "author", "title"]
+    if version <= 3:
+        dropped["records"].append("thumbnail")
+    if version <= 2:
+        dropped["files"] += ["bytes", "mtime_ns"]
+    for table, columns in dropped.items():
+        for column in columns:
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+    conn.execute(f"PRAGMA user_version = {version}")
+
+
 def test_schema_2_gains_the_hash_cache_and_keeps_its_rows(
     config: Config, save_image: SaveImage
 ) -> None:
@@ -133,12 +152,7 @@ def test_schema_2_gains_the_hash_cache_and_keeps_its_rows(
     conn = connect(config.index_path)
     rebuild(conn, entries)
     record_shown(conn, entries[0].id)
-    conn.execute("ALTER TABLE files DROP COLUMN bytes")
-    conn.execute("ALTER TABLE files DROP COLUMN mtime_ns")
-    conn.execute("ALTER TABLE records DROP COLUMN thumbnail")
-    for column in ("license", "author", "title"):
-        conn.execute(f"ALTER TABLE records DROP COLUMN {column}")
-    conn.execute("PRAGMA user_version = 2")
+    _as_schema(conn, 2)
     conn.close()
     assert known_hashes(config.index_path) == {}
     conn = connect(config.index_path)
@@ -157,10 +171,7 @@ def test_schema_3_gains_thumbnails_and_keeps_its_rows(
     conn = connect(config.index_path)
     rebuild(conn, entries)
     record_shown(conn, entries[0].id)
-    conn.execute("ALTER TABLE records DROP COLUMN thumbnail")
-    for column in ("license", "author", "title"):
-        conn.execute(f"ALTER TABLE records DROP COLUMN {column}")
-    conn.execute("PRAGMA user_version = 3")
+    _as_schema(conn, 3)
     conn.close()
     conn = connect(config.index_path)
     [row] = files(conn)
@@ -175,14 +186,27 @@ def test_schema_4_gains_provenance_columns(config: Config, save_image: SaveImage
     save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
     conn = connect(config.index_path)
     rebuild(conn, heal_library(config).entries)
-    for column in ("license", "author", "title"):
-        conn.execute(f"ALTER TABLE records DROP COLUMN {column}")
-    conn.execute("PRAGMA user_version = 4")
+    _as_schema(conn, 4)
     conn.close()
     conn = connect(config.index_path)
     assert len(files(conn)) == 1
     columns = {row[1] for row in conn.execute("PRAGMA table_info(records)")}
     assert {"license", "author", "title"} <= columns
+
+
+def test_schema_5_gains_the_info_column_and_the_view(config: Config, save_image: SaveImage) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    conn = connect(config.index_path)
+    rebuild(conn, heal_library(config).entries)
+    _as_schema(conn, 5)
+    conn.close()
+    conn = connect(config.index_path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
+    # Empty until the next rebuild fills it in; the view is there at once.
+    assert conn.execute("SELECT info FROM pictures").fetchall() == [(None,)]
+    rebuild(conn, heal_library(config).entries)
+    [(info,)] = conn.execute("SELECT info FROM pictures").fetchall()
+    assert json.loads(info)["files"]["a.png"]["width"] == 64
 
 
 def test_known_hashes_are_what_was_indexed(config: Config, save_image: SaveImage) -> None:
@@ -291,3 +315,28 @@ def test_usage_survives_rebuild_and_reconnect(config: Config, save_image: SaveIm
     rebuild(conn, heal_library(config).entries)
     conn.close()
     assert len(_usage(connect(config.index_path))) == 1
+
+
+def test_matching_records_leaves_the_connection_writable(
+    config: Config, save_image: SaveImage
+) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    conn = connect(config.index_path)
+    [entry] = heal_library(config).entries
+    rebuild(conn, [entry])
+    assert matching_records(conn, RecordFilter(where="shown_count = 0")) == {entry.id}
+    with pytest.raises(QueryError, match="not authorized"):
+        matching_records(conn, RecordFilter(where="(SELECT 1 FROM pragma_user_version())"))
+    record_shown(conn, entry.id)
+    assert matching_records(conn, RecordFilter(where="shown_count = 0")) == set()
+    assert not RecordFilter() and RecordFilter(tags=("x",))
+
+
+def test_arrows_on_an_old_sqlite_name_the_version(
+    config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = connect(config.index_path)
+    monkeypatch.setattr(sqlite3, "sqlite_version_info", (3, 37, 2))
+    monkeypatch.setattr(sqlite3, "sqlite_version", "3.37.2")
+    with pytest.raises(QueryError, match=r"this SQLite is 3\.37\.2; -> and ->> need 3\.38"):
+        matching_records(conn, RecordFilter(where="info ->> "))
