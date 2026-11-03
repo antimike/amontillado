@@ -3,7 +3,7 @@
 The schema is in docs/design.md, "Records". Parsing is strict about authored fields (`id`,
 `name`, `default_file`, `source`, `fetched`, the shape of `files`, `derived_from`, `crop`),
 which nothing could recompute, and lenient about derived ones (`sha256`, `width`, `height`,
-`metrics`), which an invalid value only marks for recomputation.
+`metrics`, `thumbnail`), which an invalid value only marks for recomputation.
 """
 
 from __future__ import annotations
@@ -26,7 +26,10 @@ IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]*")
 ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
-_RECORD_KEYS = ("schema", "id", "name", "default_file", "source", "fetched", "files")
+_RECORD_KEYS = ("schema", "id", "name", "default_file", "thumbnail", "source", "fetched", "files")
+# Where amontillado writes a record's thumbnail: in a sub-directory, which the scan of a record
+# never enters, so no version of amontillado takes it for one of the picture's files.
+THUMBNAIL_PATH = ".amo/thumbnail.jpg"
 _FILE_KEYS = ("sha256", "width", "height", "derived_from", "crop", "metrics")
 
 
@@ -81,6 +84,8 @@ class Record:
     fetched: datetime | None = None
     files: dict[str, FileEntry] = field(default_factory=dict)
     extra: dict[str, object] = field(default_factory=dict)
+    # A small preview, relative to the record directory; never one of `files`.
+    thumbnail: str | None = None
 
     def default(self, present: set[str]) -> str | None:
         """The default file among `present`: `default_file` if present, else the largest
@@ -93,12 +98,14 @@ class Record:
         return max(pool, key=lambda name: self.files[name].pixels, default=None)
 
     def to_dict(self) -> dict[str, object]:
-        """The record as written, keys in schema order; an unset name or default left out."""
+        """The record as written, keys in schema order; unset optional keys left out."""
         values: dict[str, object] = {"schema": SCHEMA, "id": self.id}
         if self.name is not None:
             values["name"] = self.name
         if self.default_file is not None:
             values["default_file"] = self.default_file
+        if self.thumbnail is not None:
+            values["thumbnail"] = self.thumbnail
         values["source"] = self.source
         values["fetched"] = self.fetched
         values["files"] = {name: entry.to_dict() for name, entry in self.files.items()}
@@ -196,7 +203,18 @@ def parse(data: dict[str, object]) -> Record:
     if default_file is not None and default_file not in files:
         raise RecordError(f"default_file {default_file!r} is not in files")
     extra = {key: value for key, value in data.items() if key not in _RECORD_KEYS}
-    return Record(record_id, name, default_file, source, fetched, files, extra)
+    thumbnail = _thumbnail(data.get("thumbnail"))
+    return Record(record_id, name, default_file, source, fetched, files, extra, thumbnail)
+
+
+def _thumbnail(value: object) -> str | None:
+    """A thumbnail path inside the record directory (relative, no `..`), else None."""
+    if not isinstance(value, str) or not value or "\\" in value:
+        return None
+    parts = value.split("/")
+    if value.startswith("/") or any(part in ("", ".", "..") for part in parts):
+        return None
+    return value
 
 
 def _file_name(value: object) -> str:

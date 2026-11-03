@@ -47,7 +47,10 @@ def _fetch(
 
 
 def _leftovers(root: Path) -> list[str]:
-    return sorted(path.name for path in root.rglob(".*"))
+    """Partial downloads, and record directories without an info file."""
+    partial = [path.name for path in root.rglob("*.part")]
+    empty = [p.name for p in root.iterdir() if p.is_dir() and not (p / "info.yaml").exists()]
+    return sorted(partial + empty)
 
 
 def test_keeps_a_matching_wallpaper_as_a_record(
@@ -63,6 +66,10 @@ def test_keeps_a_matching_wallpaper_as_a_record(
     assert info["source"]["tags"] == ["night sky"]
     assert info["source"]["purity"] == "sfw"
     assert info["fetched"] is not None
+    # Wallhaven's thumbnail, as served.
+    assert info["thumbnail"] == ".amo/thumbnail.jpg"
+    served = web.routes["https://th.wallhaven.cc/lg/aa/aaa111.jpg"][0].body
+    assert (directory / ".amo" / "thumbnail.jpg").read_bytes() == served
     entry = info["files"]["wallhaven-aaa111.jpg"]
     assert (entry["width"], entry["height"]) == (128, 72)
     assert entry["metrics"]["lightness"] < 0.1

@@ -1,8 +1,9 @@
 """The library: the records under the roots, and healing their info files.
 
 docs/design.md, "Records". A record is a directory under a root holding `info.yaml` (or
-`info.yml`) and the picture's files. Healing recomputes derived fields (`id` when absent, and
-per file `sha256`, `width`, `height`, `metrics`) and never rewrites authored ones: a record
+`info.yml`) and the picture's files. Healing recomputes derived fields (`id` when absent, a
+missing `thumbnail`, and per file `sha256`, `width`, `height`, `metrics`) and never rewrites
+authored ones: a record
 whose info file does not parse, or whose authored fields are invalid, is reported and left
 alone. Within a record, an unlisted image with the hash of a listed file that is missing is
 that file renamed; other unlisted images are added; listed files that are missing keep their
@@ -26,11 +27,12 @@ from pathlib import Path
 from PIL import Image
 
 from amontillado.config import Config
-from amontillado.metrics import image_size, measure_file
+from amontillado.metrics import image_size, measure_file, write_thumbnail
 from amontillado.record import (
     IMAGE_SUFFIXES,
     INFO_NAMES,
     NAME_PATTERN,
+    THUMBNAIL_PATH,
     FileEntry,
     Record,
     RecordError,
@@ -43,6 +45,8 @@ from amontillado.record import (
 logger = getLogger(__name__)
 
 PURITIES = ("sfw", "sketchy", "nsfw")
+# The longer side of a thumbnail amontillado makes, in pixels (*initial*).
+THUMBNAIL_SIZE = 400
 
 # A file's size and mtime (ns): when both are unchanged, so is its content (the hash cache).
 Stat = tuple[int, int]
@@ -319,6 +323,10 @@ def _heal_record(
     if not files:
         report.missing.append(directory)
         logger.warning("%s: record without files", directory)
+    thumbnail = record.thumbnail
+    needs_thumbnail = bool(hashes) and (thumbnail is None or not (directory / thumbnail).is_file())
+    if needs_thumbnail:
+        reasons.append("thumbnail")
     if record.default_file is not None and record.default_file not in hashes:
         logger.warning(
             "%s: default_file %s is missing; using another file", directory, record.default_file
@@ -351,9 +359,25 @@ def _heal_record(
         )
     report.measured += len(to_measure)
     record = dataclasses.replace(record, files=files)
+    if needs_thumbnail:
+        record = _with_thumbnail(directory, record, set(hashes))
     if reasons:
         write_record(path, record)
     return record, hashes, stats
+
+
+def _with_thumbnail(directory: Path, record: Record, present: set[str]) -> Record:
+    """`record` with a thumbnail of its default file made at THUMBNAIL_PATH; unchanged, with a
+    warning, if that fails (a thumbnail is a convenience, not worth failing the record)."""
+    default = record.default(present)
+    if default is None:
+        return record
+    try:
+        write_thumbnail(directory / default, directory / THUMBNAIL_PATH, THUMBNAIL_SIZE)
+    except (OSError, Image.DecompressionBombError) as exc:
+        logger.warning("%s: no thumbnail: %s", directory / default, exc)
+        return record
+    return dataclasses.replace(record, thumbnail=THUMBNAIL_PATH)
 
 
 def file_stat(path: Path) -> Stat:
@@ -436,14 +460,15 @@ def place(config: Config, file: Path, *, name: str | None, nsfw: bool) -> Placem
 
 
 def add_picture(config: Config, placement: Placement, *, name: str | None) -> Entry:
-    """Make a record of one file: measure it, move it into the new directory, write the info
-    file. Raises OSError or Image.DecompressionBombError (before anything moves, if measuring
-    fails)."""
+    """Make a record of one file: measure it, move it into the new directory, make its
+    thumbnail, write the info file. Raises OSError or Image.DecompressionBombError (before
+    anything moves, if measuring fails)."""
     file = placement.file
     entry = FileEntry(sha256_file(file), *image_size(file), measure_file(file))
     record = Record(uuid.uuid4().hex, name=name, files={file.name: entry})
     placement.directory.mkdir(parents=True)
     shutil.move(file, placement.directory / file.name)
+    record = _with_thumbnail(placement.directory, record, {file.name})
     write_record(placement.directory / INFO_NAMES[0], record)
     nsfw = placement.directory.resolve().is_relative_to(config.nsfw_root)
     stats = {file.name: file_stat(placement.directory / file.name)}

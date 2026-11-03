@@ -24,7 +24,7 @@ from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _CREATE_RECORDS = """
 CREATE TABLE records (
@@ -37,7 +37,8 @@ CREATE TABLE records (
     category TEXT,
     tags TEXT NOT NULL,
     source_site TEXT,
-    source_id TEXT
+    source_id TEXT,
+    thumbnail TEXT
 )
 """
 _CREATE_FILES = """
@@ -76,7 +77,7 @@ ON CONFLICT (id) DO UPDATE SET shown_count = shown_count + 1, last_shown = exclu
 _INSERT_RECORD = """
 INSERT INTO records VALUES (
     :id, :name, :directory, :root, :nsfw_root, :purity, :category, :tags, :source_site,
-    :source_id
+    :source_id, :thumbnail
 )
 """
 _INSERT_FILE = """
@@ -89,8 +90,8 @@ INSERT INTO files VALUES (
 # The metric columns in Metrics field order, so that a row unpacks into Metrics.
 _SELECT_FILES = """
 SELECT f.path, f.record_id, r.purity, r.nsfw_root, f.is_default, f.width, f.height,
-    f.lightness, f.chroma, f.colourful_share, f.hue, f.hue_name, f.hue_share, f.hue_spread,
-    f.warmth, f.busy
+    r.thumbnail, f.lightness, f.chroma, f.colourful_share, f.hue, f.hue_name, f.hue_share,
+    f.hue_spread, f.warmth, f.busy
 FROM files f JOIN records r ON r.id = f.record_id
 ORDER BY f.path
 """
@@ -115,6 +116,8 @@ class IndexedFile:
     is_default: bool
     width: int
     height: int
+    # The record's thumbnail, if it has one.
+    thumbnail: Path | None
     metrics: Metrics
 
 
@@ -135,6 +138,9 @@ def connect(path: Path) -> sqlite3.Connection:
             # Schema 2 had no hash cache; the next `amo index` fills it in.
             conn.execute("ALTER TABLE files ADD COLUMN bytes INTEGER")
             conn.execute("ALTER TABLE files ADD COLUMN mtime_ns INTEGER")
+        if version in (2, 3) and _has_table(conn, "records"):
+            # No thumbnails before schema 4; the next `amo index` fills them in.
+            conn.execute("ALTER TABLE records ADD COLUMN thumbnail TEXT")
         if not _has_table(conn, "records"):
             _create_tables(conn)
         conn.execute(_CREATE_USAGE)
@@ -215,7 +221,15 @@ def _record_row(entry: Entry) -> dict[str, object]:
         "tags": json.dumps(tags),
         "source_site": _text(source.get("site")),
         "source_id": _text(source.get("id")),
+        "thumbnail": _thumbnail(entry),
     }
+
+
+def _thumbnail(entry: Entry) -> str | None:
+    thumbnail = entry.record.thumbnail
+    if thumbnail is None or not (entry.directory / thumbnail).is_file():
+        return None
+    return str(entry.directory / thumbnail)
 
 
 def _file_rows(entry: Entry) -> list[dict[str, object]]:
@@ -258,9 +272,10 @@ def files(conn: sqlite3.Connection) -> list[IndexedFile]:
             is_default=bool(is_default),
             width=width,
             height=height,
+            thumbnail=Path(thumbnail) if thumbnail is not None else None,
             metrics=Metrics(*metrics),
         )
-        for path, record_id, purity, nsfw_root, is_default, width, height, *metrics in (
+        for path, record_id, purity, nsfw_root, is_default, width, height, thumbnail, *metrics in (
             conn.execute(_SELECT_FILES)
         )
     ]

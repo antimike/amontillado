@@ -135,6 +135,7 @@ def test_schema_2_gains_the_hash_cache_and_keeps_its_rows(
     record_shown(conn, entries[0].id)
     conn.execute("ALTER TABLE files DROP COLUMN bytes")
     conn.execute("ALTER TABLE files DROP COLUMN mtime_ns")
+    conn.execute("ALTER TABLE records DROP COLUMN thumbnail")
     conn.execute("PRAGMA user_version = 2")
     conn.close()
     assert known_hashes(config.index_path) == {}
@@ -144,6 +145,26 @@ def test_schema_2_gains_the_hash_cache_and_keeps_its_rows(
     assert known_hashes(config.index_path) == {}  # until the next rebuild fills it in
     rebuild(conn, heal_library(config).entries)
     assert len(known_hashes(config.index_path)) == 1
+
+
+def test_schema_3_gains_thumbnails_and_keeps_its_rows(
+    config: Config, save_image: SaveImage
+) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    entries = heal_library(config).entries
+    conn = connect(config.index_path)
+    rebuild(conn, entries)
+    record_shown(conn, entries[0].id)
+    conn.execute("ALTER TABLE records DROP COLUMN thumbnail")
+    conn.execute("PRAGMA user_version = 3")
+    conn.close()
+    conn = connect(config.index_path)
+    [row] = files(conn)
+    assert row.thumbnail is None  # until the next rebuild fills it in
+    assert len(_usage(conn)) == 1
+    rebuild(conn, heal_library(config).entries)
+    [row] = files(conn)
+    assert row.thumbnail == config.library_roots[0] / "r" / ".amo" / "thumbnail.jpg"
 
 
 def test_known_hashes_are_what_was_indexed(config: Config, save_image: SaveImage) -> None:

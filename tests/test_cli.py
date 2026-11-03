@@ -341,6 +341,19 @@ def test_list_random(indexed: dict[str, Path], capsys: pytest.CaptureFixture[str
     assert len(_list(capsys, "--random", "99")) == 4
 
 
+def test_list_format_rofi(
+    indexed: dict[str, Path], library: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (library / "white" / ".amo" / "thumbnail.jpg").unlink()
+    capsys.readouterr()
+    main(["list", "--format", "rofi", "--dark"])
+    black = indexed["black"]
+    assert capsys.readouterr().out == f"{black}\0icon\x1f{black.parent / '.amo/thumbnail.jpg'}\n"
+    # A record without a thumbnail (gone since the last index) is its path alone.
+    main(["list", "--format", "rofi", "--light"])
+    assert capsys.readouterr().out == f"{indexed['white']}\n"
+
+
 def test_list_no_match_fails(indexed: dict[str, Path]) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["list", "--hue", "green"])

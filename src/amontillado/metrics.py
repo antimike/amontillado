@@ -113,6 +113,23 @@ def load_rgb(path: Path | IO[bytes]) -> np.ndarray:
         return np.asarray(image, dtype=np.uint8)
 
 
+def write_thumbnail(source: Path, target: Path, size: int) -> None:
+    """Write a JPEG of `source` at most `size` pixels on its longer side to `target` (made
+    atomically, its directory created), EXIF orientation applied, alpha on black."""
+    with Image.open(source) as image:
+        if max(image.size) > size:
+            image.draft("RGB", (size, size))
+        image = _to_rgb(ImageOps.exif_transpose(image))
+        image.thumbnail((size, size), Image.Resampling.LANCZOS)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        partial = target.with_name(f".{target.name}.part")
+        try:
+            image.save(partial, "JPEG", quality=85)
+            partial.replace(target)
+        finally:
+            partial.unlink(missing_ok=True)
+
+
 def _request_draft(image: Image.Image) -> None:
     # The scale is the same along both axes, so this holds whatever the EXIF rotation is.
     displayed_width = image.height if _orientation(image) in _TRANSPOSED else image.width

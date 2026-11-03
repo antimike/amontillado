@@ -46,6 +46,10 @@ All notable changes to amontillado are documented here. The format follows
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).
+- Thumbnails: each record can name a small preview (`thumbnail`, at `.amo/thumbnail.jpg`, never
+  one of its files). `amo fetch` keeps Wallhaven's thumbnail; `amo add` and `amo index` make one
+  of the default file. `amo list --format rofi` prints each path with its thumbnail as the icon,
+  for `rofi -dmenu -show-icons`. The index is upgraded to schema 4 in place.
 
 ### Changed
 

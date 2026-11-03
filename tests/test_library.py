@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 import yaml
 from conftest import SaveImage, mark_record
+from PIL import Image
 
 from amontillado import library
 from amontillado.config import Config
-from amontillado.library import heal_library
+from amontillado.library import THUMBNAIL_SIZE, add_picture, heal_library, place
 from amontillado.metrics import METRICS_VERSION
 from amontillado.record import ID_PATTERN, read_record, sha256_file
 
@@ -37,7 +38,7 @@ def test_empty_info_file_is_filled_in(config: Config, save_image: SaveImage) -> 
     assert (entry.width, entry.height) == (80, 40)
     assert entry.metrics is not None and entry.metrics.hue_name == "red"
     assert record.source is None
-    assert report.healed == [(info, "new id; a.png: added")]
+    assert report.healed == [(info, "new id; a.png: added; thumbnail")]
     [indexed] = report.entries
     assert (indexed.directory, indexed.present, indexed.default) == (directory, ("a.png",), "a.png")
     assert not report.clean
@@ -58,9 +59,10 @@ def test_check_writes_nothing(config: Config, save_image: SaveImage) -> None:
     info = mark_record(config.library_roots[0] / "r")
     save_image(info.parent / "a.png")
     report = heal_library(config, check=True)
-    assert report.healed == [(info, "new id; a.png: added")]
+    assert report.healed == [(info, "new id; a.png: added; thumbnail")]
     assert report.entries == []
     assert info.read_text() == ""
+    assert not (info.parent / ".amo").exists()
 
 
 def test_loose_images_are_reported_not_moved(config: Config, save_image: SaveImage) -> None:
@@ -320,7 +322,7 @@ def test_info_yml_is_used_in_place(config: Config, save_image: SaveImage) -> Non
     )
     save_image(info.parent / "a.png")
     heal_library(config)
-    assert sorted(path.name for path in info.parent.iterdir()) == ["a.png", "info.yml"]
+    assert sorted(path.name for path in info.parent.iterdir()) == [".amo", "a.png", "info.yml"]
     assert "a.png" in read_record(info).files
 
 
@@ -456,3 +458,66 @@ def test_add_refuses(config: Config, save_image: SaveImage, case: str, message: 
             (root / "a").mkdir()
     with pytest.raises(library.AddError, match=message):
         library.place(config, file, name=name, nsfw=nsfw)
+
+
+def test_healing_makes_a_thumbnail_of_the_default_file(
+    config: Config, save_image: SaveImage
+) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "small.png", (0, 0, 255), (80, 40))
+    save_image(info.parent / "big.png", (255, 0, 0), (1200, 600))
+    heal_library(config)
+    record = read_record(info)
+    assert record.thumbnail == ".amo/thumbnail.jpg"
+    with Image.open(info.parent / record.thumbnail) as thumbnail:
+        assert thumbnail.format == "JPEG"
+        assert thumbnail.size == (THUMBNAIL_SIZE, THUMBNAIL_SIZE // 2)
+        red, green, blue = thumbnail.getpixel((10, 10))
+        assert red > 200 and green < 50 and blue < 50  # of big.png, the default
+    # Never one of the picture's files, nor a loose image.
+    report = heal_library(config)
+    assert report.clean
+    assert sorted(read_record(info).files) == ["big.png", "small.png"]
+
+
+def test_a_missing_thumbnail_is_made_again(config: Config, save_image: SaveImage) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "a.png")
+    heal_library(config)
+    (info.parent / ".amo" / "thumbnail.jpg").unlink()
+    report = heal_library(config)
+    assert report.healed == [(info, "thumbnail")]
+    assert (info.parent / ".amo" / "thumbnail.jpg").is_file()
+
+
+def test_a_thumbnail_set_by_hand_is_kept(config: Config, save_image: SaveImage) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "a.png")
+    save_image(info.parent / "previews" / "mine.png")
+    info.write_text("thumbnail: previews/mine.png\n")
+    heal_library(config)
+    assert read_record(info).thumbnail == "previews/mine.png"
+    assert not (info.parent / ".amo").exists()
+
+
+def test_a_thumbnail_that_fails_warns_and_keeps_the_record(
+    config: Config, save_image: SaveImage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*_: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(library, "write_thumbnail", fail)
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "a.png")
+    report = heal_library(config)
+    assert report.failed == []
+    assert len(report.entries) == 1
+    assert read_record(info).thumbnail is None
+
+
+def test_add_makes_a_thumbnail(config: Config, save_image: SaveImage, tmp_path: Path) -> None:
+    image = save_image(tmp_path / "sunset.png", (255, 128, 0), (100, 50))
+    entry = add_picture(config, place(config, image, name=None, nsfw=False), name=None)
+    assert entry.record.thumbnail == ".amo/thumbnail.jpg"
+    assert (entry.directory / ".amo" / "thumbnail.jpg").is_file()
+    assert read_record(entry.directory / "info.yaml").thumbnail == ".amo/thumbnail.jpg"
