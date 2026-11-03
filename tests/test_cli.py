@@ -944,3 +944,71 @@ def test_theme_apply_dry_run_records_nothing(
     directory = Path(capsys.readouterr().out.splitlines()[0])
     assert Path(directory / "wallpaper").readlink() == indexed["red"]
     assert _usage(home) == []
+
+
+@pytest.fixture
+def sourced(indexed: dict[str, Path], home: Path) -> dict[str, Path]:
+    """`indexed`, with provenance: black and the NSFW private one from Wallhaven, red from
+    Commons; white and noise say nothing. Black was shown once."""
+    sources = {
+        "black": {"site": "wallhaven", "category": "general", "tags": ["night", "city"],
+                  "license": "CC-BY-4.0", "author": "Ann", "uploaded": "2024-05-01"},
+        "private": {"site": "wallhaven", "category": "general", "tags": ["night", "city"]},
+        "red": {"site": "wikimedia-commons", "tags": ["night"], "license": "cc0-1.0",
+                "author": "Bo", "title": "Red"},
+    }  # fmt: skip
+    for name, source in sources.items():
+        info = indexed[name].parent / "info.yaml"
+        data = yaml.safe_load(info.read_text())
+        data["source"] = source
+        info.write_text(yaml.safe_dump(data, sort_keys=False))
+    main(["index"])
+    main(["shown", str(indexed["black"])])
+    return indexed
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        (["--tag", "night"], {"black", "red"}),
+        (["--tag", "night", "--tag", "city"], {"black"}),
+        (["--site", "wikimedia-commons"], {"red"}),
+        (["--category", "general"], {"black"}),
+        (["--license", "CC0-1.0"], {"red"}),
+        (["--author", "Ann"], {"black"}),
+        (["--tag", "night", "--dark"], {"black"}),
+        (["--where", "shown_count = 0 AND site IS NOT NULL"], {"red"}),
+        (["--where", "title IS NULL", "--tag", "night"], {"black"}),
+        (["--where", "json_extract(info, '$.source.uploaded') >= '2024'"], {"black"}),
+        (["--where", "info ->> '$.source.author' = 'Bo'"], {"red"}),
+        (["--where", "EXISTS (SELECT 1 FROM json_each(tags) WHERE value = 'city')"], {"black"}),
+        (["--where", "name IS NULL -- every record"], {"black", "white", "red", "noise"}),
+        # The NSFW one matches, but only --purity lets it through.
+        (["--site", "wallhaven", "--purity", "sfw,nsfw"], {"black", "private"}),
+    ],
+)
+def test_list_search(
+    sourced: dict[str, Path], capsys: pytest.CaptureFixture[str], flags: list[str], expected: set
+) -> None:
+    assert _list(capsys, *flags) == expected
+
+
+def test_list_where_cannot_widen_purity_or_write(
+    sourced: dict[str, Path], home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Every record, the NSFW one included, matches: it is still not printed.
+    assert _list(capsys, "--where", "1 OR purity = 'nsfw'") == {"black", "white", "red", "noise"}
+    assert "private" not in _list(capsys, "--where", "id IN (SELECT id FROM records)")
+    for query, message in [
+        ("1); DELETE FROM usage; SELECT (1", "one statement"),
+        ("(SELECT count(*) FROM pragma_table_info('records')) > 0", "not authorized"),
+        ("no_such_column = 1", "no such column"),
+        ("1 = load_extension('x')", "not authorized"),
+    ]:
+        with pytest.raises(SystemExit, match=rf"--where: .*{message}"):
+            main(["list", "--where", query])
+    with sqlite3.connect(home / ".local/state/amontillado/index.sqlite") as conn:
+        assert conn.execute("SELECT shown_count FROM usage").fetchall() == [(1,)]
+        # The connection is writable again after a query.
+        conn.execute("SELECT 1")
+    main(["shown", str(sourced["red"])])

@@ -61,11 +61,14 @@ from amontillado.index import (
     IndexDatabaseError,
     IndexedFile,
     LookupFailed,
+    QueryError,
+    RecordFilter,
     connect,
     files,
     files_with_hash,
     find_record,
     known_hashes,
+    matching_records,
     names,
     rebuild,
     record_location,
@@ -259,6 +262,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--non-interactive",
         action="store_true",
         help="Never ask (as when stdin or stderr is not a terminal): take the fallback.",
+    )
+    search = list_.add_argument_group(
+        "provenance filters",
+        "Exact matches on what a record's source says (amo fetch, amo add's provenance "
+        "options); a record without the field does not match.",
+    )
+    search.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        dest="tags",
+        metavar="TAG",
+        help="One of its tags (repeatable: all must be).",
+    )
+    search.add_argument("--site", help="Where it is from, e.g. wallhaven, wikimedia-commons.")
+    search.add_argument("--category", help="e.g. general, anime, people.")
+    search.add_argument("--license", help="Its licence (SPDX), in any case.")
+    search.add_argument("--author", help="Its creator.")
+    search.add_argument(
+        "--where",
+        metavar="SQL",
+        help="A SQL boolean expression over the index's pictures view (id, name, directory, "
+        "purity, site, source_id, category, tags, license, author, title, shown_count, "
+        "last_shown, and info, the whole record as JSON), ANDed with the other filters: e.g. "
+        "\"shown_count = 0\", \"info ->> '$.source.uploaded' >= '2024'\". Read-only; --purity "
+        "still decides what may be printed.",
     )
     list_.add_argument(
         "--random", type=_positive, metavar="N", help="Print N matches chosen at random."
@@ -848,11 +877,18 @@ def cmd_list(args: argparse.Namespace) -> None:
     config = _load_config()
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    search = RecordFilter(
+        tuple(args.tags), args.site, args.category, args.license, args.author, args.where
+    )
     try:
         with closing(connect(config.index_path)) as conn:
+            wanted = matching_records(conn, search) if search else None
             by_record: dict[str, list[IndexedFile]] = {}
             for row in files(conn):
-                by_record.setdefault(row.record_id, []).append(row)
+                if wanted is None or row.record_id in wanted:
+                    by_record.setdefault(row.record_id, []).append(row)
+    except QueryError as exc:
+        sys.exit(f"amontillado: {exc}")
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
     ratio = args.aspect.ratio if args.aspect is not None else None
