@@ -108,7 +108,8 @@ files:
   file if that is not a crop, else its largest original), centred by default; `--at F` places
   it along the side it cuts, from 0 (left or top) to 1 (right or bottom). Coordinates are in
   the image as displayed (after EXIF orientation). Written beside the original as
-  `<stem>-<W>x<H>.<ext>` in its format (JPEG and WebP at quality 95, the ICC profile kept),
+  `<stem>-<W>x<H>.<ext>` in its format (JPEG and WebP at quality 95; the ICC profile and EXIF
+  kept, the orientation reset to 1, since the rotation is in the pixels),
   measured, recorded with `derived_from` and `crop`, and indexed at once. Refused: a record
   that needs `amo index`, an original of that ratio already, and without `--force` a record
   with a file of that ratio; `--force` replaces an earlier crop of the same name, never a file

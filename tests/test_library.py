@@ -637,3 +637,20 @@ def test_crop_picture_dry_run_writes_nothing(config: Config) -> None:
     assert _crop(config, info.parent, dry_run=True) == "pic-1x1.png"
     assert info.read_text() == before
     assert not (info.parent / "pic-1x1.png").exists()
+
+
+def test_crop_picture_keeps_exif_and_resets_the_orientation(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    stored = Image.open(_halves(info.parent / "x.png"))
+    exif = Image.Exif()
+    exif[0x0112] = 6  # stored 200x100, displayed 100x200
+    exif[0x013B] = "A. Painter"  # Artist
+    stored.save(info.parent / "pic.jpg", exif=exif, quality=95)
+    (info.parent / "x.png").unlink()
+    heal_library(config)
+    _, name = crop_picture(config, info.parent, config.library_roots[0], 1.0, "1x1")
+    assert read_record(info).files[name].crop == (0, 50, 100, 100)
+    with Image.open(info.parent / name) as image:
+        assert image.size == (100, 100)
+        assert image.getexif().get(0x0112) == 1
+        assert image.getexif().get(0x013B) == "A. Painter"
