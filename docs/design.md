@@ -932,6 +932,9 @@ Agreed with MH, 2026-10-30:
 - Images are generated in the tests (solid colours, gradients, noise), never committed.
 - Metric tests use images whose answer is known: black is dark, a solid red is saturated,
   monochrome and red, grey noise is busy and muted, a smooth gradient is sparse.
+- The nvim examples run in an embedded nvim (`tests/test_nvim.py`, marker `nvim`, pynvim):
+  themes applied in-process, highlights read back, nvim's loop pumped with `vim.wait`.
+  Pre-installed plugins only; skipped without nvim or a plugin.
 
 ## Roadmap
 
