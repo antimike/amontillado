@@ -510,7 +510,7 @@ def test_fetch_prints_and_indexes_what_it_keeps(
     library: Path, web: FakeWeb, capsys: pytest.CaptureFixture[str]
 ) -> None:
     main(["fetch", "--dark"])
-    kept = library / "wallhaven-aaa111" / "wallhaven-aaa111.jpg"
+    kept = library / "night-sky-aaa111" / "wallhaven-aaa111.jpg"
     assert capsys.readouterr().out.splitlines() == [str(kept)]
     assert _list(capsys, "--dark") == {"wallhaven-aaa111"}
     main(["index", "--check"])
@@ -610,7 +610,7 @@ def test_fetch_keeps_mismatches_without_printing_them(
         main(["fetch", "--busy", "--max-candidates", "1"])
     assert exc.value.code == "amontillado: 0 of 1 wanted"
     assert capsys.readouterr().out == ""
-    assert (library / "wallhaven-aaa111" / "wallhaven-aaa111.jpg").is_file()
+    assert (library / "night-sky-aaa111" / "wallhaven-aaa111.jpg").is_file()
 
 
 def _encode(array: np.ndarray) -> bytes:
@@ -628,8 +628,8 @@ def test_fetch_test_set_prints_buckets_and_fails_when_one_is_empty(
         "amontillado: empty buckets: muted, saturated, busy, sparse, monochrome, multi-hue"
     )
     assert capsys.readouterr().out.splitlines() == [
-        f"dark\t{library / 'wallhaven-aaa111' / 'wallhaven-aaa111.jpg'}",
-        f"light\t{library / 'wallhaven-bbb222' / 'wallhaven-bbb222.png'}",
+        f"dark\t{library / 'night-sky-aaa111' / 'wallhaven-aaa111.jpg'}",
+        f"light\t{library / 'snow-bbb222' / 'wallhaven-bbb222.png'}",
     ]
 
 

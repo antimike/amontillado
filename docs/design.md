@@ -40,7 +40,7 @@ contrast checks, and per-app templates rendered into a per-profile cache, with r
 A **record** is one picture: a directory holding `info.yaml` (or `info.yml`) and the picture's
 files, all inside the directory: formats of the same image, crops per aspect ratio, and later
 generated theme files. The directory name carries no meaning to the tool; `amo` names the ones
-it creates after the record's `name`, the file's stem, or (later) the Wallhaven id. Images are
+it creates after the record's `name`, the file's stem, or the Wallhaven id. Images are
 `.jpg`, `.jpeg`, `.png` and `.webp` files. `info.yaml` holds only facts that do not change
 about the picture; usage history lives in the index, so records stay stable under sync tools.
 It is written atomically (temporary file, then rename).
@@ -297,11 +297,11 @@ outside the repository), thresholds set so each class holds roughly a fifth. Fin
    that filter for the full image (thumbnail JPEG artefacts add edges).
 4. Download the full image to a temporary `.part` file in its root (not an image suffix, so a
    scan never takes it for a loose image), refuse it if its content is already in the index,
-   call `/w/<id>` for tags, then move it into a new record directory `wallhaven-<id>` (sfw: the
-   first library root; sketchy and nsfw: the NSFW root) and write the record with metrics
-   measured on the **full** image (so stored metrics never come from a thumbnail); add it to
-   the index. The record has no `name`. A failure at any step leaves nothing behind; an
-   existing `wallhaven-<id>` directory is refused (the index is stale: run `amo index`).
+   call `/w/<id>` for tags, name the record from them (below), then move it into a new record
+   directory of that name (sfw: the first library root; sketchy and nsfw: the NSFW root) and
+   write the record with metrics measured on the **full** image (so stored metrics never come
+   from a thumbnail); add it to the index. A failure at any step leaves nothing behind; an
+   existing directory of that name is refused (the index is stale: run `amo index`).
    **Every look filter is judged again on the full image**, so that `amo list` with the same
    filters finds what `amo fetch` kept. A full image that no longer matches (a borderline
    thumbnail) is still kept as a record by default, since the download has been paid for, but
@@ -313,6 +313,23 @@ outside the repository), thresholds set so each class holds roughly a fifth. Fin
 6. API calls keep 1.5 s apart (40 a minute, under the limit of 45); thumbnail and image
    downloads are not paced. On HTTP 429 from any host, wait `Retry-After` if given, else 10 s
    doubling, up to 5 retries.
+
+**Names of fetched records** (amo-0z2, rules from the 400 tag lists of the calibration sample,
+*initial*): up to 3 of the wallpaper's tags, in Wallhaven's order (in the sample it puts the
+subject first), as slugs joined by hyphens, then `-<id>`: `batman-joker-dc-comics-g8mq6e`,
+`food-dessert-ice-cream-4l36wr`. A slug is the tag in lowercase ASCII (accents folded,
+apostrophes dropped, other runs of characters a hyphen) without a trailing qualifier in
+brackets (`Joker (DC)` is `joker`). Passed over: tags in the categories Artists, Companies &
+Logos, Digital and Photography (credits and technique, not subject), a short list of tags that
+fit nearly any picture (`artwork`, `digital art`, `simple background`, `fan art`, ...; the list
+is `NAME_SKIP_TAGS` in `fetch.py`), a tag whose words all appear in a chosen tag, and one that
+would take the tag part past 40 characters; a tag holding all of a chosen tag's words takes its
+place (`anime girls` over `anime`). No usable tag: the category (`general-k92q1d`; 2 of 400).
+The suffix is the Wallhaven id, not a counter (decided 2026-10-28): a counter comes from each
+machine's index, so two machines would assign the same name and a sync would make a
+duplicate-name conflict. A name already taken (by a hand-named record) leaves the record
+unnamed, in `wallhaven-<id>`, with a warning. Records fetched before names existed keep theirs
+(none); naming them is a separate command (`amo-uc5`).
 
 **Revisit:** the info-file scan in step 2 parses every info file on each `amo fetch`
 (decided 2026-10-28). If that makes fetching noticeably slow on a large library, drop it and

@@ -12,6 +12,7 @@ from amontillado.wallhaven import (
     Client,
     Response,
     Search,
+    Tag,
     WallhavenError,
     Wallpaper,
     nearest_swatch,
@@ -111,7 +112,10 @@ def test_downloads_are_not_paced(web: FakeWeb, clock: FakeClock) -> None:
 
 def test_tags(web: FakeWeb, clock: FakeClock) -> None:
     web.add(f"{API}/w/aaa111", fixture_json("wallhaven-w.json"))
-    assert _client(web, clock).tags("aaa111") == ["landscape", "night"]
+    assert _client(web, clock).tags("aaa111") == [
+        Tag("landscape", "Landscapes"),
+        Tag("night", ""),
+    ]
 
 
 def test_backs_off_on_429(web: FakeWeb, clock: FakeClock) -> None:

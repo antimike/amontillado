@@ -14,10 +14,10 @@ from PIL import Image
 
 from amontillado.classes import Look
 from amontillado.config import Config
-from amontillado.fetch import FetchReport, Options, fetch
+from amontillado.fetch import FetchReport, Options, fetch, record_name
 from amontillado.index import add, connect, files
 from amontillado.library import add_picture, place
-from amontillado.wallhaven import API, Client, Response, Search
+from amontillado.wallhaven import API, Client, Response, Search, Tag
 
 NOISE = np.random.default_rng(0).integers(0, 256, size=(72, 128), dtype=np.uint8)
 NOISE_RGB = np.repeat(NOISE[..., None], 3, axis=2)
@@ -54,12 +54,13 @@ def test_keeps_a_matching_wallpaper_as_a_record(
     config: Config, conn: sqlite3.Connection, web: FakeWeb
 ) -> None:
     report = _fetch(config, conn, web, Look(("dark",)))
-    directory = config.library_roots[0] / "wallhaven-aaa111"
+    directory = config.library_roots[0] / "night-sky-aaa111"
     assert report.kept == [directory / "wallhaven-aaa111.jpg"]
     assert (report.examined, report.rejected, report.failed) == (1, 0, [])
     info = yaml.safe_load((directory / "info.yaml").read_text())
+    assert info["name"] == "night-sky-aaa111"
     assert info["source"]["id"] == "aaa111"
-    assert info["source"]["tags"] == ["tag-aaa111"]
+    assert info["source"]["tags"] == ["night sky"]
     assert info["source"]["purity"] == "sfw"
     assert info["fetched"] is not None
     entry = info["files"]["wallhaven-aaa111.jpg"]
@@ -144,7 +145,7 @@ def test_a_mismatch_on_the_full_image_is_kept_but_not_counted(
     config: Config, conn: sqlite3.Connection, borderline: FakeWeb
 ) -> None:
     report = _fetch(config, conn, borderline, Look(("busy",)), max_candidates=1)
-    path = config.library_roots[0] / "wallhaven-aaa111" / "wallhaven-aaa111.jpg"
+    path = config.library_roots[0] / "night-sky-aaa111" / "wallhaven-aaa111.jpg"
     assert report.kept == []
     assert report.mismatched == [path]
     assert report.count == 0
@@ -194,17 +195,66 @@ def test_refuses_content_already_in_the_library(
     report = _fetch(config, conn, web, Look(("dark",)), max_candidates=1)
     assert report.kept == []
     assert "same content as" in report.failed[0][1]
-    assert not (config.library_roots[0] / "wallhaven-aaa111").exists()
+    assert not (config.library_roots[0] / "night-sky-aaa111").exists()
     assert _leftovers(config.library_roots[0]) == []
 
 
 def test_refuses_an_existing_directory(
     config: Config, conn: sqlite3.Connection, web: FakeWeb
 ) -> None:
-    (config.library_roots[0] / "wallhaven-aaa111").mkdir()
+    (config.library_roots[0] / "night-sky-aaa111").mkdir()
     report = _fetch(config, conn, web, Look(("dark",)), max_candidates=1)
     assert "already exists" in report.failed[0][1]
-    assert list((config.library_roots[0] / "wallhaven-aaa111").iterdir()) == []
+    assert list((config.library_roots[0] / "night-sky-aaa111").iterdir()) == []
+
+
+def test_a_taken_name_leaves_the_record_unnamed(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    other = tmp_path / "other.png"
+    Image.fromarray(NOISE_RGB).save(other)
+    placement = place(config, other, name="night-sky-aaa111", nsfw=False)
+    add(conn, add_picture(config, placement, name="night-sky-aaa111"))
+    report = _fetch(config, conn, web, Look(("dark",)), max_candidates=1)
+    directory = config.library_roots[0] / "wallhaven-aaa111"
+    assert report.kept == [directory / "wallhaven-aaa111.jpg"]
+    assert "name" not in yaml.safe_load((directory / "info.yaml").read_text())
+
+
+def _tags(*names: str, category: str = "Nature") -> list[Tag]:
+    return [Tag(name, category) for name in names]
+
+
+@pytest.mark.parametrize(
+    ("tags", "name"),
+    [
+        (
+            _tags("cyberpunk", "interior", "technology", "lights"),
+            "cyberpunk-interior-technology-x8ye3z",
+        ),
+        # Brackets dropped, accents folded, apostrophes closed up.
+        (
+            _tags("Joker (DC)", "Pokémon", "Assassin's Creed"),
+            "joker-pokemon-assassins-creed-x8ye3z",
+        ),
+        # A tag inside a chosen one is passed over; one holding a chosen one replaces it.
+        (_tags("anime girls", "anime", "long hair"), "anime-girls-long-hair-x8ye3z"),
+        (_tags("anime", "anime girls", "long hair"), "anime-girls-long-hair-x8ye3z"),
+        # Generic tags, and tags in credit or technique categories, say nothing.
+        (_tags("artwork", "digital art", "sky"), "sky-x8ye3z"),
+        (
+            [Tag("Paul Chadeisson", "Artists"), Tag("CGI", "Digital"), *_tags("ruins")],
+            "ruins-x8ye3z",
+        ),
+        # A tag that would pass the length cap is skipped, not truncated.
+        (_tags("sea", "a" * 40, "boat"), "sea-boat-x8ye3z"),
+        # Nothing usable: the category.
+        (_tags("artwork", "???"), "general-x8ye3z"),
+        ([], "general-x8ye3z"),
+    ],
+)
+def test_record_name(tags: list[Tag], name: str) -> None:
+    assert record_name(tags, "general", "x8ye3z") == name
 
 
 def test_a_failure_after_the_move_leaves_nothing_behind(
@@ -243,8 +293,8 @@ def test_test_set_fills_one_bucket_per_image(
     report = _fetch(config, conn, web, test_set=True)
     root = config.library_roots[0]
     assert report.buckets == {
-        "dark": root / "wallhaven-aaa111" / "wallhaven-aaa111.jpg",
-        "light": root / "wallhaven-bbb222" / "wallhaven-bbb222.png",
+        "dark": root / "night-sky-aaa111" / "wallhaven-aaa111.jpg",
+        "light": root / "snow-bbb222" / "wallhaven-bbb222.png",
     }
     assert report.kept == list(report.buckets.values())
 

@@ -53,6 +53,9 @@ All notable changes to amontillado are documented here. The format follows
 - New runtime dependency: `pystache` (MIT), for rendering mustache templates.
 - `amo index` hashes only files whose size or mtime changed since the last index; the index
   keeps both per file (schema 3; a schema 2 index is upgraded in place).
+- `amo fetch` names each record from up to three of its Wallhaven tags and its id
+  (`food-dessert-ice-cream-4l36wr`; the category when no tag is usable), in a directory of that
+  name; records fetched earlier keep theirs.
 
 - `hue_share` is the weight of the heaviest 60° arc of hues, and `hue_name` names the sector
   holding that arc's mean, so a hue on a sector boundary is no longer split (metrics version
