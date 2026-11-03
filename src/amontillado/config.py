@@ -6,6 +6,7 @@ Locations follow the XDG base directory spec; docs/design.md, "Storage", has the
     library_roots: [~/Pictures/wallpapers]   # searched in addition to the default root
     nsfw_root: ~/private/wallpapers-nsfw     # replaces the default NSFW root
     api_key_command: pass show wallhaven/api-key   # prints the Wallhaven API key
+    crop: {preview: auto, viewer: "xdg-open {file}"}   # amo crop --interactive's preview
     theme: {...}                             # the theme engine (v0.2), below
 
 `amontillado.config_keys` describes every key (the template `amo config init` writes).
@@ -29,7 +30,7 @@ import yaml
 logger = getLogger(__name__)
 
 APP = "amontillado"
-_KNOWN_KEYS = frozenset({"library_roots", "nsfw_root", "api_key_command", "theme"})
+_KNOWN_KEYS = frozenset({"library_roots", "nsfw_root", "api_key_command", "crop", "theme"})
 API_KEY_VARIABLE = "WALLHAVEN_API_KEY"
 
 SOURCES = ("builtin", "tinted", "matugen-themes", "pywal", "url", "path")
@@ -39,6 +40,9 @@ VARIANT_CHOICES = ("auto", "dark", "light")
 CONTRAST_CHOICES = ("adjust", "report", "off")
 HUES_CHOICES = ("amontillado", "generator")
 RENDERERS = ("amontillado", "matugen")
+PREVIEWS = ("auto", "kitty", "viewer")
+_CROP_KEYS = frozenset({"preview", "viewer"})
+DEFAULT_VIEWER = ("xdg-open", "{file}")
 # What a reload command may name, substituted when it runs.
 RELOAD_PLACEHOLDERS = frozenset({"wallpaper", "profile", "dir"})
 # Names in a profile directory that amontillado writes itself.
@@ -107,6 +111,16 @@ class ThemeConfig:
 
 
 @dataclass(frozen=True)
+class CropConfig:
+    """The `crop` block: how `amo crop --interactive` shows its preview."""
+
+    # auto: kitty in a terminal that speaks its graphics protocol, else viewer.
+    preview: str = "auto"
+    # The viewer's command, split as a shell would; {file} is the preview file.
+    viewer: tuple[str, ...] = DEFAULT_VIEWER
+
+
+@dataclass(frozen=True)
 class Config:
     """Where the library and its index live, and the theme engine's settings."""
 
@@ -115,6 +129,7 @@ class Config:
     index_path: Path
     api_key_command: str | None = None
     theme: ThemeConfig = field(default_factory=ThemeConfig)
+    crop: CropConfig = field(default_factory=CropConfig)
 
 
 def xdg_dir(variable: str, fallback: str) -> Path:
@@ -159,6 +174,7 @@ def load_config(path: Path | None = None) -> Config:
         index_path=xdg_dir("XDG_STATE_HOME", ".local/state") / APP / "index.sqlite",
         api_key_command=command,
         theme=_theme(settings.get("theme")),
+        crop=_crop(settings.get("crop")),
     )
 
 
@@ -261,6 +277,27 @@ def _theme(value: object) -> ThemeConfig:
         wallpaper_reload=_command("theme.wallpaper.reload", wallpaper.get("reload")),
         apps=parsed,
     )
+
+
+def _crop(value: object) -> CropConfig:
+    """The `crop` block, checked. Raises ConfigError naming the key."""
+    if value is None:
+        return CropConfig()
+    crop = _settings_mapping("crop", value, _CROP_KEYS)
+    viewer = crop.get("viewer")
+    args = DEFAULT_VIEWER
+    if viewer is not None:
+        if not isinstance(viewer, str):
+            raise ConfigError("crop.viewer must be a command line")
+        try:
+            args = tuple(shlex.split(viewer))
+        except ValueError as exc:
+            raise ConfigError(f"crop.viewer: {exc}") from exc
+        if not args:
+            raise ConfigError("crop.viewer must be a command line")
+        if not any("{file}" in arg for arg in args):
+            raise ConfigError("crop.viewer: names no {file}")
+    return CropConfig(_choice("crop.preview", crop.get("preview", "auto"), PREVIEWS), args)
 
 
 def _app(where: str, value: object) -> AppConfig:

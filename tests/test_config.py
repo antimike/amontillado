@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from amontillado.config import AppConfig, ConfigError, ThemeConfig, api_key, load_config
+from amontillado.config import (
+    AppConfig,
+    ConfigError,
+    CropConfig,
+    ThemeConfig,
+    api_key,
+    load_config,
+)
 
 
 def write_config(home: Path, text: str) -> None:
@@ -270,3 +277,24 @@ def test_unknown_theme_keys_warn(home: Path, caplog: pytest.LogCaptureFixture) -
 def test_contrast_off_unquoted(home: Path, value: str) -> None:
     write_config(home, f"theme: {{contrast: {value}}}\n")
     assert load_config().theme.contrast == "off"
+
+
+def test_crop_block(home: Path) -> None:
+    assert load_config().crop == CropConfig("auto", ("xdg-open", "{file}"))
+    write_config(home, 'crop: {preview: viewer, viewer: "feh --reload 0.2 {file}"}\n')
+    assert load_config().crop == CropConfig("viewer", ("feh", "--reload", "0.2", "{file}"))
+
+
+@pytest.mark.parametrize(
+    ("text", "error"),
+    [
+        ("crop: {preview: sixel}\n", "crop.preview: 'sixel' is not one of auto, kitty, viewer"),
+        ("crop: {viewer: eog}\n", "crop.viewer: names no {file}"),
+        ("crop: {viewer: 3}\n", "crop.viewer must be a command line"),
+        ("crop: []\n", "crop must be a mapping"),
+    ],
+)
+def test_crop_block_errors(home: Path, text: str, error: str) -> None:
+    write_config(home, text)
+    with pytest.raises(ConfigError, match=re.escape(error)):
+        load_config()

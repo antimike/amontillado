@@ -34,6 +34,7 @@ def test_the_table_covers_every_key_the_config_reads() -> None:
     assert names(None) == config_module._KNOWN_KEYS
     assert names("theme") == config_module._THEME_KEYS
     assert names("theme.wallpaper") == {"reload"}
+    assert names("crop") == config_module._CROP_KEYS
     assert names(f"theme.apps.{APP}") == config_module._APP_KEYS
     for key in KEYS:
         assert key.meaning.endswith("."), key.path
