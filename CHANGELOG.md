@@ -46,6 +46,10 @@ All notable changes to amontillado are documented here. The format follows
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).
+- `amo crop PICTURE W:H [--at F]`: write the largest W:H crop of a record's original beside it,
+  centred unless `--at` moves it, recorded (`derived_from`, `crop`) and indexed. On a terminal,
+  `amo list --aspect W:H` offers to crop the pictures it found no such file for;
+  `--non-interactive` never asks.
 - Thumbnails: each record can name a small preview (`thumbnail`, at `.amo/thumbnail.jpg`, never
   one of its files). `amo fetch` keeps Wallhaven's thumbnail; `amo add` and `amo index` make one
   of the default file. `amo list --format rofi` prints each path with its thumbnail as the icon,

@@ -26,8 +26,9 @@ from pathlib import Path
 
 from PIL import Image
 
+from amontillado.classes import has_aspect
 from amontillado.config import Config
-from amontillado.metrics import image_size, measure_file, write_thumbnail
+from amontillado.metrics import image_size, measure_file, write_crop, write_thumbnail
 from amontillado.record import (
     IMAGE_SUFFIXES,
     INFO_NAMES,
@@ -36,6 +37,7 @@ from amontillado.record import (
     FileEntry,
     Record,
     RecordError,
+    info_path,
     load_raw,
     read_record,
     sha256_file,
@@ -475,3 +477,104 @@ def add_picture(config: Config, placement: Placement, *, name: str | None) -> En
     return Entry(
         placement.directory, placement.root, nsfw, record, (file.name,), file.name, name, stats
     )
+
+
+class CropError(Exception):
+    """A crop cannot be made; the message says why."""
+
+
+def crop_box(width: int, height: int, ratio: float, at: float) -> tuple[int, int, int, int]:
+    """The largest box of `ratio` (width / height) in a `width` x `height` image, as (x, y,
+    width, height): placed along the axis it is cut on at `at`, from 0 (left or top) through
+    0.5 (centred) to 1 (right or bottom)."""
+    if width / height > ratio:
+        crop_width = min(width, max(1, round(height * ratio)))
+        return round((width - crop_width) * at), 0, crop_width, height
+    crop_height = min(height, max(1, round(width / ratio)))
+    return 0, round((height - crop_height) * at), width, crop_height
+
+
+def crop_picture(
+    config: Config,
+    directory: Path,
+    root: Path,
+    ratio: float,
+    label: str,
+    *,
+    at: float = 0.5,
+    force: bool = False,
+    dry_run: bool = False,
+) -> tuple[Entry, str]:
+    """Crop a record's original to `ratio`, as `<stem>-<label><suffix>` beside it, and record
+    the crop (`derived_from`, `crop`, measured). Returns the record as it now is, and the new
+    file's name. Refuses (CropError) a record that needs `amo index`, one whose original is of
+    that ratio already, and, without `force`, one with a file of that ratio; `force` replaces
+    an earlier crop of the same name, never a file that is not a crop."""
+    path = info_path(directory)
+    if path is None:
+        raise CropError(f"{directory}: not a record")
+    record = read_record(path)
+    present = {name for name in record.files if (directory / name).is_file()}
+    unlisted = [
+        file
+        for file in directory.iterdir()
+        if file.suffix.lower() in IMAGE_SUFFIXES and file.name not in record.files
+    ]
+    if unlisted or any(not record.files[name].complete for name in present):
+        raise CropError(f"{directory}: needs healing; run `amo index` first")
+    originals = [name for name in present if record.files[name].derived_from is None]
+    default = record.default(present)
+    if default is None or not originals:
+        raise CropError(f"{directory}: no original file to crop")
+    source = default if default in originals else record.default(set(originals))
+    assert source is not None
+    entry = record.files[source]
+    assert entry.width is not None and entry.height is not None
+    if has_aspect(entry.width, entry.height, ratio):
+        raise CropError(f"{directory / source}: already {label.replace('x', ':')}")
+    name = f"{Path(source).stem}-{label}{Path(source).suffix}"
+    existing = record.files.get(name)
+    if existing is not None and existing.derived_from is None:
+        raise CropError(f"{directory / name}: exists and is not a crop")
+    matching = sorted(
+        other
+        for other in present
+        if other != name and has_aspect(*_size(record.files[other]), ratio)
+    )
+    if (matching or existing is not None) and not force:
+        found = matching[0] if matching else name
+        raise CropError(
+            f"{directory / found} is {label.replace('x', ':')} already; --force crops anyway"
+        )
+    box = crop_box(entry.width, entry.height, ratio, at)
+    if dry_run:
+        return _entry(config, directory, root, record, present), name
+    target = directory / name
+    write_crop(directory / source, target, box)
+    try:
+        crop = FileEntry(
+            sha256_file(target),
+            *image_size(target),
+            measure_file(target),
+            derived_from=source,
+            crop=box,
+        )
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    record = dataclasses.replace(record, files={**record.files, name: crop})
+    write_record(path, record)
+    return _entry(config, directory, root, record, present | {name}), name
+
+
+def _size(entry: FileEntry) -> tuple[int, int]:
+    assert entry.width is not None and entry.height is not None
+    return entry.width, entry.height
+
+
+def _entry(config: Config, directory: Path, root: Path, record: Record, present: set[str]) -> Entry:
+    default = record.default(present)
+    assert default is not None
+    nsfw = directory.resolve().is_relative_to(config.nsfw_root)
+    stats = {name: file_stat(directory / name) for name in present}
+    return Entry(directory, root, nsfw, record, tuple(sorted(present)), default, record.name, stats)

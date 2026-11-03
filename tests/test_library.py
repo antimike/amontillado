@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 from conftest import SaveImage, mark_record
@@ -11,7 +12,15 @@ from PIL import Image
 
 from amontillado import library
 from amontillado.config import Config
-from amontillado.library import THUMBNAIL_SIZE, add_picture, heal_library, place
+from amontillado.library import (
+    THUMBNAIL_SIZE,
+    CropError,
+    add_picture,
+    crop_box,
+    crop_picture,
+    heal_library,
+    place,
+)
 from amontillado.metrics import METRICS_VERSION
 from amontillado.record import ID_PATTERN, read_record, sha256_file
 
@@ -521,3 +530,127 @@ def test_add_makes_a_thumbnail(config: Config, save_image: SaveImage, tmp_path: 
     assert entry.record.thumbnail == ".amo/thumbnail.jpg"
     assert (entry.directory / ".amo" / "thumbnail.jpg").is_file()
     assert read_record(entry.directory / "info.yaml").thumbnail == ".amo/thumbnail.jpg"
+
+
+@pytest.mark.parametrize(
+    ("size", "ratio", "at", "box"),
+    [
+        ((3840, 2160), 21 / 9, 0.5, (0, 257, 3840, 1646)),  # design.md's example
+        ((3840, 2160), 21 / 9, 0.0, (0, 0, 3840, 1646)),
+        ((3840, 2160), 21 / 9, 1.0, (0, 514, 3840, 1646)),
+        ((3840, 2160), 1.0, 0.5, (840, 0, 2160, 2160)),
+        ((1080, 1920), 16 / 9, 0.5, (0, 656, 1080, 608)),
+    ],
+)
+def test_crop_box(size: tuple[int, int], ratio: float, at: float, box: tuple[int, ...]) -> None:
+    assert crop_box(*size, ratio, at) == box
+
+
+def _halves(path: Path) -> Path:
+    """A 200x100 image, red on the left half and blue on the right."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pixels = np.zeros((100, 200, 3), dtype=np.uint8)
+    pixels[:, :100] = (255, 0, 0)
+    pixels[:, 100:] = (0, 0, 255)
+    Image.fromarray(pixels).save(path)
+    return path
+
+
+def _crop(config: Config, directory: Path, **options: object) -> str:
+    entry, name = crop_picture(config, directory, config.library_roots[0], 1.0, "1x1", **options)  # type: ignore[arg-type]
+    assert entry.default == "pic.png"
+    return name
+
+
+def test_crop_picture_records_the_crop(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    assert _crop(config, info.parent, at=0.0) == "pic-1x1.png"
+    record = read_record(info)
+    crop = record.files["pic-1x1.png"]
+    assert (crop.derived_from, crop.crop, crop.width, crop.height) == (
+        "pic.png",
+        (0, 0, 100, 100),
+        100,
+        100,
+    )
+    assert crop.metrics is not None and crop.metrics.hue_name == "red"
+    with Image.open(info.parent / "pic-1x1.png") as image:
+        assert image.format == "PNG"
+    # Nothing left to heal, and the original stays the default.
+    report = heal_library(config)
+    assert report.clean
+    [entry] = report.entries
+    assert entry.default == "pic.png"
+
+
+def test_crop_picture_at_the_end(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    _crop(config, info.parent, at=1.0)
+    crop = read_record(info).files["pic-1x1.png"]
+    assert crop.crop == (100, 0, 100, 100)
+    assert crop.metrics is not None and crop.metrics.hue_name == "blue"
+
+
+def test_crop_picture_keeps_the_format(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    Image.open(_halves(info.parent / "x.png")).save(info.parent / "pic.jpg", quality=90)
+    (info.parent / "x.png").unlink()
+    heal_library(config)
+    _, name = crop_picture(config, info.parent, config.library_roots[0], 1.0, "1x1")
+    assert name == "pic-1x1.jpg"
+    with Image.open(info.parent / name) as image:
+        assert (image.format, image.size) == ("JPEG", (100, 100))
+
+
+def test_crop_picture_refusals(config: Config, save_image: SaveImage) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    with pytest.raises(CropError, match="run `amo index` first"):
+        _crop(config, info.parent)
+    heal_library(config)
+    with pytest.raises(CropError, match="already 2:1"):
+        crop_picture(config, info.parent, config.library_roots[0], 2.0, "2x1")
+    _crop(config, info.parent)
+    with pytest.raises(CropError, match="1:1 already; --force"):
+        _crop(config, info.parent)
+    # --force replaces the earlier crop of the same name.
+    _crop(config, info.parent, at=1.0, force=True)
+    assert read_record(info).files["pic-1x1.png"].crop == (100, 0, 100, 100)
+    # Never a file that is not a crop.
+    other = mark_record(config.library_roots[0] / "s")
+    _halves(other.parent / "pic.png")
+    save_image(other.parent / "pic-1x1.png", size=(50, 50))
+    heal_library(config)
+    with pytest.raises(CropError, match="not a crop"):
+        _crop(config, other.parent, force=True)
+
+
+def test_crop_picture_dry_run_writes_nothing(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    before = info.read_text()
+    assert _crop(config, info.parent, dry_run=True) == "pic-1x1.png"
+    assert info.read_text() == before
+    assert not (info.parent / "pic-1x1.png").exists()
+
+
+def test_crop_picture_keeps_exif_and_resets_the_orientation(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    stored = Image.open(_halves(info.parent / "x.png"))
+    exif = Image.Exif()
+    exif[0x0112] = 6  # stored 200x100, displayed 100x200
+    exif[0x013B] = "A. Painter"  # Artist
+    stored.save(info.parent / "pic.jpg", exif=exif, quality=95)
+    (info.parent / "x.png").unlink()
+    heal_library(config)
+    _, name = crop_picture(config, info.parent, config.library_roots[0], 1.0, "1x1")
+    assert read_record(info).files[name].crop == (0, 50, 100, 100)
+    with Image.open(info.parent / name) as image:
+        assert image.size == (100, 100)
+        assert image.getexif().get(0x0112) == 1
+        assert image.getexif().get(0x013B) == "A. Painter"

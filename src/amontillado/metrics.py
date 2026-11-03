@@ -93,8 +93,11 @@ def image_size(path: Path) -> tuple[int, int]:
         return image.width, image.height
 
 
+_ORIENTATION = 0x0112
+
+
 def _orientation(image: Image.Image) -> int:
-    return image.getexif().get(0x0112, 1)
+    return image.getexif().get(_ORIENTATION, 1)
 
 
 def load_rgb(path: Path | IO[bytes]) -> np.ndarray:
@@ -128,6 +131,32 @@ def write_thumbnail(source: Path, target: Path, size: int) -> None:
             partial.replace(target)
         finally:
             partial.unlink(missing_ok=True)
+
+
+def write_crop(source: Path, target: Path, box: tuple[int, int, int, int]) -> None:
+    """Write `box` (x, y, width, height, in the image as displayed: after EXIF orientation) of
+    `source` to `target` in the same format, atomically. JPEG and WebP are encoded at quality
+    95. The ICC profile and EXIF are kept, the orientation reset: the rotation is in the
+    pixels, so a viewer that ignores EXIF shows the crop as the original is displayed."""
+    x, y, width, height = box
+    with Image.open(source) as image:
+        format_ = image.format
+        icc = image.info.get("icc_profile")
+        exif = image.getexif()
+        cropped = ImageOps.exif_transpose(image).crop((x, y, x + width, y + height))
+    options: dict[str, object] = {"icc_profile": icc} if icc else {}
+    if exif:
+        exif[_ORIENTATION] = 1
+        options["exif"] = exif
+    if format_ in ("JPEG", "WEBP"):
+        options["quality"] = 95
+    # Not an image suffix, so a scan never takes it for one of the record's files.
+    partial = target.with_name(f".{target.name}.part")
+    try:
+        cropped.save(partial, format_, **options)
+        partial.replace(target)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def _request_draft(image: Image.Image) -> None:
