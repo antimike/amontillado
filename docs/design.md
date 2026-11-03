@@ -610,11 +610,35 @@ next. A `border` that is the accent moves with it; one a palette file sets apart
 foreground like any other. A pair no allowed move fixes (a background other than the accent
 or secondary, such as `selection`, whose label cannot reach the minimum) stays as it is, with a
 warning. `--no-adjust` turns `adjust` into `report`; it does not turn checking back on under
-`off`. `amo palette --check FILE` prints each failing pair (`dark: base03 on base00: 2.52, needs
-3`) on stdout and exits non-zero if there are any; it never adjusts. (A first run on gruvbox,
+`off`. `amo palette --check FILE` prints the accent metrics (below) and each failing pair
+(`dark: base03 on base00: 2.52, needs 3`) on stdout and exits non-zero if there are any; it
+never adjusts. (A first run on gruvbox,
 2026-10-30: dark needed five moves, light twelve, mostly its accents on `base01`; the light
 variant's brightened `base12`-`base17` come back down to about their base colours, so a light
 variant's bright step may want to be darker instead: to calibrate.)
+
+### Accent metrics
+
+The contrast check cannot see two failures that matter for terminal colours: an accent off the
+hue its ANSI name promises (git, ls and compiler errors rely on red being red), and two accents
+too close to tell apart. Two numbers per variant, over ANSI colours 1-6 (`base08` red, `base0B`
+green, `base0A` yellow, `base0D` blue, `base0E` magenta, `base0C` cyan, base16-shell's mapping):
+
+- **hues**: how many of the six are *on their hue*: chroma at least 0.03 (OKLCH) and hue within
+  45° of the OKLCH hue of the sRGB primary their name promises (`#ff0000` 29°, `#00ff00` 143°,
+  `#ffff00` 110°, `#0000ff` 264°, `#ff00ff` 328°, `#00ffff` 195°).
+- **distinct**: the smallest OKLab distance between two of the six, x100, to one decimal. Under
+  about 8 two accents are hard to tell apart in a diff or a listing.
+
+45°, 0.03 and 8 are *initial* (chezmoi's `palette-compare` definitions, which these mirror). The
+nominal hues are not evenly spaced: yellow and green are 33° apart, so at one lightness and a
+chroma of 0.13 they sit at about 7; a palette separates them in lightness (yellow lighter).
+
+Report only (MH, 2026-11-02): `amo palette --check FILE` prints `dark: hues 6/6, distinct 13.3`
+per variant before any failing pair, and its exit status reflects contrast failures alone.
+Enforcement may follow calibration under `theme.hues` (amo-aqp.20). The functions are public in
+`amontillado.accents` (`score`, `hue_fidelity`, `distinctness`, `on_hue`, `nominal_hues`,
+`accent_colours`, and the thresholds) so chezmoi's `palette-compare` can import or mirror them.
 
 ### Generators
 
@@ -926,7 +950,7 @@ and moved a channel by one in a test (`#1d2021` became `#1d2020`).
 ```text
 amo palette PICTURE [--generator G] [--hues H] [--no-adjust]   a palette (both variants) as YAML
 amo palette --from-scheme FILE [FILE] [--no-adjust]   one or two tinted-theming schemes as a palette
-amo palette --check FILE                       contrast report; non-zero if a pair fails
+amo palette --check FILE                       accent metrics and contrast report; non-zero if a pair fails
 amo theme apply [PICTURE | --palette NAME|FILE] [--profile P] [--variant V] [--hues H] [--app NAME]...
                 [--no-adjust] [--no-activate] [--no-reload] [--dry-run]   render, swap in, reload
 amo theme sync [--check]                       fetch (or verify) every template the config needs

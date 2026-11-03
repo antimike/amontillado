@@ -35,6 +35,7 @@ from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
 from amontillado import __version__
+from amontillado.accents import score as accent_score
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
     API_KEY_VARIABLE,
@@ -470,8 +471,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--check",
         type=Path,
         metavar="FILE",
-        help="Print the pairs of a palette file below their contrast minimum, and fail if any "
-        "are; change nothing.",
+        help="Print each variant's accent metrics (hues on their ANSI name, distinctness) and "
+        "the pairs of a palette file below their contrast minimum, and fail if any pair is; "
+        "change nothing.",
     )
     palette.add_argument(
         "--no-adjust",
@@ -899,6 +901,7 @@ def _check_palette(path: Path) -> None:
         sys.exit(f"amontillado: {exc}")
     failed = 0
     for name, variant in palette.variants.items():
+        print(f"{name}: {accent_score(variant.base24)}")
         failures = check(variant)
         for failure in failures:
             print(f"{name}: {failure}")
