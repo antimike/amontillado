@@ -555,6 +555,78 @@ def test_add_refuses_a_taken_name(library: Path, home: Path) -> None:
     assert other.exists()
 
 
+def test_add_records_provenance(library: Path, home: Path) -> None:
+    image = _save(np.zeros((36, 64, 3), dtype=np.uint8), home / "sunset.png")
+    main(
+        [
+            "add",
+            "--name",
+            "sunset",
+            "--source-url",
+            "https://commons.wikimedia.org/wiki/File:Sunset.png",
+            "--site",
+            "wikimedia-commons",
+            "--license",
+            "CC0-1.0",
+            "--author",
+            "A. Painter",
+            "--title",
+            "Sunset",
+            "--tags",
+            "sunset, sea",
+            str(image),
+        ]
+    )
+    info = yaml.safe_load((library / "sunset" / "info.yaml").read_text())
+    assert info["source"] == {
+        "site": "wikimedia-commons",
+        "url": "https://commons.wikimedia.org/wiki/File:Sunset.png",
+        "title": "Sunset",
+        "author": "A. Painter",
+        "license": "CC0-1.0",
+        "tags": ["sunset", "sea"],
+    }
+    assert info["fetched"] is None
+    with sqlite3.connect(home / ".local/state/amontillado/index.sqlite") as conn:
+        row = conn.execute("SELECT license, author, title, source_site FROM records").fetchone()
+    assert row == ("CC0-1.0", "A. Painter", "Sunset", "wikimedia-commons")
+    # Healing keeps it: source is authored.
+    main(["index"])
+    assert (
+        yaml.safe_load((library / "sunset" / "info.yaml").read_text())["source"] == info["source"]
+    )
+
+
+def test_add_from_json(library: Path, home: Path) -> None:
+    for name, value in (("a", 0), ("b", 255)):
+        _save(np.full((36, 64, 3), value, dtype=np.uint8), home / f"{name}.png")
+    seeds = home / "seeds.json"
+    seeds.write_text(
+        '[{"file": "a.png", "name": "first", "license": "CC0-1.0"},'
+        ' {"file": "b.png", "author": "B", "purity": "sketchy"}]'
+    )
+    main(["add", "--from-json", str(seeds)])
+    first = yaml.safe_load((library / "first" / "info.yaml").read_text())
+    assert (first["name"], first["source"]) == ("first", {"license": "CC0-1.0"})
+    nsfw = home / ".local/share/amontillado/library-nsfw"
+    second = yaml.safe_load((nsfw / "b" / "info.yaml").read_text())
+    assert second["source"] == {"author": "B", "purity": "sketchy"}
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--source-url", "https://x.org/", "a.png", "b.png"], "--source-url takes one FILE"),
+        (["--from-json", "x.json", "a.png"], "--from-json takes no FILEs"),
+        (["--license", "CC0-1.0"], "no FILE"),
+        (["--uploaded", "yesterday", "a.png"], "not an ISO 8601"),
+    ],
+)
+def test_add_provenance_usage_errors(library: Path, args: list[str], message: str) -> None:
+    with pytest.raises(SystemExit, match=message):
+        main(["add", *args])
+
+
 def test_add_dry_run_changes_nothing(library: Path, home: Path) -> None:
     loose = _save(np.zeros((36, 64, 3), dtype=np.uint8), library / "a.png")
     main(["add", "--dry-run", str(loose)])

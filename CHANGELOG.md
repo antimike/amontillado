@@ -46,6 +46,10 @@ All notable changes to amontillado are documented here. The format follows
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
 - `amo index --rehash`: hash every file again (see the hash cache below).
+- `amo add` records where a picture came from: `--source-url`, `--image-url`, `--site`,
+  `--title`, `--author`, `--license` (SPDX), `--purity`, `--category`, `--tags`, `--uploaded`,
+  or per picture from `amo add --from-json FILE`. The new `license`, `author` and `title` are
+  indexed (index schema 5, upgraded in place).
 - `amo crop PICTURE W:H [--at F]`: write the largest W:H crop of a record's original beside it,
   centred unless `--at` moves it, recorded (`derived_from`, `crop`) and indexed. On a terminal,
   `amo list --aspect W:H` offers to crop the pictures it found no such file for;

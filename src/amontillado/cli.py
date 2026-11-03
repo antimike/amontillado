@@ -68,12 +68,16 @@ from amontillado.index import (
     replace as replace_in_index,
 )
 from amontillado.library import (
+    PROVENANCE_KEYS,
     PURITIES,
     AddError,
+    Addition,
     CropError,
     Report,
     add_picture,
+    additions_from_json,
     crop_picture,
+    hand_source,
     heal_library,
     place,
 )
@@ -257,11 +261,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="Make each file a record of its own: create a directory beside it (or, "
         "for a file outside the roots, in the first library root), move the file in, write "
         "its info.yaml, and add it to the index. Refuses a file whose content is already in "
-        "the library, and a name another record has.",
+        "the library, and a name another record has. The provenance options record where a "
+        "picture came from in its source; --from-json gives them per picture.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(add, argparse.SUPPRESS)
-    add.add_argument("files", nargs="+", type=Path, metavar="FILE", help="Image files.")
+    add.add_argument("files", nargs="*", type=Path, metavar="FILE", help="Image files.")
     add.add_argument(
         "--name",
         type=str,
@@ -278,6 +283,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add.add_argument(
         "--dry-run", action="store_true", help="Log what would be added; change nothing."
+    )
+    add.add_argument(
+        "--from-json",
+        type=Path,
+        metavar="FILE",
+        help="Add the pictures a JSON file lists instead of FILEs: a list of objects with "
+        "file (relative to the JSON file), and optionally name, nsfw and the provenance "
+        "keys (url, image_url, site, title, author, license, purity, category, tags as a "
+        "list, uploaded).",
+    )
+    provenance = add.add_argument_group(
+        "provenance",
+        "Where the picture came from (recorded in source; one FILE for the options marked so).",
+    )
+    provenance.add_argument(
+        "--source-url", dest="url", metavar="URL", help="The picture's page (one FILE)."
+    )
+    provenance.add_argument(
+        "--image-url", metavar="URL", help="The file that was downloaded (one FILE)."
+    )
+    provenance.add_argument(
+        "--site", help="Where it is from, e.g. wikimedia-commons; without it, the URL's host."
+    )
+    provenance.add_argument("--title", help="The work's title (one FILE).")
+    provenance.add_argument("--author", help="Its creator (not the uploader).")
+    provenance.add_argument(
+        "--license",
+        help="Its licence, as an SPDX identifier (CC0-1.0, CC-BY-4.0, ...) or public-domain.",
+    )
+    provenance.add_argument(
+        "--purity",
+        choices=PURITIES,
+        help="sfw, sketchy or nsfw; sketchy and nsfw go to the NSFW root. Without it, what "
+        "the root implies.",
+    )
+    provenance.add_argument("--category", help="e.g. general, anime, people.")
+    provenance.add_argument("--tags", type=_words, metavar="A,B,...", help="Comma-separated tags.")
+    provenance.add_argument(
+        "--uploaded", metavar="DATE", help="When it was published (ISO 8601 date or time)."
     )
     add.set_defaults(func=cmd_add)
 
@@ -608,6 +652,10 @@ def _aspect(value: str) -> Aspect:
     if not (math.isfinite(ratio) and ratio > 0):
         raise argparse.ArgumentTypeError("must be W:H, for example 21:9")
     return Aspect(ratio, f"{width.strip()}x{height.strip()}")
+
+
+def _words(value: str) -> list[str]:
+    return [word.strip() for word in value.split(",") if word.strip()]
 
 
 def _fraction(value: str) -> float:
@@ -956,39 +1004,70 @@ def cmd_theme_current(args: argparse.Namespace) -> None:
         logger.warning("apps rendered from different palettes: %s", ", ".join(palettes))
 
 
+# The provenance options that name one picture, so take one FILE (as --name does).
+_ONE_FILE_OPTIONS = {"name": "--name", "url": "--source-url", "image_url": "--image-url",
+                     "title": "--title"}  # fmt: skip
+
+
 def cmd_add(args: argparse.Namespace) -> None:
-    if args.name is not None and len(args.files) > 1:
-        sys.exit("amontillado: --name takes one FILE")
+    given = {key: getattr(args, key) for key in PROVENANCE_KEYS if getattr(args, key) is not None}
+    if args.from_json is not None:
+        if args.files or args.name is not None or given or args.nsfw:
+            sys.exit("amontillado: --from-json takes no FILEs, --name, --nsfw or provenance")
+        try:
+            additions = additions_from_json(args.from_json)
+        except (AddError, OSError) as exc:
+            sys.exit(f"amontillado: {exc}")
+    else:
+        if not args.files:
+            sys.exit("amontillado: no FILE (or --from-json) given")
+        for key, option in _ONE_FILE_OPTIONS.items():
+            if getattr(args, key) is not None and len(args.files) > 1:
+                sys.exit(f"amontillado: {option} takes one FILE")
+        try:
+            hand_source(given)
+        except AddError as exc:
+            sys.exit(f"amontillado: {exc}")
+        additions = [Addition(file, args.name, args.nsfw, given) for file in args.files]
     config = _load_config()
     failed = 0
     try:
         with closing(connect(config.index_path)) as conn:
             taken = names(conn)
-            for file in args.files:
+            for addition in additions:
                 try:
-                    _add_one(conn, config, file, args, taken)
+                    _add_one(conn, config, addition, args, taken)
                 except AddError as exc:
                     logger.error("%s", exc)
                     failed += 1
                 except (OSError, Image.DecompressionBombError) as exc:
-                    logger.error("%s: %s", file, exc)
+                    logger.error("%s: %s", addition.file, exc)
                     failed += 1
     except (sqlite3.Error, IndexDatabaseError) as exc:
         _index_error(config, exc)
     if failed:
-        sys.exit(f"amontillado: {failed} of {len(args.files)} files could not be added")
+        sys.exit(f"amontillado: {failed} of {len(additions)} files could not be added")
 
 
 def _add_one(
     conn: sqlite3.Connection,
     config: Config,
-    file: Path,
+    addition: Addition,
     args: argparse.Namespace,
     taken: set[str],
 ) -> None:
-    placement = place(config, file, name=args.name, nsfw=args.nsfw)
-    if args.name in taken:
-        raise AddError(f"name {args.name!r} is taken")
+    file, name = addition.file, addition.name
+    source = hand_source(addition.fields)
+    purity = source.get("purity") if source else None
+    placement = place(
+        config,
+        file,
+        name=name,
+        nsfw=addition.nsfw,
+        purity=purity if isinstance(purity, str) else None,
+    )
+    if name in taken:
+        raise AddError(f"name {name!r} is taken")
     duplicates = files_with_hash(conn, sha256_file(file))
     if duplicates and not args.force:
         raise AddError(f"{file}: same content as {duplicates[0]}; --force adds it anyway")
@@ -997,8 +1076,10 @@ def _add_one(
     if args.dry_run:
         logger.info("would add %s as %s", file, placement.directory)
         return
-    entry = add_picture(config, placement, name=args.name)
+    entry = add_picture(config, placement, name=name, source=source)
     add_to_index(conn, entry)
+    if name is not None:
+        taken.add(name)
     logger.info("added %s as %s", file, entry.directory)
 
 
