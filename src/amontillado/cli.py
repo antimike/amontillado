@@ -39,6 +39,8 @@ from amontillado.accents import score as accent_score
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
     API_KEY_VARIABLE,
+    GENERATORS,
+    HUES_CHOICES,
     Config,
     ConfigError,
     api_key,
@@ -48,6 +50,7 @@ from amontillado.config import (
 from amontillado.contrast import apply_contrast, check
 from amontillado.fetch import TEST_SET, fetch
 from amontillado.fetch import Options as FetchOptions
+from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.index import (
     IndexDatabaseError,
     IndexedFile,
@@ -60,6 +63,7 @@ from amontillado.index import (
     names,
     rebuild,
     record_location,
+    record_name,
     record_shown,
 )
 from amontillado.index import (
@@ -82,8 +86,14 @@ from amontillado.library import (
     heal_library,
     place,
 )
-from amontillado.metrics import HUE_NAMES, measure_file
-from amontillado.palette import PaletteError, dump_palette, load_palette, palette_from_schemes
+from amontillado.metrics import HUE_NAMES, Metrics, measure_file
+from amontillado.palette import (
+    Palette,
+    PaletteError,
+    dump_palette,
+    load_palette,
+    palette_from_schemes,
+)
 from amontillado.record import RecordError, sha256_file
 from amontillado.registry import RegistryError, registry
 from amontillado.registry import text as registry_text
@@ -145,6 +155,15 @@ def _add_loglevel(parser: argparse.ArgumentParser, default: str) -> None:
         default=default,
         type=lambda v: v.strip().upper(),
         help="Logging verbosity (DEBUG, INFO, WARNING, ERROR; default INFO).",
+    )
+
+
+def _add_hues(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--hues",
+        choices=HUES_CHOICES,
+        help="Who assigns base08-base0F of a picture's palette: amontillado (fixed named hues) "
+        "or the generator's own colours (default: theme.hues).",
     )
 
 
@@ -452,13 +471,21 @@ def build_parser() -> argparse.ArgumentParser:
         "palette",
         help="Make a palette.",
         description="Print a palette (per variant, the base24 colours and the roles: accent, "
-        "selection, ...) as YAML, or check a palette file's contrast. Base24 keys and roles the "
-        "source leaves out are derived; pairs below their WCAG contrast minimum are fixed as "
-        "theme.contrast says (default: adjusted, each change logged).",
+        "selection, ...) as YAML, or check a palette file's contrast. A picture's palette has "
+        "both variants, from a generator (matugen). Base24 keys and roles the source leaves out "
+        "are derived; pairs below their WCAG contrast minimum are fixed as theme.contrast says "
+        "(default: adjusted, each change logged).",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(palette, argparse.SUPPRESS)
     palette_input = palette.add_mutually_exclusive_group(required=True)
+    palette_input.add_argument(
+        "picture",
+        nargs="?",
+        metavar="PICTURE",
+        help="A record's file, directory, name or id (or prefix): its default file, or the "
+        "file given.",
+    )
     palette_input.add_argument(
         "--from-scheme",
         nargs="+",
@@ -481,6 +508,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Report failing pairs instead of adjusting them (theme.contrast: report, for one "
         "run).",
     )
+    palette.add_argument(
+        "--generator",
+        choices=GENERATORS,
+        help="The generator for PICTURE (default: theme.generator, else the first installed).",
+    )
+    _add_hues(palette)
     palette.set_defaults(func=cmd_palette)
 
     theme = commands.add_parser(
@@ -531,16 +564,25 @@ def build_parser() -> argparse.ArgumentParser:
         description="Render each app under theme.apps from a palette into a new generation of "
         "the profile, swap it in for <cache>/<profile> and point <cache>/current at it, then "
         "run each app's reload command and the wallpaper hook (a failing reload warns). A "
-        "render error changes nothing. Without --palette, re-render the profile's own palette "
-        "(after a config change). No network.",
+        "render error changes nothing. Given PICTURE, the palette is generated from it, the "
+        "profile's wallpaper link points to it and it is recorded as shown. Without PICTURE or "
+        "--palette, re-render the profile's own palette (after a config change). No network.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(apply, argparse.SUPPRESS)
-    apply.add_argument(
+    apply_input = apply.add_mutually_exclusive_group()
+    apply_input.add_argument(
+        "picture",
+        nargs="?",
+        metavar="PICTURE",
+        help="A record's file, directory, name or id (or prefix).",
+    )
+    apply_input.add_argument(
         "--palette",
         metavar="NAME|FILE",
         help="A palette file, or a preset in $XDG_CONFIG_HOME/amontillado/palettes/.",
     )
+    _add_hues(apply)
     apply.add_argument("--profile", metavar="P", help="The profile (default: theme.profile).")
     apply.add_argument(
         "--variant",
@@ -888,10 +930,70 @@ def cmd_palette(args: argparse.Namespace) -> None:
     if args.no_adjust and mode == "adjust":
         mode = "report"
     try:
-        palette = palette_from_schemes(args.from_scheme)
-    except PaletteError as exc:
+        if args.picture is not None:
+            palette, _ = _picture_palette(
+                config, args.picture, generator=args.generator, hues=args.hues
+            )
+        else:
+            palette = palette_from_schemes(args.from_scheme)
+    except (PaletteError, GeneratorError) as exc:
         sys.exit(f"amontillado: {exc}")
     print(dump_palette(apply_contrast(palette, mode)), end="")
+
+
+@dataclass(frozen=True)
+class _Picture:
+    """A record's file, for a palette."""
+
+    record_id: str
+    name: str
+    path: Path
+    metrics: Metrics
+
+
+def _find_picture(config: Config, query: str) -> _Picture:
+    """The record `query` names and its file: the one given, else the default."""
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    try:
+        with closing(connect(config.index_path)) as conn:
+            try:
+                record_id = find_record(conn, query)
+            except LookupFailed as exc:
+                sys.exit(f"amontillado: {exc}")
+            indexed = files(conn, record_id)
+            name = record_name(conn, record_id) or record_id
+    except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+        _index_error(config, exc)
+    given = Path(query).absolute()
+    chosen = next((item for item in indexed if item.path == given), None)
+    if chosen is None:
+        chosen = next((item for item in indexed if item.is_default), None)
+    if chosen is None:
+        sys.exit(f"amontillado: {query}: the record has no default file")
+    return _Picture(record_id, name, chosen.path, chosen.metrics)
+
+
+def _picture_palette(
+    config: Config, query: str, *, generator: str | None, hues: str | None
+) -> tuple[Palette, _Picture]:
+    """The palette generated from the picture `query` names, before the contrast check.
+    Raises GeneratorError or PaletteError."""
+    picture = _find_picture(config, query)
+    name = choose_generator(generator or config.theme.generator)
+    generated = generate(picture.path, name)
+    palette = picture_palette(
+        generated,
+        name=picture.name,
+        hues=hues or config.theme.hues,
+        hue=picture.metrics.hue,
+        source={
+            "picture": picture.record_id,
+            "file": picture.path.name,
+            "lightness": round(picture.metrics.lightness, 3),
+        },
+    )
+    return palette, picture
 
 
 def _check_palette(path: Path) -> None:
@@ -966,9 +1068,19 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
     mode = config.theme.contrast
     if args.no_adjust and mode == "adjust":
         mode = "report"
+    if args.picture is not None and args.app:
+        sys.exit("amontillado: PICTURE with --app: a new picture re-renders every app")
+    picture = None
     try:
         check_profile(profile, "--profile")
-        palette = None if args.palette is None else load_palette(find_palette(args.palette))
+        if args.picture is not None:
+            palette, picture = _picture_palette(
+                config, args.picture, generator=None, hues=args.hues
+            )
+        elif args.palette is not None:
+            palette = load_palette(find_palette(args.palette))
+        else:
+            palette = None
         plan = theme_plan(
             config,
             palette,
@@ -976,6 +1088,7 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
             variant=args.variant or config.theme.variant,
             contrast=mode,
             only=args.app,
+            wallpaper=None if picture is None else picture.path,
         )
         if args.dry_run:
             directory = Path(tempfile.mkdtemp(prefix="amo-theme-"))
@@ -987,9 +1100,16 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
                 print(f"would run: {shlex.join(command)}")
             return
         directory = apply_theme(config, plan, activate=not args.no_activate)
-    except (ConfigError, ThemeError, PaletteError, OSError) as exc:
+    except (ConfigError, ThemeError, PaletteError, GeneratorError, OSError) as exc:
         sys.exit(f"amontillado: {exc}")
     logger.info("applied %s to profile %s", plan.palette.name, profile)
+    # A picture behind an inactive profile has not been shown.
+    if picture is not None and not args.no_activate:
+        try:
+            with closing(connect(config.index_path)) as conn:
+                record_shown(conn, picture.record_id)
+        except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+            logger.warning("%s: not recorded as shown: %s", picture.name, exc)
     if not args.no_reload and not args.no_activate:
         run_reloads(reload_commands(config, plan, directory))
 
