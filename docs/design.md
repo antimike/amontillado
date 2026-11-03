@@ -2,8 +2,9 @@
 
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
 implemented, test sets included; class thresholds calibrated (2026-10-28). v0.2's theme engine is
-agreed (2026-10-30) and being built: the palette model and `amo palette --from-scheme` are
-implemented, with contrast checks and the `theme:` config block; "Theme engine (v0.2)". Values marked
+agreed (2026-10-30) and being built: the palette model, `amo palette --from-scheme` and
+`amo palette PICTURE` (matugen) are implemented, with contrast checks and the `theme:` config
+block; "Theme engine (v0.2)". Values marked
 *initial* are starting points to calibrate on real images; change them here when they change in code.
 
 ## Scope
@@ -663,7 +664,14 @@ need one say so):
   `base16.baseXX.{dark,light,default}.color`, `palettes.<name>.<tone>`. Fedora ships 3.1.0,
   whose JSON and command line differ (4.0, 2026-02, added the base16 backend, `hex_alpha` and the
   `format` / `set_alpha` filters, and changed the default JSON): amontillado reports the version
-  and refuses rather than parse an untested format.
+  and refuses rather than parse an untested format. The adapter (`amontillado.generators`) runs
+  matugen in a throwaway config, cache and state home and takes, per variant: `accent` and
+  `secondary` from `colors.primary` and `colors.secondary`; the ramp `base00`-`base07` from
+  `palettes.neutral` at tones 10, 15, 25, 50, 70, 90, 95, 98 for dark and 98, 95, 90, 50, 40,
+  20, 15, 10 for light (*initial*); its own sixteen colours from `base16`. On a cloudscape from
+  the library (2026-11-03) `base16`'s `base08`-`base0F` were all near-black (`#03080c` to
+  `#090e12`), darker than the ramp's `base00`, so the contrast check could not fix them: it
+  moves a foreground away from its background, here darker, and black is not far enough.
 - **wallust** (second): 16 colours clustered from the image, in no reliable order (red lands
   anywhere). Under `hues: amontillado` they give the ramp (darkest to lightest) and the accent
   (the most chromatic of colours 1-6, *initial*). Under `hues: generator` amontillado runs
@@ -686,6 +694,9 @@ colours 1-6 and 9-14:
 - `generator`: the generator's own sixteen colours (matugen's `base16` block; wallust's ANSI
   settings above), then the contrast check, which fixes contrast but not a wrong or collapsed
   hue. For comparison, or for a user who prefers them.
+
+Until the named-hue synthesis is built (amo-aqp.20), `hues: amontillado` is refused with a
+message naming `--hues generator`; the default stays `amontillado`.
 
 `source.hues` in the palette records which. Rejected: matugen's `custom_colors` with
 `blend = true` (Material's harmonization), checked on 3 pictures 2026-10-30. It solves contrast
@@ -958,10 +969,14 @@ amo theme templates [APP]                      registry entries, sources and the
 amo theme current [--profile P]                the applied palette's name, picture and time
 ```
 
-PICTURE is any form under "Lookup"; without one, `amo theme apply` re-renders the profile's
-current palette (after a config change). `--dry-run` renders into a temporary directory, prints
-its path and what would be reloaded, and changes nothing. `amo theme apply` records the picture
-as shown (`amo shown`), so the usage table sees theme switches.
+PICTURE is any form under "Lookup": its record's default file, or the file named; without one,
+`amo theme apply` re-renders the profile's current palette (after a config change), keeping its
+wallpaper link. `--dry-run` renders into a temporary directory, prints its path and what would
+be reloaded, and changes nothing. `amo theme apply PICTURE` points the profile's wallpaper link
+at the picture and records it as shown (`amo shown`), so the usage table sees theme switches;
+not under `--dry-run` or `--no-activate` (nothing is shown). PICTURE with `--app` is refused:
+a new picture re-renders every app. The generator is `theme.generator` (`amo palette` also
+takes `--generator`).
 
 New runtime dependency: `pystache` (MIT). matugen and wallust are optional external programs.
 
