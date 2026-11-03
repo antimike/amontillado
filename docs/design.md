@@ -3,9 +3,10 @@
 Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
 implemented, test sets included; class thresholds calibrated (2026-10-28). v0.2's theme engine is
 agreed (2026-10-30) and being built: the palette model, `amo palette --from-scheme` and
-`amo palette PICTURE` (matugen, named hues calibrated) are implemented, with contrast checks
-and the `theme:` config block; "Theme engine (v0.2)". Values marked
-*initial* are starting points to calibrate on real images; change them here when they change in code.
+`amo palette PICTURE` (matugen, named hues calibrated) are implemented, with contrast checks,
+the `theme:` config block and the mustache, pywal and matugen formats; "Theme engine (v0.2)".
+Values marked *initial* are starting points to calibrate on real images; change them here when
+they change in code.
 
 ## Scope
 
@@ -841,9 +842,24 @@ Each format gets a *view* of the palette: the variables its templates expect.
   `set_alpha`, `set_lightness`, `auto_lightness`, `saturate` (with `hsl`), `lighten` and
   `replace` (each in a few templates), `for` loops over `colors` and `base16` with
   `if loop.last`, `{{image}}`, and the `base16.*` keys. One template loops over `palettes`
-  (Material's tonal palettes, which the palette does not have): not supported. The filters must match matugen's
-  arithmetic (HSL lightness, alpha), checked against matugen's output in tests. Anything else is
-  a render error naming it. This settles the research's open question: matugen's
+  (Material's tonal palettes, which the palette does not have): not supported. Anything else is
+  a render error naming it.
+
+  Built (`amontillado.matugen`, 2026-11-03) and checked byte for byte against matugen 4.2.0 on
+  all 73 files of matugen-themes at the registry's pin (68 templates and READMEs; three source
+  colours, both modes; `quickshell.json`'s `palettes` loop is the one refusal); the committed
+  test is our own probe template with matugen's recorded output. What parity took, from
+  matugen's and colorsys 0.6.7's source: channels are floats from csscolorparser's f32 ratios
+  (231 is 231.0000014), which shows wherever a format truncates; `hex` rounds, `rgb`, `red`,
+  `green`, `blue` and `hex_alpha` (upper case) truncate, `rgba` rounds half to even with the
+  alpha printed Rust-style (`1`, `0.1`); `lighten`, `auto_lightness` (lighter below HSL
+  lightness 50, darker above) and `saturate` step HSL and clamp; `set_lightness` *sets* HSL
+  lightness, so matugen-themes' negative values give black, as under matugen; loops run in key
+  order with `loop.index`, `first`, `last`; whitespace after `<* if ... *>` and `<* else *>` is
+  dropped. The view also has `mode` and `is_dark_mode`, and the custom colours
+  `neovim/matugen.lua` names (`red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple` from
+  `base08`-`base0E`; `maroon`, `mint`, `sky`, `lavender`, `pink` from `base12`, `base14`-`base17`);
+  `image` is the profile's picture, or empty (matugen prints `Null`). This settles the research's open question: matugen's
   `--import-json` only *adds* variables, its `colors.*` always come from its own generation, so
   with matugen rendering, a preset or wallust palette could not drive matugen-themes templates
   at all. Rendering ourselves works for every palette and needs no matugen at theme switch.
@@ -852,13 +868,20 @@ Each format gets a *view* of the palette: the variables its templates expect.
   The Material view is a table that computes every Material role name those templates use
   (`colors.primary`, `colors.surface_container_high`, ...) from the palette at render time: `primary` from `accent`, `secondary`
   from `secondary`, `tertiary` from the `base08`-`base0E` accent farthest in hue from `accent`,
-  `error` from `error`, each with its `on_*`, `*_container` (the colour at `base02`'s lightness,
-  chroma reduced, for a dark variant; at `base06`'s for a light one), `on_*_container`, and the
-  `*_fixed` family; surfaces from the neutral ramp (`surface`, `background` = `base00`;
-  `surface_container_lowest` … `_highest` = `base11`, `base10`, `base01`, `base02`, and `base02`
-  lightened by L +0.03; `on_surface` = `base05`, `on_surface_variant` = `base04`, `outline` =
-  `base03`, `outline_variant` = `base02`); `inverse_*`, `shadow`, `scrim`, `source_color`,
-  `surface_tint` by the obvious rule. The full table lives in code, with a test that it covers
+  `error` from `error`, each with its `on_*` (`on_accent`, `on_secondary`, else whichever of
+  `base00` and `base07` contrasts more), `*_container` (the colour at `base02`'s OKLCH
+  lightness, chroma × 0.6, *initial*, for either variant: `base02` is the selection background
+  in both; the agreed text had `base06` for a light variant, but base16 light palettes put
+  their darkest colours there), `on_*_container` (at `base06`'s lightness), and the `*_fixed`
+  family (mode-independent, as in Material: `fixed`, `fixed_dim`, `on_fixed`,
+  `on_fixed_variant` at L 0.92, 0.84, 0.22, 0.40, *initial*); surfaces from the neutral ramp
+  (`surface`, `background` = `base00`; `surface_container_lowest` … `_highest` = `base11`,
+  `base10`, `base01`, `base02`, and `base02` moved 0.03 further from `base00` in L;
+  `surface_dim` and `surface_bright` = `base00` and that, swapped for light; `surface_variant`,
+  `outline_variant` = `base02`; `on_surface`, `on_background` = `base05`, `on_surface_variant`
+  = `base04`, `outline` = `base03`); `inverse_surface` = `base05`, `inverse_on_surface` =
+  `base01`, `inverse_primary` the other variant's accent (else the accent); `shadow`, `scrim`
+  black; `source_color`, `surface_tint` the accent. The full table lives in code, with a test that it covers
   every role matugen 4.2 exports. `.dark` and `.light` give the palette's dark and light
   variants, `.default` the applied one; with a one-variant palette all three give that variant.
   Of the 74 templates, only `zed-colors.json` uses both modes (a dark and a light Zed theme in
@@ -978,7 +1001,7 @@ reload command. Three ways to turn the palette into highlight groups, all sharin
 |---|---|---|---|
 | **lush.nvim** spec over `palette.lua` (`docs/examples/nvim/`, amo-aqp.17) | the user's spec | the roles exactly as the bar, borders and terminal use them; colour operations | writing and keeping the coverage (treesitter, LSP, plugins) |
 | **tinted-nvim** v1, the palette as custom scheme `base24-amontillado` (`docs/examples/nvim/lua/amontillado/tinted.lua`, amo-aqp.22) | the plugin | upstream-kept coverage of core, treesitter, LSP and many plugins, no authoring | base16 conventions (no accent role: `base0D`); a plugin |
-| **matugen-themes** `neovim/matugen.lua` (`template: nvim-lua`; needs the matugen renderer, amo-aqp.13) | upstream's file | accent-aware (Material roles), one pinned file, no plugin | upstream's choices; colours through the Material view |
+| **matugen-themes** `neovim/matugen.lua` (`template: nvim-lua`, `docs/examples/nvim/lua/amontillado/matugen.lua`, amo-aqp.13; upstream's pinned file has a stray last line, see the example's README) | upstream's file | accent-aware (Material roles), one pinned file, no plugin | upstream's choices; colours through the Material view |
 
 Which one is the user's choice (chezmoi D73 plans lush). The lush example passes the palette's
 `#rrggbb` strings to lush rather than `lush.hsl()` values, which round-trip through rounded HSL
