@@ -1,0 +1,12 @@
+plain #ffb68a #ffb68a #8b4f26
+fields cbc992 rgb(203, 201, 146) rgba(203, 201, 146, 1) #CBC992FF hsl(58, 35%, 68%) hsla(58, 35%, 68%, 1)
+channels 240 223 215
+replace 229 191 169
+auto #ff705f #3c2a1e #ffc6a4 #805940
+saturate #ffb68a #270f00 #ff9657
+lightness rgb(50, 35, 25) rgb(0, 0, 0) rgb(20, 11, 5) #ff863e
+alpha rgba(255, 182, 138, 0.1) rgba(255, 182, 138, 1) rgba(0, 0, 0, 0.92) #1A120D80
+base16 #ff7a5f #ff7d0c rgb(152, 139, 131)
+escaped {{ not a marker }} and <* not a block *> and \
+colors: background=#1a120d, error=#ffb4ab, error_container=#93000a, inverse_on_surface=#382e29, inverse_primary=#8b4f26, inverse_surface=#f0dfd7, on_background=#f0dfd7, on_error=#690005, on_error_container=#ffdad6, on_primary=#522300, on_primary_container=#ffdbc8, on_primary_fixed=#321300, on_primary_fixed_variant=#6f3810, on_secondary=#432b1c, on_secondary_container=#ffdbc8, on_secondary_fixed=#2b1709, on_secondary_fixed_variant=#5c4131, on_surface=#f0dfd7, on_surface_variant=#d7c2b8, on_tertiary=#323209, on_tertiary_container=#e8e5ac, on_tertiary_fixed=#1d1d00, on_tertiary_fixed_variant=#49491e, outline=#9f8d84, outline_variant=#52443c, primary=#ffb68a, primary_container=#6f3810, primary_fixed=#ffdbc8, primary_fixed_dim=#ffb68a, scrim=#000000, secondary=#e5bfa9, secondary_container=#5c4131, secondary_fixed=#ffdbc8, secondary_fixed_dim=#e5bfa9, shadow=#000000, source_color=#c0703a, surface=#1a120d, surface_bright=#413732, surface_container=#261e19, surface_container_high=#312823, surface_container_highest=#3d332d, surface_container_low=#221a15, surface_container_lowest=#140d08, surface_dim=#1a120d, surface_tint=#ffb68a, surface_variant=#52443c, tertiary=#cbc992, tertiary_container=#49491e, tertiary_fixed=#e8e5ac, tertiary_fixed_dim=#cbc992.
+first: 0:base00:c6b9b11:base01:afa29a2:base02:988b833:base03:80746c4:base04:695d555:base05:51463e6:base06:3a2e277:base07:2217108:base08:ff7a5f9:base09:e48b6810:base0a:e08e5a11:base0b:b2a40012:base0c:a7a64b13:base0d:ff7d0c14:base0e:a8a70015:base0f:7d6e66
