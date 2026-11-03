@@ -112,8 +112,11 @@ def _run(command: list[str], env: Mapping[str, str] | None = None) -> str:
     return result.stdout
 
 
-def run_matugen(picture: Path) -> Generated:
-    """matugen's palette of `picture`, both variants. Raises GeneratorError."""
+def matugen_label() -> str:
+    """The installed matugen's name and version ("matugen 4.2.0"). Raises GeneratorError if
+    it is missing or older than MATUGEN_MINIMUM."""
+    if shutil.which("matugen") is None:
+        raise GeneratorError("matugen is not installed (not on PATH)")
     version = _version(_run(["matugen", "--version"]))
     label = "matugen " + ".".join(map(str, version))
     if version[:2] < MATUGEN_MINIMUM:
@@ -121,23 +124,71 @@ def run_matugen(picture: Path) -> Generated:
             f"{label} is too old: amontillado reads matugen >= "
             f"{'.'.join(map(str, MATUGEN_MINIMUM))} (3.x's JSON and command line differ)"
         )
-    # A throwaway config, cache and state home: matugen touches nothing of the user's.
+    return label
+
+
+def _throwaway_env(work: str) -> dict[str, str]:
+    """A config, cache and state home in `work`: matugen touches nothing of the user's."""
+    keys = ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME")
+    return {**os.environ, **{key: work for key in keys}}
+
+
+def _source(picture: Path | None, accent: str) -> list[str]:
+    """matugen's subcommand for `picture`, or for the colour `accent` without one."""
+    if picture is None:
+        return ["color", "hex", accent]
+    # Off a terminal matugen asks which source colour to use unless told.
+    return ["image", str(picture), "--source-color-index", "0"]
+
+
+def run_matugen(picture: Path) -> Generated:
+    """matugen's palette of `picture`, both variants. Raises GeneratorError."""
+    label = matugen_label()
     with tempfile.TemporaryDirectory(prefix="amo-matugen-") as work:
         config = Path(work) / "config.toml"
         config.write_text(_MATUGEN_CONFIG)
-        env = {
-            **os.environ,
-            **{key: work for key in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME")},
-        }
-        command = ["matugen", "image", str(picture), "-c", str(config), "--dry-run"]
-        # Off a terminal matugen asks which source colour to use unless told.
-        command += ["-j", "hex", "-q", "--source-color-index", "0"]
-        output = _run(command, env)
+        command = ["matugen", *_source(picture, ""), "-c", str(config), "--dry-run", "-j", "hex"]
+        output = _run([*command, "-q"], _throwaway_env(work))
     try:
         data = json.loads(output)
     except json.JSONDecodeError as exc:
         raise GeneratorError(f"{label}: output is not JSON ({exc})") from exc
     return Generated(label, parse_matugen(data, label))
+
+
+def matugen_render(
+    templates: Mapping[str, str], *, mode: str, picture: Path | None, accent: str
+) -> tuple[str, dict[str, str]]:
+    """`templates` (name to template text) rendered by matugen itself, in one run: from
+    `picture`, or from the colour `accent` without one, in `mode` (dark or light). Returns
+    matugen's label and the rendered texts by name. The colours are matugen's, not a
+    palette's (`render_with: matugen`). Raises GeneratorError."""
+    label = matugen_label()
+    with tempfile.TemporaryDirectory(prefix="amo-matugen-") as work:
+        root = Path(work)
+        tables = ["[config]\n"]
+        outputs = {}
+        for index, (name, text) in enumerate(templates.items()):
+            source, output = root / f"in-{index}", root / f"out-{index}"
+            source.write_text(text)
+            outputs[name] = output
+            # JSON strings are TOML basic strings: any path is quoted safely.
+            tables.append(
+                f"[templates.t{index}]\n"
+                f"input_path = {json.dumps(str(source))}\n"
+                f"output_path = {json.dumps(str(output))}\n"
+            )
+        config = root / "config.toml"
+        config.write_text("\n".join(tables))
+        command = ["matugen", *_source(picture, accent), "-c", str(config), "-m", mode, "-q"]
+        _run(command, _throwaway_env(work))
+        rendered = {}
+        for name, output in outputs.items():
+            try:
+                rendered[name] = output.read_text()
+            except OSError as exc:
+                raise GeneratorError(f"{label} rendered no {name}: {exc}") from exc
+    return label, rendered
 
 
 def parse_matugen(data: object, label: str = "matugen") -> dict[str, GeneratedVariant]:

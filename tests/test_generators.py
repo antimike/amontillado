@@ -56,8 +56,8 @@ def test_run_matugen(fake_matugen: Path, tmp_path: Path) -> None:
     calls = fake_matugen.read_text().splitlines()
     assert calls[0].startswith("--version")
     image = calls[1]
-    assert image.startswith(f"image {tmp_path / 'a.jpg'} -c ")
-    assert "--dry-run -j hex -q --source-color-index 0" in image
+    assert image.startswith(f"image {tmp_path / 'a.jpg'} --source-color-index 0 -c ")
+    assert "--dry-run -j hex -q" in image
     # Run in a throwaway cache, gone afterwards.
     cache = image.rsplit("XDG_CACHE_HOME=", 1)[1]
     assert "amo-matugen-" in cache
