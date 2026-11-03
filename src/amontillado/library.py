@@ -14,6 +14,7 @@ size and mtime are what the index last saw is not hashed again.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 import shutil
@@ -21,8 +22,10 @@ import uuid
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from logging import getLogger
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from PIL import Image
 
@@ -432,20 +435,29 @@ class Placement:
     directory: Path
 
 
-def place(config: Config, file: Path, *, name: str | None, nsfw: bool) -> Placement:
+def place(
+    config: Config, file: Path, *, name: str | None, nsfw: bool, purity: str | None = None
+) -> Placement:
     """Where `file` would become a record: beside it if it is under a root, else in the first
-    library root (or the NSFW root with `nsfw`), in a directory named `name` or its stem.
-    Raises AddError."""
+    library root (or the NSFW root with `nsfw`, or a `purity` other than sfw), in a directory
+    named `name` or its stem. Raises AddError, also for a non-sfw `purity` under a library
+    root (it would show in default queries)."""
     if not file.is_file() or file.suffix.lower() not in IMAGE_SUFFIXES:
         raise AddError(f"{file}: not an image file")
     if name is not None and not NAME_PATTERN.fullmatch(name):
         raise AddError(f"name {name!r} does not match {NAME_PATTERN.pattern}")
+    if nsfw and purity == "sfw":
+        raise AddError(f"{file}: --nsfw with purity sfw")
+    nsfw = nsfw or purity in ("sketchy", "nsfw")
     resolved = file.resolve()
     roots = (*config.library_roots, config.nsfw_root)
     root = next((root for root in roots if resolved.is_relative_to(root.resolve())), None)
     if root is not None:
-        if nsfw:
-            raise AddError(f"{file}: already under the root {root}; --nsfw is for other files")
+        if nsfw and root != config.nsfw_root:
+            raise AddError(
+                f"{file}: under the library root {root}; move it out (or into the NSFW root) "
+                "to add it as non-sfw"
+            )
         directory = resolved.parent
         while directory != root.resolve():
             if any((directory / info).is_file() for info in INFO_NAMES):
@@ -461,13 +473,19 @@ def place(config: Config, file: Path, *, name: str | None, nsfw: bool) -> Placem
     return Placement(file, root, directory)
 
 
-def add_picture(config: Config, placement: Placement, *, name: str | None) -> Entry:
+def add_picture(
+    config: Config,
+    placement: Placement,
+    *,
+    name: str | None,
+    source: dict[str, object] | None = None,
+) -> Entry:
     """Make a record of one file: measure it, move it into the new directory, make its
-    thumbnail, write the info file. Raises OSError or Image.DecompressionBombError (before
-    anything moves, if measuring fails)."""
+    thumbnail, write the info file (with `source`, from `hand_source`). Raises OSError or
+    Image.DecompressionBombError (before anything moves, if measuring fails)."""
     file = placement.file
     entry = FileEntry(sha256_file(file), *image_size(file), measure_file(file))
-    record = Record(uuid.uuid4().hex, name=name, files={file.name: entry})
+    record = Record(uuid.uuid4().hex, name=name, source=source, files={file.name: entry})
     placement.directory.mkdir(parents=True)
     shutil.move(file, placement.directory / file.name)
     record = _with_thumbnail(placement.directory, record, {file.name})
@@ -477,6 +495,110 @@ def add_picture(config: Config, placement: Placement, *, name: str | None) -> En
     return Entry(
         placement.directory, placement.root, nsfw, record, (file.name,), file.name, name, stats
     )
+
+
+# Where a hand-added picture came from (docs/design.md, "Provenance"): `amo add` options and
+# --from-json keys, in the order they are written to `source`.
+PROVENANCE_KEYS = (
+    "site",
+    "url",
+    "image_url",
+    "title",
+    "author",
+    "license",
+    "purity",
+    "category",
+    "tags",
+    "uploaded",
+)
+
+
+def hand_source(fields: Mapping[str, object]) -> dict[str, object] | None:
+    """The `source` of a hand-added picture from PROVENANCE_KEYS fields (None and empty values
+    left out), or None if none is given. `site` defaults to the host of `url` (or of
+    `image_url`). Raises AddError naming a field of the wrong type."""
+    source: dict[str, object] = {}
+    for key in PROVENANCE_KEYS:
+        value = fields.get(key)
+        if value is None or value == "" or value == []:
+            continue
+        if key == "tags":
+            if not (isinstance(value, list) and all(isinstance(t, str) and t for t in value)):
+                raise AddError("tags: not a list of words")
+        elif key == "uploaded":
+            value = _timestamp(value)
+        elif not isinstance(value, str):
+            raise AddError(f"{key}: not a string")
+        elif key == "purity" and value not in PURITIES:
+            raise AddError(f"purity: {value!r} is not one of {', '.join(PURITIES)}")
+        elif key in ("url", "image_url") and urlsplit(value).scheme not in ("http", "https"):
+            raise AddError(f"{key}: {value!r} is not an http(s) URL")
+        source[key] = value
+    if not source:
+        return None
+    if "site" not in source:
+        url = source.get("url") or source.get("image_url")
+        if isinstance(url, str):
+            host = urlsplit(url).hostname or ""
+            source["site"] = host.removeprefix("www.")
+    return {key: source[key] for key in PROVENANCE_KEYS if key in source}
+
+
+@dataclass(frozen=True)
+class Addition:
+    """One picture for `amo add`: the file, the record's name, and its provenance fields."""
+
+    file: Path
+    name: str | None = None
+    nsfw: bool = False
+    fields: Mapping[str, object] = field(default_factory=dict)
+
+
+def additions_from_json(path: Path) -> list[Addition]:
+    """The pictures listed in a JSON file for `amo add --from-json`: a list of objects, each
+    with `file` (relative paths are relative to the JSON file), optional `name` and `nsfw`,
+    and any PROVENANCE_KEYS. Raises AddError naming the entry and key at fault; OSError if the
+    file cannot be read."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise AddError(f"{path}: not JSON: {exc}") from exc
+    if not isinstance(data, list):
+        raise AddError(f"{path}: not a list of pictures")
+    additions = []
+    allowed = {"file", "name", "nsfw", *PROVENANCE_KEYS}
+    for number, item in enumerate(data, start=1):
+        where = f"{path}: picture {number}"
+        if not isinstance(item, dict):
+            raise AddError(f"{where}: not an object")
+        unknown = sorted(set(item) - allowed)
+        if unknown:
+            raise AddError(f"{where}: unknown keys {', '.join(unknown)}")
+        file, name, nsfw = item.get("file"), item.get("name"), item.get("nsfw", False)
+        if not isinstance(file, str) or not file:
+            raise AddError(f"{where}: no file")
+        if name is not None and not isinstance(name, str):
+            raise AddError(f"{where}: name is not a string")
+        if not isinstance(nsfw, bool):
+            raise AddError(f"{where}: nsfw is not true or false")
+        fields = {key: item[key] for key in PROVENANCE_KEYS if key in item}
+        try:
+            hand_source(fields)
+        except AddError as exc:
+            raise AddError(f"{where}: {exc}") from None
+        additions.append(Addition(path.parent / Path(file).expanduser(), name, nsfw, fields))
+    return additions
+
+
+def _timestamp(value: object) -> date | datetime:
+    if isinstance(value, (date, datetime)):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value) if len(value) == 10 else datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    raise AddError(f"uploaded: {value!r} is not an ISO 8601 date or time")
 
 
 class CropError(Exception):

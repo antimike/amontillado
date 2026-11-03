@@ -24,7 +24,7 @@ from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _CREATE_RECORDS = """
 CREATE TABLE records (
@@ -38,7 +38,10 @@ CREATE TABLE records (
     tags TEXT NOT NULL,
     source_site TEXT,
     source_id TEXT,
-    thumbnail TEXT
+    thumbnail TEXT,
+    license TEXT,
+    author TEXT,
+    title TEXT
 )
 """
 _CREATE_FILES = """
@@ -77,7 +80,7 @@ ON CONFLICT (id) DO UPDATE SET shown_count = shown_count + 1, last_shown = exclu
 _INSERT_RECORD = """
 INSERT INTO records VALUES (
     :id, :name, :directory, :root, :nsfw_root, :purity, :category, :tags, :source_site,
-    :source_id, :thumbnail
+    :source_id, :thumbnail, :license, :author, :title
 )
 """
 _INSERT_FILE = """
@@ -141,6 +144,10 @@ def connect(path: Path) -> sqlite3.Connection:
         if version in (2, 3) and _has_table(conn, "records"):
             # No thumbnails before schema 4; the next `amo index` fills them in.
             conn.execute("ALTER TABLE records ADD COLUMN thumbnail TEXT")
+        if version in (2, 3, 4) and _has_table(conn, "records"):
+            # No provenance columns before schema 5; the next `amo index` fills them in.
+            for column in ("license", "author", "title"):
+                conn.execute(f"ALTER TABLE records ADD COLUMN {column} TEXT")
         if not _has_table(conn, "records"):
             _create_tables(conn)
         conn.execute(_CREATE_USAGE)
@@ -222,6 +229,9 @@ def _record_row(entry: Entry) -> dict[str, object]:
         "source_site": _text(source.get("site")),
         "source_id": _text(source.get("id")),
         "thumbnail": _thumbnail(entry),
+        "license": _text(source.get("license")),
+        "author": _text(source.get("author")),
+        "title": _text(source.get("title")),
     }
 
 
