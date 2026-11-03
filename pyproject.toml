@@ -1,6 +1,6 @@
 [project]
 name = "amontillado"
-version = "0.1.0"
+version = "0.2.0"
 description = "A local wallpaper library: fetch from Wallhaven, measure each image's colour and detail, and query the collection by how it looks"
 readme = "README.md"
 requires-python = ">=3.11"

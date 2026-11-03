@@ -6,73 +6,97 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-03
+
+The theme engine: a palette from a picture, a preset or a tinted-theming scheme, checked for
+contrast, rendered into each configured app's file and swapped in at once.
+
 ### Added
 
-- Palettes (v0.2 theme engine): per variant (dark, light), all 24 base24 colours plus roles
-  (accent, selection, error, ...); base24 keys and roles a source leaves out are derived in
-  OKLCH. `amo palette --from-scheme FILE [FILE]` converts one tinted-theming scheme (base16 or
-  base24, current or legacy format), or a family's dark and light pair, into a palette.
+- Palettes: per variant (dark, light), all 24 base24 colours plus roles (accent, selection,
+  error, ...); base24 keys and roles a source leaves out are derived in OKLCH. `amo palette
+  PICTURE` makes one with both variants from a generator: matugen (>= 4.0) or wallust (>= 3.0),
+  detected at run time (`theme.generator`, `--generator`). `amo palette --from-scheme FILE
+  [FILE]` converts one tinted-theming scheme (base16 or base24, current or legacy format), or a
+  family's dark and light pair.
+- Named hues (`theme.hues`, `--hues`): by default amontillado assigns `base08`-`base0F` itself,
+  each at a fixed nominal hue with the picture's chroma and a calibrated lightness, so red stays
+  red; `generator` keeps the generator's own colours. Calibrated on the 13 library pictures: the
+  dark variant matches or beats the hand-made baseline on every one.
 - Contrast checks: WCAG 2 ratios over fixed pairs (body text 7, syntax and labels 4.5, comments
-  and borders 3), per variant. `amo palette --from-scheme` adjusts failing colours in OKLCH
-  lightness (foregrounds first, the accent last, never the backgrounds), logging each change and
-  listing it under `adjusted`; `theme.contrast: adjust | report | off` and `--no-adjust` say
-  whether. `amo palette --check FILE` reports a palette file's failing pairs.
-- The config file's `theme:` block (cache, profile, generator, variant, contrast, wallpaper
-  reload, and per app source, template, format, output, reload, variant, render_with), checked
-  on every load with errors naming the key; nothing uses it yet.
-- Built-in templates (mustache, variables-only: every base24 colour and role in the app's own
-  syntax): kitty, gtk (`@define-color`, for waybar, swaync, wlogout and GTK), rofi, hyprland (a
-  Lua table), hyprlock, sway, dunst (a small complete `dunstrc.d` drop-in), nvim
-  (`palette.lua`), shell and json. `amo theme templates [APP]` lists them, or one's variables.
-- `amo theme apply [--palette NAME|FILE]`: render every app under `theme.apps` (built-in
-  templates, or `source: path` mustache files) into a new generation of the profile and swap
-  it in atomically (`<cache>/<profile>` and `current` are symlinks), then run each app's reload
-  command and the wallpaper hook; a render error changes nothing, a failing reload warns.
-  `--palette` takes a file or a preset in `$XDG_CONFIG_HOME/amontillado/palettes/`; without it
-  the profile's palette is re-rendered. `--profile`, `--variant`, `--app NAME` (re-render a
-  subset), `--no-adjust`, `--no-activate`, `--no-reload`, `--dry-run`.
-- The template registry: per source (builtin; tinted-theming, matugen-themes and pywal16
-  templates, pinned to a commit with each file's sha256), the templates for each app, their
-  output files and whether each is a complete theme or variables only. `amo theme sync
-  [--check]` downloads the templates the config uses (one HTTPS request per file, hash-checked,
-  nothing kept on a mismatch); `amo theme apply` renders tinted, `url` and `path` mustache
-  templates and never uses the network. `amo theme templates [APP]` lists every source.
-- pywal-format templates (pywal16's `{color0.rgba}` markers, with its colour properties and
-  `lighten`, `darken`, `saturate`, `foxify`, `adjust_alpha`), rendered by amontillado over
-  `color0`-`color15` by the base24 ANSI table, so `source: pywal` apps apply.
-- `docs/examples/nvim/`: a lush.nvim spec over the applied `palette.lua` (roles for the interface,
-  base24 hues for syntax) and a watcher that re-runs `:colorscheme` after each `amo theme apply`.
-  Or tinted-nvim v1 fed the palette as a custom scheme, re-applied by the same watcher.
+  and borders 3), per variant. Failing colours are adjusted in OKLCH lightness (foregrounds
+  first, the accent last, never the backgrounds; away from the background, or across it when
+  that cannot pass), each change logged and listed under `adjusted`; `theme.contrast: adjust |
+  report | off` and `--no-adjust` say whether. `amo palette --check FILE` reports a palette
+  file's accent metrics (hues on their ANSI name, distinctness) and failing pairs.
+- `amo theme apply [PICTURE | --palette NAME|FILE]`: render every app under `theme.apps` into a
+  new generation of the profile and swap it in atomically (`<cache>/<profile>` and `current`
+  are symlinks), then run each app's reload command and the wallpaper hook; a render error
+  changes nothing, a failing reload warns. A PICTURE's palette is generated, its wallpaper
+  linked and recorded as shown; `--palette` takes a file or a preset in
+  `$XDG_CONFIG_HOME/amontillado/palettes/`; without either the profile's palette is
+  re-rendered. `--profile`, `--variant`, `--hues`, `--app NAME` (re-render a subset),
+  `--no-adjust`, `--no-activate`, `--no-reload`, `--dry-run`. No network.
 - `amo theme current [--profile P]`: the applied palette, picture and time; warns when apps
   were rendered from different palettes.
-- `amo index --rehash`: hash every file again (see the hash cache below).
+- Templates in three formats, all rendered by amontillado: mustache (tinted-theming's builder
+  spec, with every role as well), pywal (pywal16's markers, properties and functions, checked
+  against pywal16 itself) and matugen (the subset matugen-themes uses, over a Material view of
+  the palette, checked byte for byte against matugen 4.2.0 on all of matugen-themes). An app
+  can have matugen render its template instead (`render_with: matugen`), with matugen's colours.
+- Built-in templates (variables-only, every colour and role in the app's own syntax): kitty,
+  gtk (`@define-color`, for waybar, swaync, wlogout and GTK), rofi, hyprland (a Lua table),
+  hyprlock, sway, dunst (a small complete `dunstrc.d` drop-in), nvim (`palette.lua`), shell and
+  json.
+- The template registry: per source (builtin; tinted-theming, matugen-themes and pywal16,
+  pinned to a commit with each file's sha256) the templates for each app, their output files
+  and whether each is a complete theme or variables only. `amo theme sync [--check]` downloads
+  the templates the config uses (one HTTPS request per file, hash-checked); `amo theme
+  templates [APP]` lists them, or one's variables.
+- `docs/examples/nvim/`: three ways to theme nvim from the applied palette (a lush.nvim spec,
+  tinted-nvim fed the palette as a custom scheme, matugen-themes' colourscheme), sharing a
+  watcher that re-runs `:colorscheme` after each `amo theme apply`.
+- The config file's `theme:` block (cache, profile, generator, hues, variant, contrast,
+  wallpaper reload, and per app source, template, format, output, reload, variant,
+  render_with) and `crop:` block, checked on every load with errors naming the key.
+  `amo config init` writes a commented template of every key (its meaning, trade-offs and
+  default); `amo config check [FILE]` validates a config, its templates and output files.
+- `amo crop PICTURE W:H [--at F]`: write the largest W:H crop of a record's original beside it,
+  centred unless `--at` moves it, recorded (`derived_from`, `crop`) and indexed. `--interactive`
+  places the box by hand (move, zoom; Enter crops, Esc writes nothing), previewed in the
+  terminal with the kitty graphics protocol or in an image viewer (`crop.preview`,
+  `crop.viewer`). On a terminal, `amo list --aspect W:H` offers to crop the pictures it found no
+  such file for, centred or interactively; `--non-interactive` never asks.
+- `amo list` search: `--tag` (repeatable), `--site`, `--category`, `--license`, `--author`,
+  and `--where SQL`, an expression over a read-only view of the index that includes each
+  record's whole info file as JSON. Purity and the NSFW root still decide what is printed.
 - `amo add` records where a picture came from: `--source-url`, `--image-url`, `--site`,
   `--title`, `--author`, `--license` (SPDX), `--purity`, `--category`, `--tags`, `--uploaded`,
-  or per picture from `amo add --from-json FILE`. The new `license`, `author` and `title` are
-  indexed (index schema 5, upgraded in place).
-- `amo crop PICTURE W:H [--at F]`: write the largest W:H crop of a record's original beside it,
-  centred unless `--at` moves it, recorded (`derived_from`, `crop`) and indexed. On a terminal,
-  `amo list --aspect W:H` offers to crop the pictures it found no such file for;
-  `--non-interactive` never asks.
+  or per picture from `amo add --from-json FILE`.
 - Thumbnails: each record can name a small preview (`thumbnail`, at `.amo/thumbnail.jpg`, never
   one of its files). `amo fetch` keeps Wallhaven's thumbnail; `amo add` and `amo index` make one
   of the default file. `amo list --format rofi` prints each path with its thumbnail as the icon,
-  for `rofi -dmenu -show-icons`. The index is upgraded to schema 4 in place.
+  for `rofi -dmenu -show-icons`.
+- `amo index --rehash`: hash every file again (see the hash cache below).
 
 ### Changed
 
 - Python 3.11 or later (was 3.10, end of life since 2026-10).
-- New runtime dependency: `pystache` (MIT), for rendering mustache templates.
-- `amo index` hashes only files whose size or mtime changed since the last index; the index
-  keeps both per file (schema 3; a schema 2 index is upgraded in place).
+- New runtime dependency: `pystache` (MIT), for rendering mustache templates. matugen and
+  wallust are optional external programs.
+- The index is at schema 6 (thumbnails, the hash cache, provenance columns, each record's info
+  file as JSON), upgraded in place from any earlier one; the next `amo index` fills the new
+  columns. amontillado 0.1.0 refuses an index this version has opened.
+- `amo index` hashes only files whose size or mtime changed since the last index.
 - `amo fetch` names each record from up to three of its Wallhaven tags and its id
   (`food-dessert-ice-cream-4l36wr`; the category when no tag is usable), in a directory of that
   name; records fetched earlier keep theirs.
-
 - `hue_share` is the weight of the heaviest 60° arc of hues, and `hue_name` names the sector
   holding that arc's mean, so a hue on a sector boundary is no longer split (metrics version
   2: `amo index` remeasures every file). One hue now holds 80% of the calibration sample (was
   68%).
+- `--help` no longer ends options with `(default: None)` or `(default: False)`; a flag that
+  overrides a config key names it and its default.
 
 ## [0.1.0] - 2026-10-28
 
