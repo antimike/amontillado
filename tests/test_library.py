@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -14,10 +15,13 @@ from amontillado import library
 from amontillado.config import Config
 from amontillado.library import (
     THUMBNAIL_SIZE,
+    AddError,
     CropError,
     add_picture,
+    additions_from_json,
     crop_box,
     crop_picture,
+    hand_source,
     heal_library,
     place,
 )
@@ -447,7 +451,7 @@ def test_measuring_failure_moves_nothing(config: Config, tmp_path: Path) -> None
         ("in-nested-record", "already in the record"),
         ("exists", "already exists"),
         ("bad-name", "does not match"),
-        ("nsfw-in-root", "--nsfw is for other files"),
+        ("nsfw-in-root", "under the library root .* to add it as non-sfw"),
     ],
 )
 def test_add_refuses(config: Config, save_image: SaveImage, case: str, message: str) -> None:
@@ -654,3 +658,89 @@ def test_crop_picture_keeps_exif_and_resets_the_orientation(config: Config) -> N
         assert image.size == (100, 100)
         assert image.getexif().get(0x0112) == 1
         assert image.getexif().get(0x013B) == "A. Painter"
+
+
+def test_hand_source_orders_fields_and_derives_the_site() -> None:
+    source = hand_source(
+        {
+            "license": "CC0-1.0",
+            "url": "https://commons.wikimedia.org/wiki/File:Sunset.jpg",
+            "author": "A. Painter",
+            "tags": ["sunset", "sea"],
+            "uploaded": "2019-06-02",
+            "title": None,
+        }
+    )
+    assert source == {
+        "site": "commons.wikimedia.org",
+        "url": "https://commons.wikimedia.org/wiki/File:Sunset.jpg",
+        "author": "A. Painter",
+        "license": "CC0-1.0",
+        "tags": ["sunset", "sea"],
+        "uploaded": date(2019, 6, 2),
+    }
+    assert list(source) == ["site", "url", "author", "license", "tags", "uploaded"]
+    assert hand_source({"url": "https://www.example.org/a"})["site"] == "example.org"  # type: ignore[index]
+    assert hand_source({"site": "mine", "url": "https://x.org/"})["site"] == "mine"  # type: ignore[index]
+    assert hand_source({"title": ""}) is None
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        ({"url": "commons.wikimedia.org/x"}, "not an http"),
+        ({"purity": "spicy"}, "not one of"),
+        ({"tags": "a,b"}, "not a list"),
+        ({"uploaded": "June"}, "not an ISO 8601"),
+        ({"author": 5}, "author: not a string"),
+    ],
+)
+def test_hand_source_refuses(fields: dict[str, object], message: str) -> None:
+    with pytest.raises(AddError, match=message):
+        hand_source(fields)
+
+
+def test_additions_from_json(tmp_path: Path) -> None:
+    path = tmp_path / "seeds" / "pictures.json"
+    path.parent.mkdir()
+    path.write_text(
+        '[{"file": "a.jpg", "name": "a", "license": "CC0-1.0"},'
+        ' {"file": "/abs/b.png", "nsfw": true}]'
+    )
+    first, second = additions_from_json(path)
+    assert (first.file, first.name, first.nsfw) == (path.parent / "a.jpg", "a", False)
+    assert first.fields == {"license": "CC0-1.0"}
+    assert (second.file, second.nsfw, second.fields) == (Path("/abs/b.png"), True, {})
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("{", "not JSON"),
+        ('{"file": "a.jpg"}', "not a list"),
+        ('[{"name": "a"}]', "picture 1: no file"),
+        (
+            '[{"file": "a.jpg"}, {"file": "b.jpg", "licence": "x"}]',
+            "picture 2: unknown keys licence",
+        ),
+        ('[{"file": "a.jpg", "purity": "x"}]', "picture 1: purity"),
+    ],
+)
+def test_additions_from_json_refuses(tmp_path: Path, text: str, message: str) -> None:
+    path = tmp_path / "pictures.json"
+    path.write_text(text)
+    with pytest.raises(AddError, match=message):
+        additions_from_json(path)
+
+
+def test_a_non_sfw_purity_goes_to_the_nsfw_root(
+    config: Config, save_image: SaveImage, tmp_path: Path
+) -> None:
+    image = save_image(tmp_path / "a.png")
+    placement = place(config, image, name=None, nsfw=False, purity="sketchy")
+    assert placement.directory == config.nsfw_root / "a"
+    with pytest.raises(AddError, match="--nsfw with purity sfw"):
+        place(config, image, name=None, nsfw=True, purity="sfw")
+    inside = save_image(config.library_roots[0] / "b.png")
+    with pytest.raises(AddError, match="to add it as non-sfw"):
+        place(config, inside, name=None, nsfw=False, purity="nsfw")
