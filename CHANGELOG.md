@@ -6,6 +6,11 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Built-in `libadwaita` template (`libadwaita.css`): libadwaita's named colours from the
+  palette's roles and ramp, one file for `gtk-4.0/gtk.css` and adw-gtk3's `gtk-3.0/gtk.css`.
+
 ### Fixed
 
 - Contrast adjusting moves a role with the colour it was derived from: a moved `base0B` used to
