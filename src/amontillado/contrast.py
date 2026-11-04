@@ -158,15 +158,16 @@ def _nearest_passing(
 
 
 def _set(variant: Variant, name: str, colour: str) -> Variant:
+    """`variant` with `name` set to `colour`, and every role that was the same colour with it:
+    a role derived from a colour (`success` from `base0B`, `border` from `accent`) stays it."""
     base24, roles = dict(variant.base24), dict(variant.roles)
-    moved = [name]
-    if name in roles:
-        if name == "accent" and roles["border"] == roles["accent"]:
-            roles["border"] = colour
-            moved.append("border")
-        roles[name] = colour
-    else:
-        base24[name] = colour
+    old = _colour(variant, name)
+    moved = [name, *(role for role, value in roles.items() if role != name and value == old)]
+    for key in moved:
+        if key in roles:
+            roles[key] = colour
+        else:
+            base24[key] = colour
     adjusted = (*variant.adjusted, *(key for key in moved if key not in variant.adjusted))
     return dataclasses.replace(variant, base24=base24, roles=roles, adjusted=adjusted)
 

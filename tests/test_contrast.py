@@ -63,7 +63,7 @@ def test_foreground_moves_by_the_smallest_step() -> None:
     before = _variant(base03="#303040")
     after, left = adjust(before, "dark")
     assert left == []
-    assert after.adjusted == ("base03",)
+    assert after.adjusted == ("base03", "border_inactive")
     assert 3.0 <= _ratio(after, "base03", "base00") < 3.1
     assert hex_to_oklch(after.base24["base03"])[0] > hex_to_oklch(before.base24["base03"])[0]
     assert hue_distance(hex_to_oklch(after.base24["base03"])[2], hex_to_oklch("#303040")[2]) < 5
@@ -74,7 +74,7 @@ def test_one_foreground_on_two_backgrounds() -> None:
     # base12, derived from the dark base08, is too dark as well.
     after, left = adjust(_variant(base08="#802020"), "dark")
     assert left == []
-    assert after.adjusted == ("base08", "base12")
+    assert after.adjusted == ("base08", "error", "base12")
     assert _ratio(after, "base08", "base01") >= 4.5
 
 
@@ -85,6 +85,21 @@ def test_border_that_is_the_accent_moves_the_accent() -> None:
     assert after.roles["accent"] == after.roles["border"] != "#303050"
     assert {"accent", "border"} <= set(after.adjusted)
     assert _ratio(after, "border", "base00") >= 3.0
+
+
+def test_roles_derived_from_a_moved_colour_move_with_it() -> None:
+    # success is derived from base0B: left behind, it would keep the failing colour.
+    after, left = adjust(_variant(base0B="#205020"), "dark")
+    assert left == []
+    assert after.roles["success"] == after.base24["base0B"] != "#205020"
+    assert after.adjusted[:2] == ("base0B", "success")
+    assert _ratio(after, "success", "base00") >= 4.5
+
+
+def test_a_role_set_apart_stays() -> None:
+    after, _ = adjust(_variant({"success": "#40c040"}, base0B="#205020"), "dark")
+    assert after.roles["success"] == "#40c040"
+    assert "success" not in after.adjusted
 
 
 def test_border_set_apart_moves_alone() -> None:
@@ -141,7 +156,7 @@ def test_modes(caplog: pytest.LogCaptureFixture) -> None:
     assert apply_contrast(palette, "report") == palette
     assert "dark: base03 on base00" in caplog.text
     adjusted = apply_contrast(palette, "adjust")
-    assert adjusted.variants["dark"].adjusted == ("base03",)
+    assert adjusted.variants["dark"].adjusted == ("base03", "border_inactive")
     assert check(adjusted.variants["dark"]) == []
 
 
@@ -153,4 +168,4 @@ def test_unfixable_pairs_warn_after_adjusting(caplog: pytest.LogCaptureFixture) 
 def test_earlier_adjustments_are_kept() -> None:
     variant = dataclasses.replace(_variant(base03="#202020"), adjusted=("base05",))
     after, _ = adjust(variant, "dark")
-    assert after.adjusted == ("base05", "base03")
+    assert after.adjusted == ("base05", "base03", "border_inactive")
