@@ -10,7 +10,7 @@
 # not redistributed by amontillado (all three upstreams are MIT).
 version: 1
 repositories:
-  tinted-theming/tinted-terminal: {commit: bb860c5c71c2ac6fb833cde24f592ecbae7ba629}
+  tinted-theming/tinted-terminal: {commit: cd1785404c94d2d812d85da51010639e2fc86ca9}
   tinted-theming/base16-rofi: {commit: b5f959e13139bff25702105ff09df9de7c9588de}
   tinted-theming/base16-dunst: {commit: 89d637a227dbf249e3e351afe02ad1417ed32892}
   tinted-theming/base16-waybar: {commit: 28c1aafe52498bcd9ac74e232a8f5afb1dcbc0b5}

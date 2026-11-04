@@ -24,6 +24,10 @@ not too busy behind it. amontillado aims to make those properties something you 
   any wallpaper setter, picker or timer can use the result.
 - **Build test sets**: one image for each visual extreme, for exercising palette generators and
   theme templates against the images that break them.
+- **Theme the desktop** from a picture: make a palette (with matugen or wallust, both
+  optional), check its contrast and fix what fails, render it into each app's file
+  (amontillado's own templates, or tinted-theming, matugen-themes and pywal16 ones, pinned),
+  and swap them all in at once, with each app's reload command.
 
 Later, the same measurements are meant to drive palette-aware selection: grouping images whose
 colours go together, so that several monitors show a coherent set. See
@@ -31,8 +35,9 @@ colours go together, so that several monitors show a coherent set. See
 
 ## Status
 
-Pre-alpha; v0.1.0 is the first release. Measuring, the library, the index, queries, the
-Wallhaven fetcher and test sets work, with class thresholds calibrated on a Wallhaven sample.
+Pre-alpha. v0.1.0 brought measuring, the library, the index, queries, the Wallhaven fetcher
+and test sets, with class thresholds calibrated on a Wallhaven sample; v0.2.0 adds the theme
+engine, interactive crops and search over the index ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
@@ -40,7 +45,7 @@ Wallhaven fetcher and test sets work, with class thresholds calibrated on a Wall
 Pin a tag:
 
 ```sh
-pipx install git+https://github.com/antimike/amontillado@v0.1.0
+pipx install git+https://github.com/antimike/amontillado@v0.2.0
 ```
 
 From a checkout, for development: `just install-dev` (an editable pipx install), or
@@ -59,6 +64,13 @@ amo list --dark --muted --random 1         # a path, for a wallpaper setter
 amo shown "$(amo list --dark --random 1)"  # count a showing in the usage history
 amo list --dark --format rofi | rofi -dmenu -show-icons   # pick one, with thumbnails
 amo measure some.png                       # metrics and classes of any image, as YAML
+amo list --tag night --where "shown_count = 0"   # search provenance and the whole record
+amo crop forest 21:9 --interactive         # place the crop by hand
+
+amo config init                            # a commented config: every key, its meaning
+amo palette forest                         # a picture's palette, both variants, as YAML
+amo theme sync                             # fetch the pinned templates the config uses
+amo theme apply forest                     # theme every configured app from it, reload them
 ```
 
 `amo COMMAND --help` documents every option. The class thresholds (what counts as dark, busy,

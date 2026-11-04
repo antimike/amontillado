@@ -1,10 +1,11 @@
 # Design
 
-Status: agreed for v0.1 (2026-10-27); the library, index, query commands and the fetcher are
-implemented, test sets included; class thresholds calibrated (2026-10-28). v0.2's theme engine is
-agreed (2026-10-30) and being built: the palette model, `amo palette --from-scheme` and
-`amo palette PICTURE` (matugen, named hues calibrated) are implemented, with contrast checks,
-the `theme:` config block and the mustache, pywal and matugen formats; "Theme engine (v0.2)".
+Status: v0.1 (2026-10-28): the library, index, query commands and the fetcher, test sets
+included, class thresholds calibrated. v0.2 (2026-11-03): the theme engine as agreed
+(2026-10-30, "Theme engine (v0.2)"), built: palettes from pictures (matugen and wallust, named
+hues calibrated), presets and tinted-theming schemes, contrast checks, the mustache, pywal and
+matugen formats, the registry and `amo theme sync`, apply with profile swaps; also interactive
+crops, `amo list` search over the index, and the commented config template.
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -1174,11 +1175,12 @@ Agreed with MH, 2026-10-30:
 
 ## Roadmap
 
-1. v0.1: the CLI above, calibrated thresholds, tests, CI, a tagged release.
+1. v0.1 (released 2026-10-28): the CLI above, calibrated thresholds, tests, CI, a tagged
+   release.
 2. Palette-aware grouping: features per image, clusters of compatible images, a coherent set
    for several monitors, the palette taken from the primary monitor's image.
-3. v0.2, the theme engine (epic `amo-aqp`): palette files, generator adapters, per-app
-   templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
+3. v0.2, the theme engine (epic `amo-aqp`; released 2026-11-03): palette files, generator
+   adapters, per-app templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
    from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,
    pywal), without running tinty: [research/tinted-theming.md](research/tinted-theming.md).
    Design agreed 2026-10-30: "Theme engine (v0.2)".
