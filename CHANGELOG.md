@@ -6,6 +6,11 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Contrast adjusting moves a role with the colour it was derived from: a moved `base0B` used to
+  leave `success` (and `base08` `error`, `base03` `border_inactive`, ...) at the failing colour.
+
 ## [0.2.0] - 2026-11-03
 
 The theme engine: a palette from a picture, a preset or a tinted-theming scheme, checked for

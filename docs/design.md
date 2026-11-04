@@ -677,8 +677,9 @@ foreground, so moving it to fix one pair changes all the others. The accent is t
 link to the picture, so it moves last and as little as possible.
 
 After each move every pair is checked again, so a colour moved for one pair is seen by the
-next. A `border` that is the accent moves with it; one a palette file sets apart is a
-foreground like any other. A pair no allowed move fixes (body text at 7 on a background of
+next. A role that is the moved colour moves with it (amo-z9z): `border` with the accent,
+`success` with `base0B`, `border_inactive` with `base03`, and so on, so a derived role keeps
+the colour that passed; a role a palette file sets apart is a foreground like any other. A pair no allowed move fixes (body text at 7 on a background of
 middle lightness, which neither black nor white reaches) stays as it is, with a warning. `--no-adjust` turns `adjust` into `report`; it does not turn checking back on under
 `off`. `amo palette --check FILE` prints the accent metrics (below) and each failing pair
 (`dark: base03 on base00: 2.52, needs 3`) on stdout and exits non-zero if there are any; it
