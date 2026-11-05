@@ -15,6 +15,7 @@ just lint-lua           # stylua check of docs/examples/nvim (needs stylua on PA
 just fmt                # format and apply safe fixes
 just install-dev        # editable pipx install of `amontillado` / `amo`
 just libadwaita-live-test  # the libadwaita template in real GTK4 apps (by eye; --help)
+just libadwaita-live-test --screenshot DIR  # the same, captured (Hyprland only; see --help)
 ```
 
 ## Coding standards
