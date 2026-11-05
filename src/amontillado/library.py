@@ -664,13 +664,8 @@ def crop_picture(
     if path is None:
         raise CropError(f"{directory}: not a record")
     record = read_record(path)
-    present = {name for name in record.files if (directory / name).is_file()}
-    unlisted = [
-        file
-        for file in directory.iterdir()
-        if file.suffix.lower() in IMAGE_SUFFIXES and file.name not in record.files
-    ]
-    if unlisted or any(not record.files[name].complete for name in present):
+    present = present_files(directory, record)
+    if needs_healing(directory, record, present):
         raise CropError(f"{directory}: needs healing; run `amo index` first")
     originals = [name for name in present if record.files[name].derived_from is None]
     default = record.default(present)
@@ -703,7 +698,7 @@ def crop_picture(
             raise CropCancelled(f"{directory / source}: cancelled; nothing written")
         box = chosen
     if dry_run:
-        return _entry(config, directory, root, record, present), name
+        return record_entry(config, directory, root, record, present), name
     target = directory / name
     write_crop(directory / source, target, box)
     try:
@@ -719,7 +714,7 @@ def crop_picture(
         raise
     record = dataclasses.replace(record, files={**record.files, name: crop})
     write_record(path, record)
-    return _entry(config, directory, root, record, present | {name}), name
+    return record_entry(config, directory, root, record, present | {name}), name
 
 
 def _size(entry: FileEntry) -> tuple[int, int]:
@@ -727,7 +722,26 @@ def _size(entry: FileEntry) -> tuple[int, int]:
     return entry.width, entry.height
 
 
-def _entry(config: Config, directory: Path, root: Path, record: Record, present: set[str]) -> Entry:
+def present_files(directory: Path, record: Record) -> set[str]:
+    """The files `record` lists that are in `directory`."""
+    return {name for name in record.files if (directory / name).is_file()}
+
+
+def needs_healing(directory: Path, record: Record, present: set[str]) -> bool:
+    """Whether `amo index` has work to do on the record first: an image it does not list, or
+    a present file not yet hashed and measured."""
+    unlisted = [
+        file
+        for file in directory.iterdir()
+        if file.suffix.lower() in IMAGE_SUFFIXES and file.name not in record.files
+    ]
+    return bool(unlisted) or any(not record.files[name].complete for name in present)
+
+
+def record_entry(
+    config: Config, directory: Path, root: Path, record: Record, present: set[str]
+) -> Entry:
+    """`record`, in `directory` under `root`, as the index takes it."""
     default = record.default(present)
     assert default is not None
     nsfw = directory.resolve().is_relative_to(config.nsfw_root)
