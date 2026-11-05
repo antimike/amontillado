@@ -26,6 +26,7 @@ sources:
     hyprlock: {output: hyprlock.conf, complete: false, description: hyprlang $variables of rrggbb}
     sway: {output: sway, complete: false, description: set $variable per colour; include from the config}
     dunst: {output: dunst.conf, complete: true, description: 'a dunstrc.d drop-in: the urgency colours'}
+    libadwaita: {output: libadwaita.css, complete: true, description: "libadwaita's named colours; gtk.css for GTK4 and GTK3 (adw-gtk3)"}
     nvim: {output: palette.lua, complete: false, description: 'a Lua table, for a lush spec'}
     shell: {output: colors.sh, complete: false, description: export AMO_BASE00=... ; source from a shell}
     json: {output: palette.json, complete: false, description: the palette as JSON}

@@ -871,7 +871,8 @@ renders `require("tinted-nvim").load("base24-<slug>")`, which loads only a schem
 bundles; the plugin can instead take amontillado's palette as a custom scheme, `setup({ schemes
 = { ["base24-amo"] = dofile(".../palette.lua") } })`, needing no template), and
 base16-gtk-flatcolor (GTK 2 and 3 legacy colour names for the FlatColor theme, which its README
-has the user clone and patch by hand to import them; nothing for libadwaita).
+has the user clone and patch by hand to import them; nothing for libadwaita: the built-in
+`libadwaita` covers it).
 
 **Built-in templates** (variables-only, every role included, initial set from the chezmoi plan's
 app table): `kitty` (`color0`-`color15`, background, foreground, cursor, selection; an `include`
@@ -879,8 +880,28 @@ file), `gtk` (`@define-color` for every key: imported by waybar, swaync and wlog
 GTK3 `gtk.css` and libadwaita's `gtk-4.0/gtk.css`), `rofi` (a `* { ... }` block of variables),
 `hyprland` (a Lua table, D62), `hyprlock` (hyprlang `$variables`), `sway` (`set $variable`),
 `dunst` (a `dunstrc.d` drop-in with the urgency colours: dunst has no variables, so this one is a
-small complete theme), `nvim` (`palette.lua`), `shell` (`export AMO_BASE00=...`), and `json` (the
-palette as JSON, for anything else). `amo theme templates` lists them with their variables.
+small complete theme), `libadwaita` (below), `nvim` (`palette.lua`), `shell` (`export
+AMO_BASE00=...`), and `json` (the palette as JSON, for anything else). `amo theme templates`
+lists them with their variables.
+
+`libadwaita` (amo-aqp.21) is complete like `dunst`, since libadwaita's colour names are a fixed
+API: it defines libadwaita's named colours (checked against libadwaita 1.9.1's own stylesheet)
+from the roles and ramp, so one file serves as `gtk-4.0/gtk.css` and, under adw-gtk3,
+`gtk-3.0/gtk.css`. `accent_bg_color`/`accent_fg_color` are `accent`/`on_accent`; destructive and
+error are `error`, success `success`, warning `warning`, each on `base00` (a contrast pair when
+the role is derived from `base08`, `base0B`, `base0A`); window and the secondary sidebar are
+`base00`, view `base10` (darker than the window in dark, lighter in light, as in Adwaita);
+headerbar, sidebar, card, dialog, popover and thumbnail `base01`; every foreground `base05`;
+borders `base02`; shadows black at Adwaita's strengths per variant. Only `@define-color`: GTK3
+fails on a `:root` block of CSS variables, and libadwaita 1.9 still reads its variables from
+these names (`--accent-bg-color: @accent_bg_color`). Not the standalone `accent_color`,
+`destructive_color`, `success_color`, `warning_color`, `error_color`: libadwaita ≥ 1.6 derives
+those from the `*_bg_color` in OKLab by its own colour scheme (lightness at most 0.5 for light,
+at least 0.85 for dark), so the desktop's `color-scheme` (`prefer-dark` for a dark variant)
+must match the variant applied, or a dark palette gets dark accent text (machine glue, not
+amontillado's). Not defined: the GNOME palette (`blue_1` … `dark_5`, fixed hues apps name on
+purpose), the names libadwaita derives itself (`theme_*`, `insensitive_*`), and the
+variables-only `--active-toggle-*` and `--overview-*`.
 Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
 `_` (rofi 2.0): there roles are hyphenated (`on-accent`). The hyprland and hyprlock colours are
 `rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);
@@ -888,8 +909,8 @@ the others are `#rrggbb`. kitty's file sets `color0`-`color21` (the ANSI table u
 views", then base16-shell's extras `base09`, `base0F`, `base01`, `base02`, `base04`, `base06`),
 the tab, border, selection and URL colours. Headers name the palette by its slug, never its
 name, so no quote in a name can break a Lua, shell or JSON file. Default output files: `kitty.conf`,
-`colors.css`, `colors.rasi`, `hyprland.lua`, `hyprlock.conf`, `sway`, `dunst.conf`, `palette.lua`,
-`colors.sh`, `palette.json`.
+`colors.css`, `colors.rasi`, `hyprland.lua`, `hyprlock.conf`, `sway`, `dunst.conf`,
+`libadwaita.css`, `palette.lua`, `colors.sh`, `palette.json`.
 
 ### Formats and views
 

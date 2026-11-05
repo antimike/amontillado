@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from amontillado.colour import contrast_ratio
+from amontillado.contrast import adjust
 from amontillado.palette import BASE24_KEYS, ROLES, Palette, complete_variant
 from amontillado.registry import FETCHED, RegistryError, find, parse, registry, text, variables
 from amontillado.render import mustache_view, render_mustache
@@ -33,7 +35,7 @@ def test_every_template_renders(name: str, variant: str) -> None:
     assert variant in output
 
 
-@pytest.mark.parametrize("name", [n for n, t in BUILTINS.items() if n not in ("kitty", "dunst")])
+@pytest.mark.parametrize("name", [n for n in BUILTINS if n not in ("kitty", "dunst", "libadwaita")])
 def test_variables_only_templates_hold_every_key_and_role(name: str) -> None:
     used = set(variables(text(BUILTINS[name])))
     assert BUILTINS[name].complete is False
@@ -60,6 +62,65 @@ def test_rofi_names_have_no_underscore() -> None:
     names = re.findall(r"^\s+([^:\s]+):", _render("rofi"), re.MULTILINE)
     assert "on-accent" in names
     assert not [name for name in names if "_" in name]
+
+
+# libadwaita 1.9's @define-color names (gtk.css in the library's resources), less the GNOME
+# palette (blue_1 ... dark_5) and what libadwaita derives from these (theme_*, insensitive_*).
+LIBADWAITA_NAMES = {
+    *(
+        f"{name}_{part}"
+        for name in ("accent", "destructive", "success", "warning", "error")
+        for part in ("bg_color", "fg_color", "color")
+    ),
+    *(f"{name}_{part}" for name in ("window", "view") for part in ("bg_color", "fg_color")),
+    *(
+        f"{name}_{part}"
+        for name in ("headerbar", "sidebar", "secondary_sidebar")
+        for part in ("bg_color", "fg_color", "border_color", "backdrop_color", "shade_color")
+    ),
+    "headerbar_darker_shade_color",
+    *(
+        f"{name}_{part}"
+        for name in ("card", "dialog", "popover", "thumbnail")
+        for part in ("bg_color", "fg_color")
+    ),
+    "card_shade_color",
+    "popover_shade_color",
+    "shade_color",
+    "scrollbar_outline_color",
+    "borders",
+}
+# gruvbox dark and light, hard (tinted-theming/schemes, MIT).
+GRUVBOX = {
+    "dark": "1d2021 3c3836 504945 665c54 bdae93 d5c4a1 ebdbb2 fbf1c7"
+    " fb4934 fe8019 fabd2f b8bb26 8ec07c 83a598 d3869b d65d0e",
+    "light": "f9f5d7 ebdbb2 d5c4a1 bdae93 665c54 504945 3c3836 282828"
+    " 9d0006 af3a03 b57614 79740e 427b58 076678 8f3f71 d65d0e",
+}
+
+
+def _define_colours(output: str) -> dict[str, str]:
+    return dict(re.findall(r"^@define-color (\w+) (.+);$", output, re.MULTILINE))
+
+
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_libadwaita_defines_every_named_colour(variant: str) -> None:
+    assert set(_define_colours(_render("libadwaita", variant))) == LIBADWAITA_NAMES
+
+
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_libadwaita_foregrounds_contrast_with_their_backgrounds(variant: str) -> None:
+    colours = {f"base{i:02X}": f"#{c}" for i, c in enumerate(GRUVBOX[variant].split())}
+    adjusted, _ = adjust(complete_variant(variant, colours), variant)
+    palette = Palette("gruvbox", {variant: adjusted}, {})
+    names = _define_colours(
+        render_mustache(text(find("builtin", "libadwaita")), mustache_view(palette, variant))
+    )
+    pairs = [(name, name.replace("_fg_", "_bg_")) for name in names if "_fg_" in name]
+    assert len(pairs) == 14
+    for foreground, background in pairs:
+        ratio = contrast_ratio(names[foreground], names[background])
+        assert ratio >= 4.5, (foreground, background, ratio)
 
 
 def test_json_is_the_palette() -> None:

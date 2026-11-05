@@ -35,6 +35,10 @@ fmt:
 calibrate *args:
     uv run tools/calibrate.py {{args}}
 
+# Open GTK4 apps on the libadwaita template, rendered from this checkout (`--help` for usage).
+libadwaita-live-test *args:
+    tools/libadwaita-live-test.sh {{args}}
+
 # Move the template registry's pins to each repository's head (tools/registry.py; needs the network).
 registry *args:
     uv run tools/registry.py {{args}}
