@@ -318,6 +318,27 @@ def _replace_link(link: Path, target: Path) -> None:
     os.replace(temporary, link)
 
 
+def repoint_wallpapers(theme: ThemeConfig, old: Path, new: Path) -> list[str]:
+    """Point every profile's wallpaper link that is inside the directory `old` at the same
+    file inside `new` (a record directory that moved); returns those profiles. The link holds
+    an absolute path, so a move would otherwise leave it dangling for the next re-render and
+    the wallpaper hook."""
+    if not theme.cache.is_dir():
+        return []
+    moved = []
+    for profile in sorted(theme.cache.iterdir()):
+        if profile.name == CURRENT or profile.name.startswith(".") or not profile.is_symlink():
+            continue
+        link = profile / WALLPAPER_LINK
+        if not link.is_symlink():
+            continue
+        target = Path(os.readlink(link))
+        if target.is_relative_to(old):
+            _replace_link(link, new / target.relative_to(old))
+            moved.append(profile.name)
+    return moved
+
+
 def reload_commands(config: Config, plan: Plan, directory: Path) -> list[tuple[str, ...]]:
     """The reload commands to run after `plan`, placeholders filled: each rendered app's, then
     the wallpaper hook. `directory` holds the written plan (the wallpaper link); `{dir}` is
