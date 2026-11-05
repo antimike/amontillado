@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import logging
+import os
 import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
@@ -361,6 +363,53 @@ def test_crop_then_list(
     assert _list(capsys, "--aspect", "1:1", "--hue", "red") == {"red-1x1"}
     with pytest.raises(SystemExit, match="1:1 already; --force"):
         main(["crop", str(indexed["red"]), "1:1"])
+
+
+def _old_fetched(library: Path, wallhaven_id: str, tags: list[str]) -> Path:
+    """A record fetched before names existed: no name, in wallhaven-<id>, its tags kept."""
+    directory = library / f"wallhaven-{wallhaven_id}"
+    _record(directory, (0, 0, 255), f"wallhaven-{wallhaven_id}.png")
+    source = {"site": "wallhaven", "id": wallhaven_id, "category": "general", "tags": tags}
+    (directory / "info.yaml").write_text(yaml.safe_dump({"source": source}))
+    return directory
+
+
+def test_name_from_tags(
+    library: Path, home: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    old = _old_fetched(library, "x8ye3z", ["cyberpunk", "digital art", "interior"])
+    _old_fetched(library, "k92q1d", ["artwork"])
+    _record(library / "hand", (0, 255, 0), "hand.png")
+    main(["index"])
+    profile = home / ".cache/theme/.profiles/default-1"
+    profile.mkdir(parents=True)
+    (home / ".cache/theme/default").symlink_to(profile)
+    (profile / "wallpaper").symlink_to(old / "wallhaven-x8ye3z.png")
+    capsys.readouterr()
+    caplog.set_level(logging.INFO)
+    main(["name", "--from-tags", "--dry-run"])
+    assert capsys.readouterr().out == ""
+    assert f"would name {old} cyberpunk-interior-x8ye3z" in caplog.text
+    assert old.is_dir()
+    main(["name", "--from-tags"])
+    named = [library / "general-k92q1d", library / "cyberpunk-interior-x8ye3z"]
+    assert capsys.readouterr().out.split() == [str(path) for path in named]
+    assert not old.exists()
+    assert os.readlink(profile / "wallpaper") == str(named[1] / "wallhaven-x8ye3z.png")
+    # The index knows the names at once: no `amo index` needed.
+    main(["crop", "cyberpunk-interior-x8ye3z", "1:1"])
+    assert capsys.readouterr().out == f"{named[1] / 'wallhaven-x8ye3z-1x1.png'}\n"
+    caplog.clear()
+    main(["name", "--from-tags"])
+    assert "no unnamed record fetched from Wallhaven" in caplog.text
+    with pytest.raises(SystemExit, match="1 of 1 record could not be named"):
+        main(["name", "--from-tags", str(library / "hand")])
+    assert "not fetched from Wallhaven" in caplog.text
+
+
+def test_name_needs_from_tags(library: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(["name"])
 
 
 def test_crop_unknown_picture(indexed: dict[str, Path]) -> None:

@@ -409,7 +409,12 @@ The suffix is the Wallhaven id, not a counter (decided 2026-10-28): a counter co
 machine's index, so two machines would assign the same name and a sync would make a
 duplicate-name conflict. A name already taken (by a hand-named record) leaves the record
 unnamed, in `wallhaven-<id>`, with a warning. Records fetched before names existed keep theirs
-(none); naming them is a separate command (`amo-uc5`).
+(none) until `amo name --from-tags` names them from the tags their info.yaml keeps (under
+"CLI"). Those tags are names only, without Wallhaven's tag categories, so the category rule
+cannot apply there: an artist's or a technique's tag may make it into the name;
+`NAME_SKIP_TAGS` still applies, and the wallpaper's category stands in when no tag is usable.
+Re-asking Wallhaven (`/w/<id>`) for the categories is the alternative, not taken (amo-uc5): it
+would make naming need the network and be paced.
 
 **Revisit:** the info-file scan in step 2 parses every info file on each `amo fetch`
 (decided 2026-10-28). If that makes fetching noticeably slow on a large library, drop it and
@@ -451,6 +456,7 @@ amo shown PICTURE... [--dry-run]     record that pictures were shown (for the us
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
 amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
 amo crop PICTURE W:H [--at F] [--interactive] [--force] [--dry-run]   crop a record's original; prints it
+amo name --from-tags [PICTURE...] [--dry-run]   name fetched records from their kept tags
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read,
@@ -512,6 +518,15 @@ recorded.
 directory that already exists, a `--name` that is invalid or taken, and, without `--force`, a
 file whose content the index already holds. It measures before it moves anything, and adds
 the new record to the index itself.
+
+`amo name --from-tags` (amo-uc5) names records fetched from Wallhaven without a name (see
+"Names of fetched records"): the PICTUREs given, or every indexed one without a name. Never
+`amo index`'s job, since a name is authored, not derived. It refuses (per record; the others are
+still named) one named already, one not fetched from Wallhaven, one that needs `amo index`
+first, a name already taken (as `amo add` does) and a directory for the name that exists. It
+writes the name, then moves the directory to it (restoring info.yaml if the move fails), and
+updates the index and any theme profile's wallpaper link into the directory, so neither needs
+a re-run. Prints each new directory; `--dry-run` logs the names instead.
 
 FILTERS are the class flags above, and `--hue`. WALLHAVEN: `--tags QUERY` (Wallhaven's `q`),
 `--purity LIST` (default sfw), `--category LIST` (general, anime, people; default all),

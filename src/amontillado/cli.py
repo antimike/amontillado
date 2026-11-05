@@ -54,7 +54,7 @@ from amontillado.config import (
 from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check
 from amontillado.cropper import chooser
-from amontillado.fetch import TEST_SET, fetch
+from amontillado.fetch import SITE, TEST_SET, NamingError, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.index import (
@@ -74,6 +74,7 @@ from amontillado.index import (
     record_location,
     record_name,
     record_shown,
+    unnamed,
 )
 from amontillado.index import (
     add as add_to_index,
@@ -116,6 +117,7 @@ from amontillado.theme import (
     current_profile,
     find_palette,
     reload_commands,
+    repoint_wallpapers,
     run_reloads,
 )
 from amontillado.theme import apply as apply_theme
@@ -431,6 +433,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Log what would be cropped; change nothing."
     )
     crop.set_defaults(func=cmd_crop)
+
+    name = commands.add_parser(
+        "name",
+        help="Name records fetched before names existed.",
+        description="Give a record fetched from Wallhaven without a name (fetched before amo "
+        "0.2, or when its name was taken) the name amo fetch gives today, made from the tags "
+        "its info.yaml keeps, and move its directory to the name (wallhaven-x8ye3z becomes "
+        "cyberpunk-interior-technology-x8ye3z). The kept tags lack Wallhaven's tag categories, "
+        "so a tag amo fetch would pass over as an artist's or a technique's may be used. "
+        "Updates the index, and any theme profile's wallpaper link into the directory. A name "
+        "already taken is refused, as amo add does. Prints each record's new directory.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(name, argparse.SUPPRESS)
+    name.add_argument(
+        "--from-tags",
+        action="store_true",
+        required=True,
+        help="Name from the stored Wallhaven tags (the only way amo name names, so far).",
+    )
+    name.add_argument(
+        "pictures",
+        nargs="*",
+        metavar="PICTURE",
+        help="A file, record directory, name or id (or prefix). Default: every indexed record "
+        "fetched from Wallhaven that has no name.",
+    )
+    name.add_argument(
+        "--dry-run", action="store_true", help="Log the name each record would get; change nothing."
+    )
+    name.set_defaults(func=cmd_name)
 
     fetch = commands.add_parser(
         "fetch",
@@ -1398,6 +1431,50 @@ def cmd_crop(args: argparse.Namespace) -> None:
     except (sqlite3.Error, IndexDatabaseError) as exc:
         _index_error(config, exc)
     print(directory / name)
+
+
+def cmd_name(args: argparse.Namespace) -> None:
+    config = _load_config()
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    failed = 0
+    try:
+        with closing(connect(config.index_path)) as conn:
+            try:
+                ids = [find_record(conn, picture) for picture in args.pictures]
+            except LookupFailed as exc:
+                sys.exit(f"amontillado: {exc}")
+            ids = ids or unnamed(conn, SITE)
+            if not ids:
+                logger.info("no unnamed record fetched from Wallhaven")
+                return
+            taken = names(conn)
+            for record_id in ids:
+                directory, root = record_location(conn, record_id)
+                try:
+                    entry, given = name_from_tags(
+                        config, directory, root, taken, dry_run=args.dry_run
+                    )
+                except (NamingError, RecordError) as exc:
+                    logger.error("%s", exc)
+                    failed += 1
+                    continue
+                except OSError as exc:
+                    logger.error("%s: %s", directory, exc)
+                    failed += 1
+                    continue
+                taken.add(given)
+                if args.dry_run:
+                    logger.info("would name %s %s", directory, given)
+                    continue
+                replace_in_index(conn, entry)
+                for profile in repoint_wallpapers(config.theme, directory, entry.directory):
+                    logger.info("profile %s: wallpaper link follows to %s", profile, given)
+                print(entry.directory)
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    if failed:
+        sys.exit(f"amontillado: {failed} of {_count(len(ids), 'record')} could not be named")
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:

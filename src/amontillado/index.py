@@ -327,6 +327,13 @@ def names(conn: sqlite3.Connection) -> set[str]:
     return {name for (name,) in conn.execute("SELECT name FROM records WHERE name IS NOT NULL")}
 
 
+def unnamed(conn: sqlite3.Connection, site: str) -> list[str]:
+    """The ids of the indexed records fetched from `site` that answer to no name, in
+    directory order."""
+    query = "SELECT id FROM records WHERE source_site = ? AND name IS NULL ORDER BY directory"
+    return [record_id for (record_id,) in conn.execute(query, (site,))]
+
+
 def source_ids(conn: sqlite3.Connection, site: str) -> set[str]:
     """The ids, at `site`, of the indexed records fetched from it."""
     query = "SELECT source_id FROM records WHERE source_site = ? AND source_id IS NOT NULL"
