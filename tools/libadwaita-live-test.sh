@@ -32,6 +32,13 @@ Options:
   -p, --palette FILE  A palette file (`amo palette` output) with both variants. Default: gruvbox
                       hard, from tools/assets/gruvbox-{dark,light}-hard.yaml.
   -r, --render-only   Render, print the files and the checklist, launch nothing.
+  -s, --screenshot DIR
+                      Instead of waiting for you, open each scenario's pages and capture them
+                      into DIR (PNG, plus a contact sheet per scenario with ImageMagick), then
+                      close the app (tools/libadwaita_screenshots.py). Specific to MH's setup:
+                      Hyprland only; needs grim, wtype, an AT-SPI bus and the system python3
+                      with PyGObject's Atspi. It types keys into the focused window, checking
+                      before each one that it is the app's: do not switch windows while it runs.
   -k, --keep          Keep the temporary directory (printed at the start).
   -h, --help          Show this help.
 
@@ -45,6 +52,7 @@ EOF
 }
 
 palette=
+screenshots=
 render_only=false
 keep=false
 scenarios=()
@@ -52,6 +60,11 @@ while (($#)); do
     case $1 in
         -p | --palette)
             palette=$(realpath "${2:?--palette needs a file}")
+            shift 2
+            ;;
+        -s | --screenshot)
+            mkdir -p "${2:?--screenshot needs a directory}"
+            screenshots=$(realpath "$2")
             shift 2
             ;;
         -r | --render-only) render_only=true && shift ;;
@@ -133,7 +146,8 @@ describe() {
 }
 
 launch() {
-    local variant=$1 scheme=$2 app=$3
+    local scenario=$1 variant=$2 scheme=$3 app=$4
+    shift 4
     if ! command -v "$app" >/dev/null; then
         echo "  skipped: $app is not installed" >&2
         return
@@ -144,8 +158,20 @@ launch() {
         echo "  skipped: $app is already running; close it and run this scenario again" >&2
         return
     fi
-    echo "  (close the window to go on)"
-    XDG_CONFIG_HOME=$work/$variant ADW_DEBUG_COLOR_SCHEME=$scheme "$app" >/dev/null 2>&1 || true
+    if [[ -z $screenshots ]]; then
+        echo "  (close the window to go on)"
+        XDG_CONFIG_HOME=$work/$variant ADW_DEBUG_COLOR_SCHEME=$scheme "$app" >/dev/null 2>&1 || true
+        return
+    fi
+    echo "  capturing into $screenshots (do not switch windows)"
+    XDG_CONFIG_HOME=$work/$variant ADW_DEBUG_COLOR_SCHEME=$scheme "$app" >/dev/null 2>&1 &
+    local pid=$! status=0
+    # The system python3: PyGObject (Atspi) is not in the project's venv.
+    /usr/bin/env python3 -I "$repo/tools/libadwaita_screenshots.py" --app "$app" \
+        --prefix "$scenario" "$screenshots" "$@" || status=$?
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    return "$status"
 }
 
 for scenario in "${scenarios[@]}"; do
@@ -153,9 +179,9 @@ for scenario in "${scenarios[@]}"; do
     describe "$scenario"
     $render_only && continue
     case $scenario in
-        dark) launch dark prefer-dark adwaita-1-demo ;;
-        light) launch light prefer-light adwaita-1-demo ;;
-        mismatch) launch dark default adwaita-1-demo ;;
-        editor) launch dark prefer-dark gnome-text-editor ;;
+        dark) launch dark dark prefer-dark adwaita-1-demo ;;
+        light) launch light light prefer-light adwaita-1-demo ;;
+        mismatch) launch mismatch dark default adwaita-1-demo "Style Classes+Run the Demo" ;;
+        editor) launch editor dark prefer-dark gnome-text-editor ;;
     esac
 done
