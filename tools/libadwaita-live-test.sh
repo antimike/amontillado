@@ -138,7 +138,9 @@ launch() {
         echo "  skipped: $app is not installed" >&2
         return
     fi
-    if pgrep -x "$app" >/dev/null; then
+    # By argv[0], not the process name: Linux truncates that to 15 characters
+    # (gnome-text-editor is 17), so `pgrep -x` never matches it.
+    if pgrep -f "^(\S*/)?$app( |$)" >/dev/null; then
         echo "  skipped: $app is already running; close it and run this scenario again" >&2
         return
     fi
