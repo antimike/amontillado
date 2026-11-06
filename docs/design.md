@@ -5,7 +5,10 @@ included, class thresholds calibrated. v0.2 (2026-11-03): the theme engine as ag
 (2026-10-30, "Theme engine (v0.2)"), built: palettes from pictures (matugen and wallust, named
 hues calibrated), presets and tinted-theming schemes, contrast checks, the mustache, pywal and
 matugen formats, the registry and `amo theme sync`, apply with profile swaps; also interactive
-crops, `amo list` search over the index, and the commented config template.
+crops, `amo list` search over the index, and the commented config template. v0.3
+(2026-11-05): the built-in libadwaita template and the `{variant}` reload placeholder for a
+colour-scheme hook ([colour-scheme-hooks.md](colour-scheme-hooks.md)), `amo name` (also
+`--from-tags`) and `amo add-derived`.
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
