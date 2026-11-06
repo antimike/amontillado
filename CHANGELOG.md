@@ -6,6 +6,15 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Built-in `libadwaita-vars` template (`libadwaita-vars.css`), for `gtk-4.0/gtk.css` only:
+  the `libadwaita` template's named colours plus a `:root` block that sets libadwaita's
+  standalone accent, destructive, success, warning and error colours (so they no longer follow
+  the desktop's colour scheme), the active-toggle and overview colours, and GNOME's palette
+  (`--blue-1` … `--dark-5`) remapped onto the palette by hue family.
+- Mustache view: `gnome-<colour>-hex`, GNOME's palette remapped onto the palette.
+
 ## [0.3.0] - 2026-11-05
 
 GTK theming and record names: a libadwaita template, a `{variant}` placeholder for a hook

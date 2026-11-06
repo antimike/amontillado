@@ -920,7 +920,8 @@ file), `gtk` (`@define-color` for every key: imported by waybar, swaync and wlog
 GTK3 `gtk.css` and libadwaita's `gtk-4.0/gtk.css`), `rofi` (a `* { ... }` block of variables),
 `hyprland` (a Lua table, D62), `hyprlock` (hyprlang `$variables`), `sway` (`set $variable`),
 `dunst` (a `dunstrc.d` drop-in with the urgency colours: dunst has no variables, so this one is a
-small complete theme), `libadwaita` (below), `nvim` (`palette.lua`), `shell` (`export
+small complete theme), `libadwaita` and `libadwaita-vars` (below), `nvim` (`palette.lua`),
+`shell` (`export
 AMO_BASE00=...`), and `json` (the palette as JSON, for anything else). `amo theme templates`
 lists them with their variables.
 
@@ -942,7 +943,29 @@ must match the variant applied, or a dark palette gets dark accent text. amontil
 set the scheme (a global setting other apps and tools read); a reload command naming
 `{variant}` does, written by the user: [colour-scheme-hooks.md](colour-scheme-hooks.md). Not defined: the GNOME palette (`blue_1` … `dark_5`, fixed hues apps name on
 purpose), the names libadwaita derives itself (`theme_*`, `insensitive_*`), and the
-variables-only `--active-toggle-*` and `--overview-*`.
+variables-only `--active-toggle-*` and `--overview-*`: `libadwaita-vars` sets those.
+
+`libadwaita-vars` (amo-j24.2) is the same `@define-color` block followed by a `:root` block of
+libadwaita's CSS variables, so it serves `gtk-4.0/gtk.css` only (with it, `libadwaita` serves
+`gtk-3.0` alone). It **departs** from the planned `@import` of `libadwaita.css`: a
+relative `@import` resolves against the path GTK loaded, so a copied or symlinked `gtk.css`
+would look for `libadwaita.css` in `~/.config/gtk-4.0/`; the block is repeated instead, and a
+test keeps the two templates' colours equal. The `:root` block pins the standalone
+`--accent-color` (`accent`), `--destructive-color` and `--error-color` (`error`),
+`--success-color` and `--warning-color`, which libadwaita otherwise derives from the
+`*_bg_color` by the desktop's colour scheme; `.osd` widgets still derive theirs (libadwaita
+redefines them there), and the symbolic-icon palette follows the pinned ones.
+`--active-toggle-bg-color`/`-fg-color` are `selection`/`on_selection` (a contrast pair; the
+active segment of a toggle group is the selected one), `--overview-bg-color`/`-fg-color`
+`base01`/`base05`. Then GNOME's palette, `--blue-1` … `--dark-5`, which libadwaita 1.9
+defines as literals (so `@define-color` cannot reach an app naming `var(--blue-3)`), from the
+view's `gnome-*-hex` ("Formats and views"). Not set: the accent presets `--accent-blue` …
+`--accent-slate` (the system accent's choices, which the stylesheet never reads and the named
+accent overrides) and the non-colour variables (`--border-opacity`, `--window-radius`, ...).
+The colour-scheme hook stays useful: GtkSourceView styles and app assets still follow the
+scheme. Tests: every colour variable of libadwaita 1.9's `:root` blocks is defined (the accent
+presets aside), and each standalone colour reaches 4.5:1 on every libadwaita surface, the
+toggle and overview pairs 4.5:1, on gruvbox after the contrast check.
 Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
 `_` (rofi 2.0): there roles are hyphenated (`on-accent`). The hyprland and hyprlock colours are
 `rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);
@@ -951,7 +974,7 @@ views", then base16-shell's extras `base09`, `base0F`, `base01`, `base02`, `base
 the tab, border, selection and URL colours. Headers name the palette by its slug, never its
 name, so no quote in a name can break a Lua, shell or JSON file. Default output files: `kitty.conf`,
 `colors.css`, `colors.rasi`, `hyprland.lua`, `hyprlock.conf`, `sway`, `dunst.conf`,
-`libadwaita.css`, `palette.lua`, `colors.sh`, `palette.json`.
+`libadwaita.css`, `libadwaita-vars.css`, `palette.lua`, `colors.sh`, `palette.json`.
 
 ### Formats and views
 

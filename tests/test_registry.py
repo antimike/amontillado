@@ -35,7 +35,11 @@ def test_every_template_renders(name: str, variant: str) -> None:
     assert variant in output
 
 
-@pytest.mark.parametrize("name", [n for n in BUILTINS if n not in ("kitty", "dunst", "libadwaita")])
+# Templates that fill a fixed set of names rather than one variable per key and role.
+FIXED_NAME_BUILTINS = ("kitty", "dunst", "libadwaita", "libadwaita-vars")
+
+
+@pytest.mark.parametrize("name", [n for n in BUILTINS if n not in FIXED_NAME_BUILTINS])
 def test_variables_only_templates_hold_every_key_and_role(name: str) -> None:
     used = set(variables(text(BUILTINS[name])))
     assert BUILTINS[name].complete is False
@@ -121,6 +125,73 @@ def test_libadwaita_foregrounds_contrast_with_their_backgrounds(variant: str) ->
     for foreground, background in pairs:
         ratio = contrast_ratio(names[foreground], names[background])
         assert ratio >= 4.5, (foreground, background, ratio)
+
+
+# libadwaita 1.9's colour variables (the :root blocks of gtk.css in the library's resources),
+# less the accent presets (--accent-blue ... --accent-slate: the system accent's choices, which
+# the stylesheet never reads and the named accent colours override).
+LIBADWAITA_VARIABLES = {
+    *(f"--{name.replace('_', '-')}" for name in LIBADWAITA_NAMES if name != "borders"),
+    "--active-toggle-bg-color",
+    "--active-toggle-fg-color",
+    "--overview-bg-color",
+    "--overview-fg-color",
+    *(
+        f"--{family}-{step}"
+        for family in ("blue", "green", "yellow", "orange", "red", "purple", "brown")
+        for step in range(1, 6)
+    ),
+    *(f"--{grey}-{step}" for grey in ("light", "dark") for step in range(1, 6)),
+}
+
+
+def _gruvbox_render(name: str, variant: str) -> str:
+    colours = {f"base{i:02X}": f"#{c}" for i, c in enumerate(GRUVBOX[variant].split())}
+    adjusted, _ = adjust(complete_variant(variant, colours), variant)
+    palette = Palette("gruvbox", {variant: adjusted}, {})
+    return render_mustache(text(find("builtin", name)), mustache_view(palette, variant))
+
+
+def _root_variables(output: str) -> dict[str, str]:
+    (block,) = re.findall(r"^:root \{$(.*?)^\}$", output, re.MULTILINE | re.DOTALL)
+    return dict(re.findall(r"^\s+(--[\w-]+): (#[0-9a-f]{6});$", block, re.MULTILINE))
+
+
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_libadwaita_vars_holds_the_libadwaita_colours(variant: str) -> None:
+    # The same @define-color block, so gtk-3.0 and gtk-4.0 agree.
+    assert _define_colours(_render("libadwaita-vars", variant)) == _define_colours(
+        _render("libadwaita", variant)
+    )
+
+
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_libadwaita_vars_defines_every_variable(variant: str) -> None:
+    output = _render("libadwaita-vars", variant)
+    from_names = {f"--{name.replace('_', '-')}" for name in _define_colours(output)}
+    root = _root_variables(output)
+    assert len(root) == 54
+    assert LIBADWAITA_VARIABLES <= from_names | set(root)
+    # Every pinned standalone colour is its *_color name's value.
+    names = _define_colours(output)
+    for name in ("accent", "destructive", "success", "warning", "error"):
+        assert root[f"--{name}-color"] == names[f"{name}_color"]
+
+
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_libadwaita_vars_contrast(variant: str) -> None:
+    output = _gruvbox_render("libadwaita-vars", variant)
+    names, root = _define_colours(output), _root_variables(output)
+    # The standalone colours are text on libadwaita's surfaces.
+    for name in ("accent", "destructive", "success", "warning", "error"):
+        for surface in ("window", "view", "card", "dialog", "popover", "sidebar", "headerbar"):
+            ratio = contrast_ratio(root[f"--{name}-color"], names[f"{surface}_bg_color"])
+            assert ratio >= 4.5, (name, surface, ratio)
+    for name in ("active-toggle", "overview"):
+        ratio = contrast_ratio(root[f"--{name}-fg-color"], root[f"--{name}-bg-color"])
+        assert ratio >= 4.5, (name, ratio)
+    # GNOME's extremes, as apps pair them (text on --dark-5, on --light-1).
+    assert contrast_ratio(root["--light-1"], root["--dark-5"]) >= 7.0
 
 
 def test_json_is_the_palette() -> None:

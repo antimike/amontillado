@@ -234,6 +234,10 @@ APP_EXAMPLES = (
     "libadwaita:",
     '  reload: "gsettings set org.gnome.desktop.interface color-scheme prefer-{variant}"',
     '  # reload: "darkman set {variant}"',
+    "",
+    "GTK4 only: libadwaita-vars also sets that text and GNOME's palette (--blue-3 ...), for",
+    "gtk-4.0/gtk.css; libadwaita then serves gtk-3.0 (adw-gtk3) alone:",
+    "gtk4: {template: libadwaita-vars}",
 )
 
 _BY_PATH = {key.path: key for key in KEYS}
