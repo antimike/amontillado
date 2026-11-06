@@ -667,12 +667,9 @@ def crop_picture(
     present = present_files(directory, record)
     if needs_healing(directory, record, present):
         raise CropError(f"{directory}: needs healing; run `amo index` first")
-    originals = [name for name in present if record.files[name].derived_from is None]
-    default = record.default(present)
-    if default is None or not originals:
+    source = original_file(record, present)
+    if source is None:
         raise CropError(f"{directory}: no original file to crop")
-    source = default if default in originals else record.default(set(originals))
-    assert source is not None
     entry = record.files[source]
     assert entry.width is not None and entry.height is not None
     if has_aspect(entry.width, entry.height, ratio):
@@ -714,6 +711,68 @@ def crop_picture(
         raise
     record = dataclasses.replace(record, files={**record.files, name: crop})
     write_record(path, record)
+    return record_entry(config, directory, root, record, present | {name}), name
+
+
+def derive_picture(
+    config: Config,
+    directory: Path,
+    root: Path,
+    file: Path,
+    *,
+    name: str | None = None,
+    source: str | None = None,
+    dry_run: bool = False,
+) -> tuple[Entry, str]:
+    """Register `file`, made by hand from one of a record's files (an edit in any tool), as a
+    derived file of the record: measure it, move it into the record's directory as `name`
+    (default: its own name; a file already in the directory stays there, renamed if `name`
+    says so), and list it with `derived_from` (`source`, default the record's original as
+    `original_file` picks it) and no `crop`, which marks it hand-made: it cannot be made
+    again. Returns the record as it now is (under `dry_run`, as it is: nothing is written or
+    moved) and the file's name in it. Raises AddError for a file that is not an image, a name
+    the record lists or that exists, a `source` it does not list or lacks, content one of its
+    files has, and a record that needs `amo index` first."""
+    path = info_path(directory)
+    if path is None:
+        raise AddError(f"{directory}: not a record")
+    record = read_record(path)
+    if not file.is_file() or file.suffix.lower() not in IMAGE_SUFFIXES:
+        raise AddError(f"{file}: not an image file")
+    inside = file.resolve().parent == directory.resolve()
+    name = name or file.name
+    if Path(name).name != name or Path(name).suffix.lower() not in IMAGE_SUFFIXES:
+        raise AddError(f"name {name!r}: not an image file name")
+    if name in record.files:
+        raise AddError(f"{directory}: lists {name} already")
+    target = directory / name
+    if target.exists() and not (inside and name == file.name):
+        raise AddError(f"{target} exists")
+    present = present_files(directory, record)
+    if needs_healing(directory, record, present, ignore=file.name if inside else None):
+        raise AddError(f"{directory}: needs healing; run `amo index` first")
+    source = source or original_file(record, present)
+    if source is None:
+        raise AddError(f"{directory}: no original file to derive from")
+    if source not in present:
+        raise AddError(f"{directory}: no file {source} to derive from")
+    sha256 = sha256_file(file)
+    same = [other for other in sorted(present) if record.files[other].sha256 == sha256]
+    if same:
+        raise AddError(f"{file}: same content as {directory / same[0]}")
+    entry = FileEntry(sha256, *image_size(file), measure_file(file), derived_from=source)
+    if dry_run:
+        return record_entry(config, directory, root, record, present), name
+    moved = file.resolve() != target.resolve()
+    if moved:
+        shutil.move(file, target)
+    try:
+        record = dataclasses.replace(record, files={**record.files, name: entry})
+        write_record(path, record)
+    except BaseException:
+        if moved:
+            shutil.move(target, file)
+        raise
     return record_entry(config, directory, root, record, present | {name}), name
 
 
@@ -776,13 +835,27 @@ def present_files(directory: Path, record: Record) -> set[str]:
     return {name for name in record.files if (directory / name).is_file()}
 
 
-def needs_healing(directory: Path, record: Record, present: set[str]) -> bool:
-    """Whether `amo index` has work to do on the record first: an image it does not list, or
-    a present file not yet hashed and measured."""
+def original_file(record: Record, present: set[str]) -> str | None:
+    """The original a derived file comes from by default: the default file if it is an
+    original, else the largest original; None if no present file is one."""
+    originals = {name for name in present if record.files[name].derived_from is None}
+    default = record.default(present)
+    if default in originals:
+        return default
+    return record.default(originals) if originals else None
+
+
+def needs_healing(
+    directory: Path, record: Record, present: set[str], ignore: str | None = None
+) -> bool:
+    """Whether `amo index` has work to do on the record first: an image it does not list
+    (other than `ignore`), or a present file not yet hashed and measured."""
     unlisted = [
         file
         for file in directory.iterdir()
-        if file.suffix.lower() in IMAGE_SUFFIXES and file.name not in record.files
+        if file.suffix.lower() in IMAGE_SUFFIXES
+        and file.name not in record.files
+        and file.name != ignore
     ]
     return bool(unlisted) or any(not record.files[name].complete for name in present)
 
