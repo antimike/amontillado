@@ -955,8 +955,12 @@ test keeps the two templates' colours equal. The `:root` block pins the standalo
 `--success-color` and `--warning-color`, which libadwaita otherwise derives from the
 `*_bg_color` by the desktop's colour scheme; `.osd` widgets still derive theirs (libadwaita
 redefines them there), and the symbolic-icon palette follows the pinned ones.
-`--active-toggle-bg-color`/`-fg-color` are `selection`/`on_selection` (a contrast pair; the
-active segment of a toggle group is the selected one), `--overview-bg-color`/`-fg-color`
+The active toggle follows Adwaita's construction, since a toggle group's track is its text
+colour at 10 % over whatever surface holds it: in dark, `--active-toggle-bg-color` is `base05` at
+20 % over the track (always lighter than it) with `base07` text; in light, `base11` (the
+lightest ramp colour) with `base05`. An opaque `selection` (`base02`), the first choice, measured
+1.05:1 against the track on a `base01` card in the live test (gruvbox dark), all but invisible.
+`--overview-bg-color`/`-fg-color`
 `base01`/`base05`. Then GNOME's palette, `--blue-1` … `--dark-5`, which libadwaita 1.9
 defines as literals (so `@define-color` cannot reach an app naming `var(--blue-3)`), from the
 view's `gnome-*-hex` ("Formats and views"). Not set: the accent presets `--accent-blue` …
@@ -965,7 +969,8 @@ accent overrides) and the non-colour variables (`--border-opacity`, `--window-ra
 The colour-scheme hook stays useful: GtkSourceView styles and app assets still follow the
 scheme. Tests: every colour variable of libadwaita 1.9's `:root` blocks is defined (the accent
 presets aside), and each standalone colour reaches 4.5:1 on every libadwaita surface, the
-toggle and overview pairs 4.5:1, on gruvbox after the contrast check.
+overview pair 4.5:1, and on every surface the active toggle 1.15:1 against the track (about
+Adwaita's own on its white view) with its text at 4.5:1, on gruvbox after the contrast check.
 Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
 `_` (rofi 2.0): there roles are hyphenated (`on-accent`). The hyprland and hyprlock colours are
 `rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);

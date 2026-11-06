@@ -154,7 +154,20 @@ def _gruvbox_render(name: str, variant: str) -> str:
 
 def _root_variables(output: str) -> dict[str, str]:
     (block,) = re.findall(r"^:root \{$(.*?)^\}$", output, re.MULTILINE | re.DOTALL)
-    return dict(re.findall(r"^\s+(--[\w-]+): (#[0-9a-f]{6});$", block, re.MULTILINE))
+    return dict(re.findall(r"^\s+(--[\w-]+): ([^;]+);$", block, re.MULTILINE))
+
+
+def _mix(colour: str, under: str, share: float) -> str:
+    """`colour` at `share` over opaque `under` (srgb, as GTK's color-mix with transparent)."""
+    top, bottom = (bytes.fromhex(c.removeprefix("#")) for c in (colour, under))
+    channels = zip(top, bottom, strict=True)
+    return "#" + "".join(f"{round(share * a + (1 - share) * b):02x}" for a, b in channels)
+
+
+def _over(value: str, under: str) -> str:
+    """A rendered colour value painted over `under`: #rrggbb, or color-mix(... N%, transparent)."""
+    found = re.fullmatch(r"color-mix\(in srgb, (#[0-9a-f]{6}) (\d+)%, transparent\)", value)
+    return _mix(found[1], under, int(found[2]) / 100) if found else value
 
 
 @pytest.mark.parametrize("variant", ["dark", "light"])
@@ -187,9 +200,19 @@ def test_libadwaita_vars_contrast(variant: str) -> None:
         for surface in ("window", "view", "card", "dialog", "popover", "sidebar", "headerbar"):
             ratio = contrast_ratio(root[f"--{name}-color"], names[f"{surface}_bg_color"])
             assert ratio >= 4.5, (name, surface, ratio)
-    for name in ("active-toggle", "overview"):
-        ratio = contrast_ratio(root[f"--{name}-fg-color"], root[f"--{name}-bg-color"])
-        assert ratio >= 4.5, (name, ratio)
+    ratio = contrast_ratio(root["--overview-fg-color"], root["--overview-bg-color"])
+    assert ratio >= 4.5, ("overview", ratio)
+    # A toggle group's track is its text colour at 10 % over the surface (libadwaita 1.9:
+    # toggle-group { background: color-mix(in srgb, currentColor 10%, transparent) }); the active
+    # segment must stand off it on every surface (Adwaita's own white on its white view: ~1.2),
+    # and its text be readable.
+    for surface in ("window", "view", "card", "dialog", "popover", "sidebar", "headerbar"):
+        under = names[f"{surface}_bg_color"]
+        track = _mix(names[f"{surface}_fg_color"], under, 0.10)
+        active = _over(root["--active-toggle-bg-color"], track)
+        assert contrast_ratio(active, track) >= 1.15, (surface, active, track)
+        ratio = contrast_ratio(root["--active-toggle-fg-color"], active)
+        assert ratio >= 4.5, (surface, ratio)
     # GNOME's extremes, as apps pair them (text on --dark-5, on --light-1).
     assert contrast_ratio(root["--light-1"], root["--dark-5"]) >= 7.0
 

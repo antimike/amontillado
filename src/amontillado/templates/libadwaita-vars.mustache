@@ -85,8 +85,17 @@
   --warning-color: #{{warning-hex}};
   --error-color: #{{error-hex}};
 
-  --active-toggle-bg-color: #{{selection-hex}};
-  --active-toggle-fg-color: #{{on_selection-hex}};
+  /* As in Adwaita: the toggle group's track is the text colour at 10 % over whatever surface
+     it sits on, so the active segment is translucent text in dark (lighter than any track) and
+     the lightest ramp colour in light. An opaque base02 all but vanished on a base01 card. */
+{{#scheme-is-dark-variant}}
+  --active-toggle-bg-color: color-mix(in srgb, #{{base05-hex}} 20%, transparent);
+  --active-toggle-fg-color: #{{base07-hex}};
+{{/scheme-is-dark-variant}}
+{{#scheme-is-light-variant}}
+  --active-toggle-bg-color: #{{base11-hex}};
+  --active-toggle-fg-color: #{{base05-hex}};
+{{/scheme-is-light-variant}}
   --overview-bg-color: #{{base01-hex}};
   --overview-fg-color: #{{base05-hex}};
 
