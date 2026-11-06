@@ -714,7 +714,7 @@ def crop_picture(
     return record_entry(config, directory, root, record, present | {name}), name
 
 
-def derive_picture(
+def add_derived(
     config: Config,
     directory: Path,
     root: Path,

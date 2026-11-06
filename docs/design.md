@@ -117,7 +117,7 @@ files:
   that needs `amo index`, an original of that ratio already, and without `--force` a record
   with a file of that ratio; `--force` replaces an earlier crop of the same name, never a file
   that is not a crop.
-- **Hand-made derived files** (`amo derive`, amo-rqr): a file made from one of the record's
+- **Hand-made derived files** (`amo add-derived`, amo-rqr): a file made from one of the record's
   files in any tool (an edit, a retouch) is listed with `derived_from` and **no `crop`**,
   which is what marks it hand-made: nothing can make it again, so unlike a crop it is never
   replaced or regenerated. `derived_from` defaults to the record's original, chosen as for
@@ -125,7 +125,7 @@ files:
   directory (a file already there stays, renamed by `--name`), and indexed at once; the
   original stays the default file. Refused: a file that is not an image, a name the record
   lists or that exists, a `--from` it does not list or lacks, content one of its files has,
-  and a record that needs `amo index`. Without `amo derive`, `amo index` adds an unlisted
+  and a record that needs `amo index`. Without `amo add-derived`, `amo index` adds an unlisted
   image as an original. Opening an editor on a copy and deriving the result (`amo edit
   --tool`) is a later step (amo-2mf).
 - **Interactive crops** (`amo crop --interactive`, amo-cmj): after the same refusals, the
@@ -468,7 +468,7 @@ amo shown PICTURE... [--dry-run]     record that pictures were shown (for the us
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
 amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
 amo crop PICTURE W:H [--at F] [--interactive] [--force] [--dry-run]   crop a record's original; prints it
-amo derive PICTURE FILE [--name N] [--from FILE] [--dry-run]  add a hand-made derived file
+amo add-derived PICTURE FILE [--name N] [--from FILE] [--dry-run]   add a hand-made derived file
 amo name PICTURE NAME [--no-rename-directory] [--dry-run]      name or rename a record
 amo name --from-tags [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
 ```

@@ -19,11 +19,11 @@ from amontillado.library import (
     Box,
     CropCancelled,
     CropError,
+    add_derived,
     add_picture,
     additions_from_json,
     crop_box,
     crop_picture,
-    derive_picture,
     hand_source,
     heal_library,
     place,
@@ -792,14 +792,12 @@ def _edited(path: Path) -> Path:
     return path
 
 
-def test_derive_picture_moves_measures_and_marks_it_hand_made(
-    config: Config, tmp_path: Path
-) -> None:
+def test_add_derived_moves_measures_and_marks_it_hand_made(config: Config, tmp_path: Path) -> None:
     info = mark_record(config.library_roots[0] / "r")
     _halves(info.parent / "pic.png")
     heal_library(config)
     edit = _edited(tmp_path / "edit.png")
-    entry, name = derive_picture(config, info.parent, config.library_roots[0], edit)
+    entry, name = add_derived(config, info.parent, config.library_roots[0], edit)
     assert name == "edit.png" and not edit.exists()
     derived = read_record(info).files["edit.png"]
     assert (derived.derived_from, derived.crop) == ("pic.png", None)
@@ -811,36 +809,36 @@ def test_derive_picture_moves_measures_and_marks_it_hand_made(
     assert report.clean and report.entries[0].default == "pic.png"
 
 
-def test_derive_picture_in_place_with_a_name_and_a_source(config: Config) -> None:
+def test_add_derived_in_place_with_a_name_and_a_source(config: Config) -> None:
     info = mark_record(config.library_roots[0] / "r")
     _halves(info.parent / "pic.png")
     heal_library(config)
     crop_picture(config, info.parent, config.library_roots[0], 1.0, "1x1")
     edit = _edited(info.parent / "unlisted.png")
-    _, name = derive_picture(
+    _, name = add_derived(
         config, info.parent, config.library_roots[0], edit, name="green.png", source="pic-1x1.png"
     )
     assert name == "green.png" and not edit.exists() and (info.parent / name).is_file()
     assert read_record(info).files[name].derived_from == "pic-1x1.png"
 
 
-def test_derive_picture_dry_run_changes_nothing(config: Config, tmp_path: Path) -> None:
+def test_add_derived_dry_run_changes_nothing(config: Config, tmp_path: Path) -> None:
     info = mark_record(config.library_roots[0] / "r")
     _halves(info.parent / "pic.png")
     heal_library(config)
     before = info.read_text()
     edit = _edited(tmp_path / "edit.png")
-    _, name = derive_picture(config, info.parent, config.library_roots[0], edit, dry_run=True)
+    _, name = add_derived(config, info.parent, config.library_roots[0], edit, dry_run=True)
     assert name == "edit.png" and edit.exists() and info.read_text() == before
 
 
-def test_derive_picture_refusals(config: Config, tmp_path: Path) -> None:
+def test_add_derived_refusals(config: Config, tmp_path: Path) -> None:
     info = mark_record(config.library_roots[0] / "r")
     original = _halves(info.parent / "pic.png")
     root = config.library_roots[0]
     edit = _edited(tmp_path / "edit.png")
     with pytest.raises(AddError, match="run `amo index` first"):
-        derive_picture(config, info.parent, root, edit)
+        add_derived(config, info.parent, root, edit)
     heal_library(config)
     (tmp_path / "notes.txt").write_text("x")
     for file, options, message in (
@@ -851,12 +849,12 @@ def test_derive_picture_refusals(config: Config, tmp_path: Path) -> None:
         (edit, {"source": "none.png"}, "no file none.png"),
     ):
         with pytest.raises(AddError, match=message):
-            derive_picture(config, info.parent, root, file, **options)  # type: ignore[arg-type]
+            add_derived(config, info.parent, root, file, **options)  # type: ignore[arg-type]
     copy = tmp_path / "copy.png"
     copy.write_bytes(original.read_bytes())
     with pytest.raises(AddError, match="same content as"):
-        derive_picture(config, info.parent, root, copy)
+        add_derived(config, info.parent, root, copy)
     (info.parent / "taken.png").mkdir()
     with pytest.raises(AddError, match=r"taken\.png exists"):
-        derive_picture(config, info.parent, root, edit, name="taken.png")
+        add_derived(config, info.parent, root, edit, name="taken.png")
     assert edit.exists() and set(read_record(info).files) == {"pic.png"}

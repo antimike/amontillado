@@ -90,10 +90,10 @@ from amontillado.library import (
     CropError,
     NamingError,
     Report,
+    add_derived,
     add_picture,
     additions_from_json,
     crop_picture,
-    derive_picture,
     hand_source,
     heal_library,
     name_record,
@@ -437,8 +437,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     crop.set_defaults(func=cmd_crop)
 
-    derive = commands.add_parser(
-        "derive",
+    add_derived = commands.add_parser(
+        "add-derived",
         help="Add a file made by hand from a record's picture.",
         description="Register FILE, made from one of a record's files in any tool (an edit, a "
         "retouch, a recolour), as a derived file of the record: measure it, move it into the "
@@ -448,25 +448,25 @@ def build_parser() -> argparse.ArgumentParser:
         "in the record.",
         formatter_class=HelpFormatter,
     )
-    _add_loglevel(derive, argparse.SUPPRESS)
-    derive.add_argument(
+    _add_loglevel(add_derived, argparse.SUPPRESS)
+    add_derived.add_argument(
         "picture", metavar="PICTURE", help="A file, record directory, name or id (or prefix)."
     )
-    derive.add_argument("file", type=Path, metavar="FILE", help="The image made by hand.")
-    derive.add_argument(
+    add_derived.add_argument("file", type=Path, metavar="FILE", help="The image made by hand.")
+    add_derived.add_argument(
         "--name", metavar="N", help="Its file name in the record (default: FILE's own)."
     )
-    derive.add_argument(
+    add_derived.add_argument(
         "--from",
         dest="source",
         metavar="FILE",
         help="The record's file it was made from (default: the record's original: its default "
         "file if that is an original, else its largest).",
     )
-    derive.add_argument(
+    add_derived.add_argument(
         "--dry-run", action="store_true", help="Log what would be added; change nothing."
     )
-    derive.set_defaults(func=cmd_derive)
+    add_derived.set_defaults(func=cmd_add_derived)
 
     name = commands.add_parser(
         "name",
@@ -1477,7 +1477,7 @@ def cmd_crop(args: argparse.Namespace) -> None:
     print(directory / name)
 
 
-def cmd_derive(args: argparse.Namespace) -> None:
+def cmd_add_derived(args: argparse.Namespace) -> None:
     config = _load_config()
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
@@ -1485,7 +1485,7 @@ def cmd_derive(args: argparse.Namespace) -> None:
         with closing(connect(config.index_path)) as conn:
             try:
                 directory, root = record_location(conn, find_record(conn, args.picture))
-                entry, name = derive_picture(
+                entry, name = add_derived(
                     config,
                     directory,
                     root,
