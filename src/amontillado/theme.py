@@ -200,6 +200,8 @@ class Plan:
     copy_from: Path | None
     # The picture the wallpaper link points to, if any.
     wallpaper: Path | None
+    # The variant of an app without its own (auto resolved): the wallpaper hook's {variant}.
+    variant: str
 
 
 def plan(
@@ -251,7 +253,8 @@ def plan(
             raise ThemeError(f"profile {profile} has not been applied: run without --app first")
         copy_from = existing.resolve()
         wallpaper = None  # the copy keeps its link
-    return Plan(profile, palette, rendered, apps, copy_from, wallpaper)
+    resolved = choose_variant(palette, variant)
+    return Plan(profile, palette, rendered, apps, copy_from, wallpaper, resolved)
 
 
 def _applied_apps(directory: Path) -> dict[str, dict[str, str]]:
@@ -342,7 +345,8 @@ def repoint_wallpapers(theme: ThemeConfig, old: Path, new: Path) -> list[str]:
 def reload_commands(config: Config, plan: Plan, directory: Path) -> list[tuple[str, ...]]:
     """The reload commands to run after `plan`, placeholders filled: each rendered app's, then
     the wallpaper hook. `directory` holds the written plan (the wallpaper link); `{dir}` is
-    always the profile's path, so a dry run prints what a real one would run. A command
+    always the profile's path, so a dry run prints what a real one would run. `{variant}` is
+    the variant the app was rendered in; for the wallpaper hook, the plan's. A command
     naming {wallpaper} when there is none is left out."""
     theme = config.theme
     link = directory / WALLPAPER_LINK
@@ -352,16 +356,16 @@ def reload_commands(config: Config, plan: Plan, directory: Path) -> list[tuple[s
         "dir": str(profile_dir(theme, plan.profile)),
         "wallpaper": wallpaper,
     }
-    commands = [theme.apps[item.app].reload for item in plan.rendered]
-    commands.append(theme.wallpaper_reload)
+    commands = [(theme.apps[item.app].reload, item.record["variant"]) for item in plan.rendered]
+    commands.append((theme.wallpaper_reload, plan.variant))
     filled = []
-    for command in commands:
+    for command, variant in commands:
         if command is None:
             continue
         if wallpaper is None and any("{wallpaper}" in arg for arg in command):
             logger.info("no wallpaper: not running %s", " ".join(command))
             continue
-        filled.append(tuple(_fill(arg, values) for arg in command))
+        filled.append(tuple(_fill(arg, {**values, "variant": variant}) for arg in command))
     return filled
 
 

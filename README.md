@@ -87,6 +87,8 @@ you configure, never stored by the tool.
 ## Documentation
 
 - [docs/design.md](docs/design.md): storage layout, metric definitions, the fetcher, the CLI
+- [docs/colour-scheme-hooks.md](docs/colour-scheme-hooks.md): keeping the desktop's dark/light
+  scheme in step with the theme (libadwaita needs it)
 - [CONTRIBUTING.md](CONTRIBUTING.md): development setup, coding standards, commits and releases
 - [CHANGELOG.md](CHANGELOG.md)
 

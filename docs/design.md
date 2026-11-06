@@ -935,8 +935,9 @@ these names (`--accent-bg-color: @accent_bg_color`). Not the standalone `accent_
 `destructive_color`, `success_color`, `warning_color`, `error_color`: libadwaita ≥ 1.6 derives
 those from the `*_bg_color` in OKLab by its own colour scheme (lightness at most 0.5 for light,
 at least 0.85 for dark), so the desktop's `color-scheme` (`prefer-dark` for a dark variant)
-must match the variant applied, or a dark palette gets dark accent text (machine glue, not
-amontillado's). Not defined: the GNOME palette (`blue_1` … `dark_5`, fixed hues apps name on
+must match the variant applied, or a dark palette gets dark accent text. amontillado does not
+set the scheme (a global setting other apps and tools read); a reload command naming
+`{variant}` does, written by the user: [colour-scheme-hooks.md](colour-scheme-hooks.md). Not defined: the GNOME palette (`blue_1` … `dark_5`, fixed hues apps name on
 purpose), the names libadwaita derives itself (`theme_*`, `insensitive_*`), and the
 variables-only `--active-toggle-*` and `--overview-*`.
 Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
@@ -1090,7 +1091,9 @@ once, naming its key (`theme.apps.kitty.reload: ...`); unknown keys warn, as at 
 Beyond the types and choices above: a profile name is a single path component that does not
 start with `.` and is not `current` (both name other things in the cache); `output` is a plain
 file name, not `palette.yaml`, `theme.yaml` or `wallpaper`, and no two apps give the same one;
-`url` is `https://`; a reload command names no placeholder other than the three; `render_with:
+`url` is `https://`; a reload command names no placeholder other than `{wallpaper}`, `{profile}`,
+`{dir}` and `{variant}` (the app's variant, `auto` resolved; for the wallpaper hook, that of an
+app without its own); `render_with:
 matugen` needs `format: matugen` (or `source: matugen-themes`, whose format it is).
 
 `amo config check [FILE]` loads a config as every command does and fails on an error, an

@@ -282,6 +282,27 @@ def test_reload_commands(tmp_path: Path) -> None:
     assert reload_commands(config, built, directory)[-1] == ("set", "/pictures/a.jpg")
 
 
+def test_reload_commands_fill_each_apps_variant(tmp_path: Path) -> None:
+    hook = ("gsettings", "set", "x", "color-scheme", "prefer-{variant}")
+    apps = {"libadwaita": AppConfig(variant="light", reload=hook), "kitty": AppConfig(reload=hook)}
+    config = _config(tmp_path, **apps)
+    config = replace(config, theme=replace(config.theme, wallpaper_reload=("set", "{variant}")))
+    both = _palette(variants=("dark", "light"))
+    built = plan(config, both, profile="default", variant="auto", contrast="off")
+    assert reload_commands(config, built, tmp_path / "cache" / "default") == [
+        ("gsettings", "set", "x", "color-scheme", "prefer-light"),
+        ("gsettings", "set", "x", "color-scheme", "prefer-dark"),
+        ("set", "dark"),
+    ]
+    # A variant the palette lacks resolves as the render does.
+    built = plan(config, _palette(), profile="default", variant="light", contrast="off")
+    assert [c[-1] for c in reload_commands(config, built, tmp_path)] == [
+        "prefer-dark",
+        "prefer-dark",
+        "dark",
+    ]
+
+
 def test_failing_reloads_warn(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         run_reloads([("false",), ("amo-no-such-command",), ("true",)])
@@ -305,7 +326,7 @@ def _cli_setup(home: Path) -> Path:
     config.parent.mkdir(parents=True)
     config.write_text(
         yaml.safe_dump(
-            {"theme": {"apps": {"kitty": {"reload": "true {profile} {dir}"}, "json": {}}}}
+            {"theme": {"apps": {"kitty": {"reload": "true {profile} {dir} {variant}"}, "json": {}}}}
         )
     )
     palette = home / "p.yaml"
@@ -332,5 +353,5 @@ def test_cli_dry_run_changes_nothing(home: Path, capsys: pytest.CaptureFixture[s
     main(["theme", "apply", "--palette", str(palette), "--dry-run"])
     out = capsys.readouterr().out.splitlines()
     assert (Path(out[0]) / "kitty.conf").is_file()
-    assert out[1] == f"would run: true default {home / '.cache' / 'theme' / 'default'}"
+    assert out[1] == f"would run: true default {home / '.cache' / 'theme' / 'default'} dark"
     assert not (home / ".cache" / "theme").exists()

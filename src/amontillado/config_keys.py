@@ -148,8 +148,9 @@ KEYS: tuple[Key, ...] = (
     Key("theme.wallpaper", "The wallpaper hook."),
     Key(
         "theme.wallpaper.reload",
-        "A command run last after each apply, with {wallpaper} (the picture), {profile} and "
-        "{dir} substituted; split as a shell would and run without one, so a pipeline needs a "
+        "A command run last after each apply, with {wallpaper} (the picture), {profile}, "
+        "{dir} and {variant} (dark or light: the variant of an app without its own) "
+        "substituted; split as a shell would and run without one, so a pipeline needs a "
         "script. Setting the wallpaper stays your command: amontillado only knows which "
         "picture belongs to the theme.",
         '"hyprctl hyprpaper reload ,{wallpaper}"',
@@ -200,8 +201,8 @@ KEYS: tuple[Key, ...] = (
     ),
     Key(
         f"theme.apps.{APP}.reload",
-        "A command run after the swap, as theme.wallpaper.reload. A failure warns: the app "
-        "may not be running.",
+        "A command run after the swap, as theme.wallpaper.reload, but {variant} is this "
+        "app's. A failure warns: the app may not be running.",
     ),
     Key(
         f"theme.apps.{APP}.variant",
@@ -226,6 +227,13 @@ APP_EXAMPLES = (
     'waybar: {template: gtk, output: waybar-colors.css, reload: "pkill -USR2 waybar"}',
     "zed: {source: matugen-themes, render_with: matugen}",
     "mytool: {source: path, path: ~/mytool.mustache, format: mustache, output: mytool.conf}",
+    "",
+    "libadwaita >= 1.6 takes its accent, success, warning and error text from the desktop's",
+    "colour scheme, not the file: a reload that sets the scheme to the variant keeps it",
+    "readable (docs/colour-scheme-hooks.md). One of, or no reload to leave the scheme alone:",
+    "libadwaita:",
+    '  reload: "gsettings set org.gnome.desktop.interface color-scheme prefer-{variant}"',
+    '  # reload: "darkman set {variant}"',
 )
 
 _BY_PATH = {key.path: key for key in KEYS}
@@ -300,5 +308,5 @@ def _apps(indent: str) -> list[str]:
         if entry.path.startswith(f"theme.apps.{APP}."):
             lines.extend(_comment(f"{entry.name}: {_described(entry)}", indent, "  ", "      "))
     lines.append(f"{indent}#")
-    lines.extend(f"{indent}# {example}" for example in APP_EXAMPLES)
+    lines.extend(f"{indent}# {example}" if example else f"{indent}#" for example in APP_EXAMPLES)
     return lines
