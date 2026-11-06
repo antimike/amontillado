@@ -25,7 +25,10 @@ How pages are opened: a sidebar row is found by its label over AT-SPI. Rows swit
 *activated*, not when selected, and AT-SPI cannot focus them, so the script presses Down or Up
 one key at a time and reads the focused row back after each press (keys sent quickly were
 dropped or doubled), then Return. A button is pressed through its own click action; a label's
-first action is clipboard.copy, so labels are never actioned.
+first action is clipboard.copy, so labels are never actioned. After the capture, a button that
+opened a dialog (Style Classes) is undone with Escape; one that opened a window of its own (Tab
+View's demo, which Escape does not close) is undone with that window's header bar Close button,
+over AT-SPI, and the run waits for the main window to have focus again.
 
 Not covered by the test suite: it needs a live graphical session.
 
@@ -57,13 +60,14 @@ APPS = {
     "gnome-text-editor": "org.gnome.TextEditor",
 }
 # PAGE or PAGE+BUTTON: open the sidebar page, then press the button (a dialog, a toast, a
-# window) before capturing. "Run the Demo" opens a window that stays open, so it goes last.
+# window) before capturing.
 DEMO_PAGES = [
     "Buttons",
     "Boxed Lists",
     "Banner",
     "Toasts+Show",
     "Alert Dialog+Alert Dialog",
+    "Tab View+Run the Demo",
     "Style Classes+Run the Demo",
 ]
 SETTLE = 0.8
@@ -92,7 +96,7 @@ def get_cli_arguments() -> argparse.Namespace:
         "pages",
         nargs="*",
         help="adwaita-1-demo pages, PAGE or PAGE+BUTTON (default: a fixed set covering "
-        "buttons, lists, banner, toast, dialog and the style classes window).",
+        "buttons, lists, banner, toast, dialog, the tab view window and the style classes dialog).",
     )
     return parser.parse_args()
 
@@ -142,6 +146,8 @@ class Driver:
         self.app_name = app_name
         self.window_class = APPS[app_name]
         self.app = self._wait_for_app()
+        # The main window, told apart from windows the app opens later (same class).
+        self.main_window = active_window()["address"]
 
     def _wait_for_app(self):
         deadline = time.monotonic() + APPEAR_TIMEOUT
@@ -227,9 +233,14 @@ class Driver:
 
     def press(self, name: str) -> None:
         node = self.find(self.app, "button", name)
-        action = node.get_action_iface() if node is not None else None
-        if action is None:
+        if node is None:
             fail(f"no button {name!r} in {self.app_name}")
+        self.click(node, name)
+
+    def click(self, node, name: str) -> None:
+        action = node.get_action_iface()
+        if action is None:
+            fail(f"button {name!r} has no actions")
         for i in range(action.get_n_actions()):
             # get_action_name is deprecated for atspi_action_get_name, which PyGObject hides
             # behind Accessible.get_name on the same object: the old name is the only one.
@@ -241,6 +252,33 @@ class Driver:
                 time.sleep(SETTLE)
                 return
         fail(f"button {name!r} has no click action")
+
+    def undo(self) -> None:
+        """Close what the last button opened: a window of its own by its Close button, else
+        (a dialog) with Escape."""
+        if active_window().get("address") == self.main_window:
+            self.key("Escape")
+            time.sleep(SETTLE)
+            return
+        frame = self.active_frame()
+        close = self.find(frame, "button", "Close") if frame is not None else None
+        if close is None:
+            fail("a window the demo opened has no Close button: close it by hand")
+        self.click(close, "Close")
+        deadline = time.monotonic() + FOCUS_TIMEOUT
+        while active_window().get("address") != self.main_window:
+            if time.monotonic() > deadline:
+                fail("the main window did not get focus back after closing the demo window")
+            time.sleep(0.2)
+        time.sleep(SETTLE)
+
+    def active_frame(self):
+        """The app's top-level window that is active (has focus), if AT-SPI says so."""
+        for i in range(self.app.get_child_count()):
+            frame = self.app.get_child_at_index(i)
+            if frame.get_state_set().contains(self.atspi.StateType.ACTIVE):
+                return frame
+        return None
 
     def capture(self, path: Path) -> None:
         # The active window: the app's, or a window it opened (Style Classes).
@@ -299,8 +337,7 @@ def main() -> None:
         driver.capture(path)
         paths.append(path)
         if button:
-            driver.key("Escape")
-            time.sleep(SETTLE)
+            driver.undo()
     contact_sheet(paths, args.outdir / f"{args.prefix}-sheet.png")
 
 
