@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
+GTK theming and record names: a libadwaita template, a `{variant}` placeholder for a hook
+that keeps the desktop's colour scheme with the theme, and naming and hand-made derived files
+for records.
+
 ### Added
 
 - Built-in `libadwaita` template (`libadwaita.css`): libadwaita's named colours from the
