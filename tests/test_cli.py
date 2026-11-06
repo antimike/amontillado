@@ -407,9 +407,50 @@ def test_name_from_tags(
     assert "not fetched from Wallhaven" in caplog.text
 
 
-def test_name_needs_from_tags(library: Path) -> None:
+def test_name_takes_picture_and_name(library: Path) -> None:
+    for argv in (["name"], ["name", "a"], ["name", "a", "b", "c"]):
+        with pytest.raises(SystemExit, match="takes PICTURE NAME, or --from-tags"):
+            main(argv)
+
+
+def test_name_and_rename_by_hand(
+    library: Path, home: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    nested = library / "travel" / "2024"
+    _record(nested / "img-0412", (0, 0, 255), "img-0412.png")
+    _record(library / "kept-here", (0, 255, 0), "kept.png")
+    _record(library / "other", (255, 0, 0), "other.png")
+    main(["index"])
+    capsys.readouterr()
+    # The directory is renamed where it is, not moved to the root.
+    main(["name", str(nested / "img-0412"), "harbour-dawn"])
+    assert capsys.readouterr().out == f"{nested / 'harbour-dawn'}\n"
+    assert not (nested / "img-0412").exists()
+    # A rename: the old name is free again, the index answers to the new one at once.
+    main(["name", "harbour-dawn", "harbour-morning"])
+    assert capsys.readouterr().out == f"{nested / 'harbour-morning'}\n"
+    info = yaml.safe_load((nested / "harbour-morning" / "info.yaml").read_text())
+    assert info["name"] == "harbour-morning"
+    main(["name", str(library / "other"), "harbour-dawn"])
+    capsys.readouterr()
+    # --no-rename-directory keeps the directory.
+    main(["name", "--no-rename-directory", str(library / "kept-here"), "meadow"])
+    assert capsys.readouterr().out == f"{library / 'kept-here'}\n"
+    assert yaml.safe_load((library / "kept-here" / "info.yaml").read_text())["name"] == "meadow"
+    for argv, message in (
+        (["meadow", "harbour-dawn"], "name 'harbour-dawn' is taken"),
+        (["meadow", "meadow"], "named meadow already"),
+        (["meadow", "Not A Name"], "does not match"),
+    ):
+        caplog.clear()
+        with pytest.raises(SystemExit, match="1 of 1 record could not be named"):
+            main(["name", *argv])
+        assert message in caplog.text
+    (library / "taken-dir").mkdir()
+    caplog.clear()
     with pytest.raises(SystemExit):
-        main(["name"])
+        main(["name", "meadow", "taken-dir"])
+    assert "taken-dir already exists" in caplog.text
 
 
 def test_crop_unknown_picture(indexed: dict[str, Path]) -> None:

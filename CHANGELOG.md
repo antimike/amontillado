@@ -10,10 +10,10 @@ All notable changes to amontillado are documented here. The format follows
 
 - Built-in `libadwaita` template (`libadwaita.css`): libadwaita's named colours from the
   palette's roles and ramp, one file for `gtk-4.0/gtk.css` and adw-gtk3's `gtk-3.0/gtk.css`.
-- `amo name --from-tags [PICTURE...] [--dry-run]`: names records fetched without a name
-  (before 0.2, or when the name was taken) as `amo fetch` would, from the tags their info.yaml
-  keeps, and moves each directory to its name; the index and any theme profile's wallpaper
-  link follow.
+- `amo name PICTURE NAME`: names or renames a record and renames its directory to the name
+  where it is (`--no-rename-directory` keeps it). `amo name --from-tags [PICTURE...]` names
+  records fetched without a name (before 0.2, or when the name was taken) as `amo fetch` would,
+  from the tags their info.yaml keeps. The index and any theme profile's wallpaper link follow.
 
 ### Fixed
 
