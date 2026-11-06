@@ -409,7 +409,13 @@ The suffix is the Wallhaven id, not a counter (decided 2026-10-28): a counter co
 machine's index, so two machines would assign the same name and a sync would make a
 duplicate-name conflict. A name already taken (by a hand-named record) leaves the record
 unnamed, in `wallhaven-<id>`, with a warning. Records fetched before names existed keep theirs
-(none); naming them is a separate command (`amo-uc5`).
+(none) until `amo name --from-tags` names them from the tags their info.yaml keeps (under
+"CLI"). Those tags are names only, without Wallhaven's tag categories, so the category rule
+cannot apply there: an artist's or a technique's tag may make it into the name;
+`NAME_SKIP_TAGS` still applies, and the wallpaper's category stands in when no tag is usable.
+Planned instead (amo-ugu): `amo fetch` keeps each tag's category in `source.tag_categories`,
+and a one-off pass re-asks Wallhaven (`/w/<id>`) for those of records fetched before, so
+naming itself never needs the network.
 
 **Revisit:** the info-file scan in step 2 parses every info file on each `amo fetch`
 (decided 2026-10-28). If that makes fetching noticeably slow on a large library, drop it and
@@ -451,6 +457,8 @@ amo shown PICTURE... [--dry-run]     record that pictures were shown (for the us
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
 amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
 amo crop PICTURE W:H [--at F] [--interactive] [--force] [--dry-run]   crop a record's original; prints it
+amo name PICTURE NAME [--no-rename-directory] [--dry-run]      name or rename a record
+amo name --from-tags [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read,
@@ -512,6 +520,23 @@ recorded.
 directory that already exists, a `--name` that is invalid or taken, and, without `--force`, a
 file whose content the index already holds. It measures before it moves anything, and adds
 the new record to the index itself.
+
+`amo name PICTURE NAME` (amo-uc5) gives a record a name, or a new one, and renames its
+directory to the name where it is (`foo/bar/img-0412` becomes `foo/bar/harbour-dawn`, never a
+move to the root); `--no-rename-directory` keeps the directory. Renaming by default, decided
+MH 2026-11-05: the directory name means nothing to the tool, and no rule tells a directory amo
+named from one the user named the same way (a user can call one `wallhaven-x8ye3z` too), so
+the user opts out instead; under git-annex storage (amo-qnn) an unwanted rename shows in the log
+and is reverted there. `amo name --from-tags [PICTURE...]` names records fetched from
+Wallhaven without a name (see "Names of fetched records"): the PICTUREs given, or every indexed
+one without a name; it never renames a named record. Naming is never `amo index`'s job, since a
+name is authored, not derived. Refused (per record; the others are still named): an invalid
+name, the record's own, a name already taken (as `amo add` does), a record that needs `amo
+index` first, an existing directory for the name, and under `--from-tags` a named record or one
+not fetched from Wallhaven. It writes the name, then renames the directory (restoring info.yaml
+if that fails), and updates the index and any theme profile's wallpaper link into the
+directory, so neither needs a re-run. Prints each record's directory; `--dry-run` logs the
+names instead.
 
 FILTERS are the class flags above, and `--hue`. WALLHAVEN: `--tags QUERY` (Wallhaven's `q`),
 `--purity LIST` (default sfw), `--category LIST` (general, anime, people; default all),

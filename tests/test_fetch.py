@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing
@@ -14,7 +15,7 @@ from PIL import Image
 
 from amontillado.classes import Look
 from amontillado.config import Config
-from amontillado.fetch import FetchReport, Options, fetch, record_name
+from amontillado.fetch import FetchReport, NamingError, Options, fetch, name_from_tags, record_name
 from amontillado.index import add, connect, files
 from amontillado.library import add_picture, place
 from amontillado.wallhaven import API, Client, Response, Search, Tag
@@ -226,6 +227,102 @@ def test_a_taken_name_leaves_the_record_unnamed(
     directory = config.library_roots[0] / "wallhaven-aaa111"
     assert report.kept == [directory / "wallhaven-aaa111.jpg"]
     assert "name" not in yaml.safe_load((directory / "info.yaml").read_text())
+
+
+def _unnamed(config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path) -> Path:
+    """A fetched record without a name, as before amo-0z2: its name was taken when fetched."""
+    other = tmp_path / "other.png"
+    Image.fromarray(NOISE_RGB).save(other)
+    placement = place(config, other, name="night-sky-aaa111", nsfw=False)
+    add(conn, add_picture(config, placement, name="night-sky-aaa111"))
+    _fetch(config, conn, web, Look(("dark",)), max_candidates=1)
+    shutil.rmtree(config.library_roots[0] / "night-sky-aaa111")
+    return config.library_roots[0] / "wallhaven-aaa111"
+
+
+def test_name_from_tags_names_and_moves(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    root = config.library_roots[0]
+    with pytest.raises(NamingError, match="name 'night-sky-aaa111' is taken"):
+        name_from_tags(config, directory, root, {"night-sky-aaa111"})
+    entry, name = name_from_tags(config, directory, root, set())
+    assert name == "night-sky-aaa111"
+    assert not directory.exists()
+    assert entry.directory == root / name
+    assert entry.name == name and entry.present == ("wallhaven-aaa111.jpg",)
+    assert yaml.safe_load((root / name / "info.yaml").read_text())["name"] == name
+    with pytest.raises(NamingError, match="named already"):
+        name_from_tags(config, root / name, root, set())
+
+
+def test_name_from_tags_dry_run_changes_nothing(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    before = (directory / "info.yaml").read_text()
+    entry, name = name_from_tags(config, directory, config.library_roots[0], set(), dry_run=True)
+    assert (name, entry.directory) == ("night-sky-aaa111", directory)
+    assert (directory / "info.yaml").read_text() == before
+
+
+def test_name_from_tags_can_keep_the_directory(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    entry, name = name_from_tags(
+        config, directory, config.library_roots[0], set(), rename_directory=False
+    )
+    assert (name, entry.directory) == ("night-sky-aaa111", directory)
+    assert yaml.safe_load((directory / "info.yaml").read_text())["name"] == name
+
+
+def test_name_from_tags_refuses(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    root = config.library_roots[0]
+    hand = tmp_path / "hand.png"
+    Image.fromarray(NOISE_RGB).save(hand)
+    added = add_picture(config, place(config, hand, name=None, nsfw=False), name=None)
+    with pytest.raises(NamingError, match="not fetched from Wallhaven"):
+        name_from_tags(config, added.directory, root, set())
+    (root / "night-sky-aaa111").mkdir()
+    with pytest.raises(NamingError, match="already exists"):
+        name_from_tags(config, directory, root, set())
+    (root / "night-sky-aaa111").rmdir()
+    Image.fromarray(NOISE_RGB).save(directory / "loose.png")
+    with pytest.raises(NamingError, match="needs healing"):
+        name_from_tags(config, directory, root, set())
+
+
+def test_name_from_tags_restores_the_record_when_the_move_fails(
+    config: Config,
+    conn: sqlite3.Connection,
+    web: FakeWeb,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    before = (directory / "info.yaml").read_text()
+
+    def refuse(self: Path, target: Path) -> Path:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(Path, "rename", refuse)
+    with pytest.raises(OSError, match="read-only"):
+        name_from_tags(config, directory, config.library_roots[0], set())
+    assert (directory / "info.yaml").read_text() == before
+
+
+def test_name_from_tags_without_categories() -> None:
+    # Stored tags have no category: an artist's name is no longer passed over, but the
+    # NAME_SKIP_TAGS list still applies, and the wallpaper's category stands in for none.
+    assert record_name([Tag("digital art", "")], "anime", "x8ye3z") == "anime-x8ye3z"
+    assert record_name(_tags("Some Artist", category=""), "general", "x8ye3z") == (
+        "some-artist-x8ye3z"
+    )
 
 
 def _tags(*names: str, category: str = "Nature") -> list[Tag]:

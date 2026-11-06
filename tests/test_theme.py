@@ -20,6 +20,7 @@ from amontillado.theme import (
     find_palette,
     plan,
     reload_commands,
+    repoint_wallpapers,
     run_reloads,
 )
 
@@ -192,6 +193,21 @@ def test_matugen_format(tmp_path: Path) -> None:
     template.write_text("<* for name, p in palettes *>{{name}}<* endfor *>")
     with pytest.raises(ThemeError, match=r"theme\.apps\.mine: .*unknown variable 'palettes'"):
         _apply(_config(tmp_path, mine=app), _palette())
+
+
+def test_wallpaper_links_follow_a_moved_record(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    directory = _apply(config, _palette())
+    old, new = tmp_path / "lib" / "wallhaven-abc123", tmp_path / "lib" / "cats-abc123"
+    (directory / "wallpaper").symlink_to(old / "wallhaven-abc123.jpg")
+    other = tmp_path / "cache" / ".profiles" / "other-1"
+    other.mkdir(parents=True)
+    (tmp_path / "cache" / "other").symlink_to(other)
+    (other / "wallpaper").symlink_to(tmp_path / "elsewhere.jpg")
+    assert repoint_wallpapers(config.theme, old, new) == ["default"]
+    assert os.readlink(directory / "wallpaper") == str(new / "wallhaven-abc123.jpg")
+    assert os.readlink(other / "wallpaper") == str(tmp_path / "elsewhere.jpg")
+    assert repoint_wallpapers(replace(config.theme, cache=tmp_path / "none"), old, new) == []
 
 
 def test_not_amontillados_profile_is_refused(tmp_path: Path) -> None:

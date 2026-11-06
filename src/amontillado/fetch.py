@@ -37,13 +37,21 @@ from amontillado.classes import Look, classify
 from amontillado.config import Config
 from amontillado.index import add as add_to_index
 from amontillado.index import files_with_hash, names, source_ids
-from amontillado.library import Entry, file_stat, source_ids_on_disk
+from amontillado.library import (
+    Entry,
+    NamingError,
+    file_stat,
+    name_record,
+    source_ids_on_disk,
+)
 from amontillado.metrics import Metrics, image_size, measure_file
 from amontillado.record import (
     INFO_NAMES,
     THUMBNAIL_PATH,
     FileEntry,
     Record,
+    info_path,
+    read_record,
     sha256_file,
     write_record,
 )
@@ -244,6 +252,41 @@ def record_name(tags: list[Tag], category: str, wallpaper_id: str) -> str:
         if len(chosen) == NAME_MAX_TAGS:
             break
     return "-".join([*(chosen or [_slug(category) or "wallhaven"]), _slug(wallpaper_id)])
+
+
+def name_from_tags(
+    config: Config,
+    directory: Path,
+    root: Path,
+    taken: set[str],
+    *,
+    rename_directory: bool = True,
+    dry_run: bool = False,
+) -> tuple[Entry, str]:
+    """Name a record fetched from Wallhaven without a name (before amo-0z2, or when its name
+    was taken) from the tags its info.yaml keeps, by `record_name`, as `name_record` does.
+    The stored tags have no Wallhaven categories, so only NAME_SKIP_TAGS passes tags over;
+    `source.category` stands in when none is usable. Returns the record as `name_record` does,
+    and the name. Raises NamingError as `name_record` does, and for a record that is named
+    already or was not fetched from Wallhaven."""
+    path = info_path(directory)
+    if path is None:
+        raise NamingError(f"{directory}: not a record")
+    record = read_record(path)
+    if record.name is not None:
+        raise NamingError(f"{directory}: named already ({record.name})")
+    source = record.source or {}
+    if source.get("site") != SITE or not source.get("id"):
+        raise NamingError(f"{directory}: not fetched from Wallhaven")
+    stored = source.get("tags")
+    tags = (
+        [Tag(tag, "") for tag in stored if isinstance(tag, str)] if isinstance(stored, list) else []
+    )
+    name = record_name(tags, str(source.get("category") or ""), str(source["id"]))
+    entry = name_record(
+        config, directory, root, name, taken, rename_directory=rename_directory, dry_run=dry_run
+    )
+    return entry, name
 
 
 def _slug(text: str) -> str:
