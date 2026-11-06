@@ -19,6 +19,7 @@ from amontillado.library import (
     Box,
     CropCancelled,
     CropError,
+    add_derived,
     add_picture,
     additions_from_json,
     crop_box,
@@ -780,3 +781,80 @@ def test_a_non_sfw_purity_goes_to_the_nsfw_root(
     inside = save_image(config.library_roots[0] / "b.png")
     with pytest.raises(AddError, match="to add it as non-sfw"):
         place(config, inside, name=None, nsfw=False, purity="nsfw")
+
+
+def _edited(path: Path) -> Path:
+    """`_halves` turned green on the left: an edit of it."""
+    with Image.open(_halves(path)) as image:
+        pixels = np.array(image)
+    pixels[:, :100] = (0, 255, 0)
+    Image.fromarray(pixels).save(path)
+    return path
+
+
+def test_add_derived_moves_measures_and_marks_it_hand_made(config: Config, tmp_path: Path) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    edit = _edited(tmp_path / "edit.png")
+    entry, name = add_derived(config, info.parent, config.library_roots[0], edit)
+    assert name == "edit.png" and not edit.exists()
+    derived = read_record(info).files["edit.png"]
+    assert (derived.derived_from, derived.crop) == ("pic.png", None)
+    assert derived.sha256 == sha256_file(info.parent / "edit.png")
+    assert derived.metrics is not None
+    assert entry.present == ("edit.png", "pic.png") and entry.default == "pic.png"
+    # Nothing to heal, and the original stays the default.
+    report = heal_library(config)
+    assert report.clean and report.entries[0].default == "pic.png"
+
+
+def test_add_derived_in_place_with_a_name_and_a_source(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    crop_picture(config, info.parent, config.library_roots[0], 1.0, "1x1")
+    edit = _edited(info.parent / "unlisted.png")
+    _, name = add_derived(
+        config, info.parent, config.library_roots[0], edit, name="green.png", source="pic-1x1.png"
+    )
+    assert name == "green.png" and not edit.exists() and (info.parent / name).is_file()
+    assert read_record(info).files[name].derived_from == "pic-1x1.png"
+
+
+def test_add_derived_dry_run_changes_nothing(config: Config, tmp_path: Path) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    before = info.read_text()
+    edit = _edited(tmp_path / "edit.png")
+    _, name = add_derived(config, info.parent, config.library_roots[0], edit, dry_run=True)
+    assert name == "edit.png" and edit.exists() and info.read_text() == before
+
+
+def test_add_derived_refusals(config: Config, tmp_path: Path) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    original = _halves(info.parent / "pic.png")
+    root = config.library_roots[0]
+    edit = _edited(tmp_path / "edit.png")
+    with pytest.raises(AddError, match="run `amo index` first"):
+        add_derived(config, info.parent, root, edit)
+    heal_library(config)
+    (tmp_path / "notes.txt").write_text("x")
+    for file, options, message in (
+        (tmp_path / "notes.txt", {}, "not an image file"),
+        (edit, {"name": "pic.png"}, "lists pic.png already"),
+        (edit, {"name": "sub/x.png"}, "not an image file name"),
+        (edit, {"name": "x.txt"}, "not an image file name"),
+        (edit, {"source": "none.png"}, "no file none.png"),
+    ):
+        with pytest.raises(AddError, match=message):
+            add_derived(config, info.parent, root, file, **options)  # type: ignore[arg-type]
+    copy = tmp_path / "copy.png"
+    copy.write_bytes(original.read_bytes())
+    with pytest.raises(AddError, match="same content as"):
+        add_derived(config, info.parent, root, copy)
+    (info.parent / "taken.png").mkdir()
+    with pytest.raises(AddError, match=r"taken\.png exists"):
+        add_derived(config, info.parent, root, edit, name="taken.png")
+    assert edit.exists() and set(read_record(info).files) == {"pic.png"}

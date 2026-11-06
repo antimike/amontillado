@@ -453,6 +453,32 @@ def test_name_and_rename_by_hand(
     assert "taken-dir already exists" in caplog.text
 
 
+def test_add_derived(
+    indexed: dict[str, Path],
+    library: Path,
+    home: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    edit = _save(np.full((36, 64, 3), (200, 0, 0), dtype=np.uint8), tmp_path / "darker.png")
+    capsys.readouterr()
+    caplog.set_level(logging.INFO)
+    main(["add-derived", "--dry-run", str(library / "red"), str(edit)])
+    assert capsys.readouterr().out == "" and edit.exists()
+    assert f"would add {edit} as {library / 'red' / 'darker.png'}" in caplog.text
+    main(["add-derived", str(library / "red"), str(edit), "--name", "red-darker.png"])
+    assert capsys.readouterr().out == f"{library / 'red' / 'red-darker.png'}\n"
+    info = yaml.safe_load((library / "red" / "info.yaml").read_text())
+    assert info["files"]["red-darker.png"]["derived_from"] == "red.png"
+    assert "crop" not in info["files"]["red-darker.png"]
+    # Indexed at once; the original is still what amo list prints.
+    assert "red-darker.png" in _index_rows(home)
+    assert _list(capsys, "--hue", "red") == {"red"}
+    with pytest.raises(SystemExit, match=r"lists red-darker\.png already"):
+        main(["add-derived", str(library / "red"), str(library / "red" / "red-darker.png")])
+
+
 def test_crop_unknown_picture(indexed: dict[str, Path]) -> None:
     with pytest.raises(SystemExit, match="no record has that name"):
         main(["crop", "nothing", "1:1"])
