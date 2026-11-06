@@ -93,6 +93,7 @@ from amontillado.library import (
     add_picture,
     additions_from_json,
     crop_picture,
+    derive_picture,
     hand_source,
     heal_library,
     name_record,
@@ -435,6 +436,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Log what would be cropped; change nothing."
     )
     crop.set_defaults(func=cmd_crop)
+
+    derive = commands.add_parser(
+        "derive",
+        help="Add a file made by hand from a record's picture.",
+        description="Register FILE, made from one of a record's files in any tool (an edit, a "
+        "retouch, a recolour), as a derived file of the record: measure it, move it into the "
+        "record's directory (a file already there stays), and list it in info.yaml with "
+        "derived_from and no crop, which marks it hand-made: unlike a crop it cannot be made "
+        "again. The original stays the default file. Indexed at once. Prints the file's path "
+        "in the record.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(derive, argparse.SUPPRESS)
+    derive.add_argument(
+        "picture", metavar="PICTURE", help="A file, record directory, name or id (or prefix)."
+    )
+    derive.add_argument("file", type=Path, metavar="FILE", help="The image made by hand.")
+    derive.add_argument(
+        "--name", metavar="N", help="Its file name in the record (default: FILE's own)."
+    )
+    derive.add_argument(
+        "--from",
+        dest="source",
+        metavar="FILE",
+        help="The record's file it was made from (default: the record's original: its default "
+        "file if that is an original, else its largest).",
+    )
+    derive.add_argument(
+        "--dry-run", action="store_true", help="Log what would be added; change nothing."
+    )
+    derive.set_defaults(func=cmd_derive)
 
     name = commands.add_parser(
         "name",
@@ -1438,6 +1470,36 @@ def cmd_crop(args: argparse.Namespace) -> None:
                 sys.exit(f"amontillado: {args.picture}: {exc}")
             if args.dry_run:
                 logger.info("would crop %s", directory / name)
+                return
+            replace_in_index(conn, entry)
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    print(directory / name)
+
+
+def cmd_derive(args: argparse.Namespace) -> None:
+    config = _load_config()
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    try:
+        with closing(connect(config.index_path)) as conn:
+            try:
+                directory, root = record_location(conn, find_record(conn, args.picture))
+                entry, name = derive_picture(
+                    config,
+                    directory,
+                    root,
+                    args.file,
+                    name=args.name,
+                    source=args.source,
+                    dry_run=args.dry_run,
+                )
+            except (AddError, LookupFailed, RecordError) as exc:
+                sys.exit(f"amontillado: {exc}")
+            except (OSError, Image.DecompressionBombError) as exc:
+                sys.exit(f"amontillado: {args.file}: {exc}")
+            if args.dry_run:
+                logger.info("would add %s as %s", args.file, directory / name)
                 return
             replace_in_index(conn, entry)
     except (sqlite3.Error, IndexDatabaseError) as exc:

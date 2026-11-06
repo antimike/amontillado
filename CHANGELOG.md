@@ -10,6 +10,9 @@ All notable changes to amontillado are documented here. The format follows
 
 - Built-in `libadwaita` template (`libadwaita.css`): libadwaita's named colours from the
   palette's roles and ramp, one file for `gtk-4.0/gtk.css` and adw-gtk3's `gtk-3.0/gtk.css`.
+- `amo derive PICTURE FILE [--name N] [--from FILE]`: adds a file made by hand from a record's
+  picture (an edit in any tool) to the record, measured and indexed, with `derived_from` and no
+  `crop`, which marks it hand-made.
 - `amo name PICTURE NAME`: names or renames a record and renames its directory to the name
   where it is (`--no-rename-directory` keeps it). `amo name --from-tags [PICTURE...]` names
   records fetched without a name (before 0.2, or when the name was taken) as `amo fetch` would,
