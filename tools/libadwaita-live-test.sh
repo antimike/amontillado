@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Live test of the built-in libadwaita template (amo-aqp.21) in real GTK4 apps.
+# Live test of the built-in libadwaita and libadwaita-vars templates (amo-aqp.21, amo-j24.2) in
+# real GTK4 apps.
 #
 # Renders the template through amontillado itself (amo palette, amo theme apply) from the working
 # tree, so it always tests the current template, then launches GTK4 apps on the result. Nothing
@@ -17,8 +18,8 @@ usage() {
     cat <<'EOF'
 Usage: tools/libadwaita-live-test.sh [-p PALETTE] [-r] [-k] [SCENARIO...]
 
-Render amontillado's built-in libadwaita template from a palette and open GTK4 apps on it, one
-scenario at a time: close the app's window to go on to the next.
+Render amontillado's built-in libadwaita and libadwaita-vars templates from a palette and open
+GTK4 apps on them, one scenario at a time: close the app's window to go on to the next.
 
 Scenarios (default: all of them, in this order):
   dark      adwaita-1-demo, dark variant, dark colour scheme (the intended setup)
@@ -27,6 +28,9 @@ Scenarios (default: all of them, in this order):
             color-scheme must match the variant (libadwaita derives the standalone accent,
             success, warning and error text colours from the scheme, not from the file)
   editor    gnome-text-editor, dark variant, dark colour scheme: a real app
+  vars      adwaita-1-demo on libadwaita-vars, dark variant, default (light) colour scheme: the
+            mismatch setup, which the file's pinned standalone colours should fix, and GNOME's
+            palette remapped (Animations, Tab View)
 
 Options:
   -p, --palette FILE  A palette file (`amo palette` output) with both variants. Default: gruvbox
@@ -70,12 +74,12 @@ while (($#)); do
         -r | --render-only) render_only=true && shift ;;
         -k | --keep) keep=true && shift ;;
         -h | --help) usage && exit 0 ;;
-        dark | light | mismatch | editor) scenarios+=("$1") && shift ;;
-        all) scenarios+=(dark light mismatch editor) && shift ;;
+        dark | light | mismatch | editor | vars) scenarios+=("$1") && shift ;;
+        all) scenarios+=(dark light mismatch editor vars) && shift ;;
         *) echo "libadwaita-live-test: unknown argument: $1 (see --help)" >&2 && exit 2 ;;
     esac
 done
-((${#scenarios[@]})) || scenarios=(dark light mismatch editor)
+((${#scenarios[@]})) || scenarios=(dark light mismatch editor vars)
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/amo-libadwaita.XXXXXX")
 if $keep; then
@@ -90,7 +94,8 @@ amo() {
 }
 
 mkdir -p "$work/amo-config/amontillado"
-printf 'theme:\n  apps:\n    libadwaita: {}\n' >"$work/amo-config/amontillado/config.yaml"
+printf 'theme:\n  apps:\n    libadwaita: {}\n    gtk4: {template: libadwaita-vars}\n' \
+    >"$work/amo-config/amontillado/config.yaml"
 if [[ -z $palette ]]; then
     palette=$work/palette.yaml
     amo palette --from-scheme "$assets/gruvbox-dark-hard.yaml" \
@@ -102,6 +107,14 @@ for variant in dark light; do
     cp "$work/amo-cache/theme/$variant/libadwaita.css" "$work/$variant/gtk-4.0/gtk.css"
     echo "$variant: $work/$variant/gtk-4.0/gtk.css"
 done
+mkdir -p "$work/dark-vars/gtk-4.0"
+cp "$work/amo-cache/theme/dark/libadwaita-vars.css" "$work/dark-vars/gtk-4.0/gtk.css"
+echo "dark (libadwaita-vars): $work/dark-vars/gtk-4.0/gtk.css"
+
+# A variable as rendered, for the checklist: variable VARIANT-DIR NAME (without the --).
+variable() {
+    sed -n "s/^  --$2: \(#[0-9a-f]*\);$/\1/p" "$work/$1/gtk-4.0/gtk.css"
+}
 
 # A colour as rendered, for the checklist: colour VARIANT NAME.
 colour() {
@@ -141,6 +154,20 @@ describe() {
             echo "  - Window chrome (header bar, sidebar, popovers) follows the file, as in 'dark'."
             echo "  - The text area keeps the GtkSourceView style Text Editor picks for a dark"
             echo "    scheme: not themed by this template, expected."
+            ;;
+        vars)
+            echo "== vars: adwaita-1-demo on libadwaita-vars, dark variant, default (light) scheme"
+            echo "  - Unlike 'mismatch': accent ($(variable dark-vars accent-color)), success, warning and error"
+            echo "    text on the Style Classes demo readable on the dark window, as in 'dark'."
+            echo "  - Toggle Groups page: the active segment $(variable dark-vars active-toggle-bg-color) with"
+            echo "    $(variable dark-vars active-toggle-fg-color) text."
+            echo "  - Animations page: the ball's gradient runs from green-2 $(variable dark-vars green-2) to"
+            echo "    green-5 $(variable dark-vars green-5), not GNOME's #57e389 to #26a269."
+            echo "  - Tab View page, Run the Demo: tab colours from the palette (blue-3"
+            echo "    $(variable dark-vars blue-3), red-3 $(variable dark-vars red-3), ...), not GNOME's; the tab"
+            echo "    overview background $(variable dark-vars overview-bg-color)."
+            echo "  - Expected still light-scheme: anything drawn from the scheme rather than the"
+            echo "    stylesheet (icons and images an app picks per scheme)."
             ;;
     esac
 }
@@ -183,5 +210,7 @@ for scenario in "${scenarios[@]}"; do
         light) launch light light prefer-light adwaita-1-demo ;;
         mismatch) launch mismatch dark default adwaita-1-demo "Style Classes+Run the Demo" ;;
         editor) launch editor dark prefer-dark gnome-text-editor ;;
+        vars) launch vars dark-vars default adwaita-1-demo \
+            "Toggle Groups" "Animations" "Style Classes+Run the Demo" ;;
     esac
 done
