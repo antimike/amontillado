@@ -44,7 +44,7 @@ PREVIEWS = ("auto", "kitty", "viewer")
 _CROP_KEYS = frozenset({"preview", "viewer"})
 DEFAULT_VIEWER = ("xdg-open", "{file}")
 # What a reload command may name, substituted when it runs.
-RELOAD_PLACEHOLDERS = frozenset({"wallpaper", "profile", "dir"})
+RELOAD_PLACEHOLDERS = frozenset({"wallpaper", "profile", "dir", "variant"})
 # Names in a profile directory that amontillado writes itself.
 RESERVED_OUTPUTS = frozenset({"palette.yaml", "theme.yaml", "wallpaper"})
 _THEME_KEYS = frozenset(
