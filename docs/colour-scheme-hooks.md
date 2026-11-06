@@ -17,7 +17,16 @@ contrast check guarantees. Other things follow the scheme, not the palette, too:
 style scheme in an editor (gnome-text-editor picks its dark or light style from it) and the
 symbolic and illustrated assets apps ship per scheme.
 
-To see the failure, run the live test's mismatch scenario: a dark palette with libadwaita left
+The same gruvbox dark hard file in adwaita-1-demo's style classes, first under a dark scheme,
+then under the default (light) one. Backgrounds and the suggested button follow the file in
+both. In the second, the destructive label, the success, warning and error entry text and the
+round toggle's label take libadwaita's light-scheme colours and sink into the window:
+
+![Dark palette, dark colour scheme: readable accent, success, warning and error text](images/scheme-dark.png)
+
+![Dark palette, light colour scheme: the same text dark on the dark window](images/scheme-mismatch.png)
+
+To see the failure live, run the live test's mismatch scenario: a dark palette with libadwaita left
 on its default (light) scheme.
 
 ```sh
@@ -70,7 +79,9 @@ theme:
 
 The key GNOME's own settings use. libadwaita apps read it through the settings portal
 (`org.freedesktop.appearance color-scheme`), which the GNOME and GTK portal backends serve from
-this key, so this works outside GNOME (Hyprland, sway) as long as one of those backends runs.
+this key, so this works outside GNOME (Hyprland, sway) as long as one of those backends runs
+(checked 2026-11-05 on Hyprland with xdg-desktop-portal-gtk: the portal reported
+`prefer-dark` as soon as the key was set).
 `default` means "no preference", which libadwaita treats as light; the hook only ever writes
 `prefer-dark` or `prefer-light`.
 

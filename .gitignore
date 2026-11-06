@@ -15,6 +15,8 @@ build/
 *.jpeg
 *.png
 *.webp
+# The one exception: the docs' own screenshots (CONTRIBUTING.md, "Tests").
+!docs/images/*.png
 
 # direnv, mise
 .envrc
