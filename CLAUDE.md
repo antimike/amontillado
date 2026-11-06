@@ -8,7 +8,8 @@ is the source of truth for them in this repo.
 - **Public repository.** No secrets, API keys, client or employer names. gitleaks runs as a
   pre-commit hook; on MH's machine also run `~/.local/share/chezmoi/tools/public-scan/public-scan`
   before each commit.
-- **Never commit images**, and never commit real Wallhaven responses with more than the fields
+- **Never commit images**, except docs screenshots in `docs/images/` under the rules in
+  CONTRIBUTING.md ("Tests"), and never commit real Wallhaven responses with more than the fields
   the tests use.
 - Tests never touch the network. Run `just lint` and `just test` fresh before claiming anything
   passes.
