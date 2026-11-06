@@ -962,7 +962,20 @@ Each format gets a *view* of the palette: the variables its templates expect.
   `accent-rgb16-r`, `accent-dec-r`, `accent-hex-bgr`, ...), and `scheme-name`, `scheme-slug`,
   `scheme-slug-underscored`, `scheme-system` (`base24`), `scheme-variant`,
   `scheme-is-dark-variant` / `scheme-is-light-variant`; also `scheme-author` (the scheme's, or
-  empty) and `scheme-description` (empty), which template headers name. Decimals have eight
+  empty) and `scheme-description` (empty), which template headers name. Outside the spec,
+  amontillado adds `gnome-<colour>-hex` for GNOME's palette remapped onto the palette
+  (`gnome-blue-1-hex` … `gnome-dark-5-hex`, hex only; `amontillado/gnome.py`): each hue family
+  keeps libadwaita 1.9's OKLCH lightness ladder (steps 1-5, *initial*: blue 0.80 0.70 0.61
+  0.56 0.49, green 0.88 0.82 0.76 0.72 0.63, yellow 0.94 0.91 0.87 0.84 0.76, orange 0.85 0.79
+  0.72 0.65 0.57, red 0.68 0.62 0.58 0.52 0.47, purple 0.75 0.64 0.53 0.49 0.42, brown 0.76
+  0.65 0.56 0.52 0.42), the same in both variants as in GNOME's, and takes hue and chroma from
+  its colours: red `base08`/`base12`, orange `base09`, yellow `base0A`/`base13`, green
+  `base0B`/`base14`, blue `base0D`/`base16`, purple `base0E`/`base17`, brown `base0F`. A step
+  darker than both colours takes the darker one's hue and chroma, lighter than both the
+  lighter one's, and in between both are interpolated by lightness (hue the short way round);
+  chroma drops only to stay in gamut. `light-1` … `light-5` and `dark-1` … `dark-5` are the
+  ten ramp colours (`base00`-`base07`, `base10`, `base11`) sorted lightest first, so
+  `light-1` is the lightest and `dark-5` the darkest in either variant. Decimals have eight
   places (`0.48627451`), `rgb16` is the 8-bit value times 257. The output is not HTML-escaped,
   and partials (`{{> name}}`) are a render error: a template is one file, never one read from
   the working directory. pystache renders an unclosed section to the end of the template rather
