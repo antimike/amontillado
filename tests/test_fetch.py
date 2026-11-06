@@ -267,6 +267,17 @@ def test_name_from_tags_dry_run_changes_nothing(
     assert (directory / "info.yaml").read_text() == before
 
 
+def test_name_from_tags_can_keep_the_directory(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    entry, name = name_from_tags(
+        config, directory, config.library_roots[0], set(), rename_directory=False
+    )
+    assert (name, entry.directory) == ("night-sky-aaa111", directory)
+    assert yaml.safe_load((directory / "info.yaml").read_text())["name"] == name
+
+
 def test_name_from_tags_refuses(
     config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
 ) -> None:

@@ -722,6 +722,55 @@ def _size(entry: FileEntry) -> tuple[int, int]:
     return entry.width, entry.height
 
 
+class NamingError(Exception):
+    """A record cannot be named; the message says why. Nothing was changed."""
+
+
+def name_record(
+    config: Config,
+    directory: Path,
+    root: Path,
+    name: str,
+    taken: set[str],
+    *,
+    rename_directory: bool = True,
+    dry_run: bool = False,
+) -> Entry:
+    """Give the record in `directory` the name `name`, a first name or a new one, and unless
+    `rename_directory` is false, rename its directory to the name where it is (foo/bar/old
+    becomes foo/bar/<name>). Returns the record as it now is (under `dry_run`, as it is:
+    nothing is written). Raises NamingError for an invalid name, the record's own name, one in
+    `taken`, a record that needs `amo index` first, and an existing directory for the name. A
+    failed rename puts info.yaml back as it was."""
+    path = info_path(directory)
+    if path is None:
+        raise NamingError(f"{directory}: not a record")
+    record = read_record(path)
+    if not NAME_PATTERN.fullmatch(name):
+        raise NamingError(f"name {name!r} does not match {NAME_PATTERN.pattern}")
+    if name == record.name:
+        raise NamingError(f"{directory}: named {name} already")
+    if name in taken:
+        raise NamingError(f"{directory}: name {name!r} is taken")
+    present = present_files(directory, record)
+    if not present or needs_healing(directory, record, present):
+        raise NamingError(f"{directory}: needs healing; run `amo index` first")
+    target = directory.parent / name if rename_directory else directory
+    if target != directory and target.exists():
+        raise NamingError(f"{directory}: {target} already exists")
+    if dry_run:
+        return record_entry(config, directory, root, record, present)
+    named = dataclasses.replace(record, name=name)
+    write_record(path, named)
+    if target != directory:
+        try:
+            directory.rename(target)
+        except BaseException:
+            write_record(path, record)
+            raise
+    return record_entry(config, target, root, named, present)
+
+
 def present_files(directory: Path, record: Record) -> set[str]:
     """The files `record` lists that are in `directory`."""
     return {name for name in record.files if (directory / name).is_file()}

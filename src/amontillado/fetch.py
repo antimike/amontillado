@@ -17,7 +17,6 @@ the full image, so it fills one bucket only.
 
 from __future__ import annotations
 
-import dataclasses
 import io
 import os
 import re
@@ -40,10 +39,9 @@ from amontillado.index import add as add_to_index
 from amontillado.index import files_with_hash, names, source_ids
 from amontillado.library import (
     Entry,
+    NamingError,
     file_stat,
-    needs_healing,
-    present_files,
-    record_entry,
+    name_record,
     source_ids_on_disk,
 )
 from amontillado.metrics import Metrics, image_size, measure_file
@@ -82,10 +80,6 @@ NAME_MAX_LENGTH = 40  # of the tag part, before "-<id>"
 
 class FetchError(Exception):
     """A search result cannot be kept; the message says why."""
-
-
-class NamingError(Exception):
-    """A record cannot be named from its tags; the message says why. Nothing was changed."""
 
 
 @dataclass(frozen=True)
@@ -261,16 +255,20 @@ def record_name(tags: list[Tag], category: str, wallpaper_id: str) -> str:
 
 
 def name_from_tags(
-    config: Config, directory: Path, root: Path, taken: set[str], *, dry_run: bool = False
+    config: Config,
+    directory: Path,
+    root: Path,
+    taken: set[str],
+    *,
+    rename_directory: bool = True,
+    dry_run: bool = False,
 ) -> tuple[Entry, str]:
-    """Name a record fetched from Wallhaven before names existed (amo-0z2) from the tags its
-    info.yaml keeps, by `record_name`, and move its directory to the name (the directory
-    follows the name for fetched records). The stored tags have no Wallhaven categories, so
-    only NAME_SKIP_TAGS passes tags over; `source.category` stands in when none is usable.
-    Returns the record as it now is (under `dry_run`, as it is: nothing is written) and the
-    name. Raises NamingError for a record that is named already, was not fetched from
-    Wallhaven, needs `amo index` first, or whose name is in `taken` or whose directory for
-    it exists."""
+    """Name a record fetched from Wallhaven without a name (before amo-0z2, or when its name
+    was taken) from the tags its info.yaml keeps, by `record_name`, as `name_record` does.
+    The stored tags have no Wallhaven categories, so only NAME_SKIP_TAGS passes tags over;
+    `source.category` stands in when none is usable. Returns the record as `name_record` does,
+    and the name. Raises NamingError as `name_record` does, and for a record that is named
+    already or was not fetched from Wallhaven."""
     path = info_path(directory)
     if path is None:
         raise NamingError(f"{directory}: not a record")
@@ -280,29 +278,15 @@ def name_from_tags(
     source = record.source or {}
     if source.get("site") != SITE or not source.get("id"):
         raise NamingError(f"{directory}: not fetched from Wallhaven")
-    present = present_files(directory, record)
-    if not present or needs_healing(directory, record, present):
-        raise NamingError(f"{directory}: needs healing; run `amo index` first")
     stored = source.get("tags")
     tags = (
         [Tag(tag, "") for tag in stored if isinstance(tag, str)] if isinstance(stored, list) else []
     )
     name = record_name(tags, str(source.get("category") or ""), str(source["id"]))
-    if name in taken:
-        raise NamingError(f"{directory}: name {name!r} is taken")
-    target = directory.parent / name
-    if target != directory and target.exists():
-        raise NamingError(f"{directory}: {target} already exists")
-    if dry_run:
-        return record_entry(config, directory, root, record, present), name
-    named = dataclasses.replace(record, name=name)
-    write_record(path, named)
-    try:
-        directory.rename(target)
-    except BaseException:
-        write_record(path, record)
-        raise
-    return record_entry(config, target, root, named, present), name
+    entry = name_record(
+        config, directory, root, name, taken, rename_directory=rename_directory, dry_run=dry_run
+    )
+    return entry, name
 
 
 def _slug(text: str) -> str:
