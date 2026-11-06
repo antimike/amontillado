@@ -17,6 +17,10 @@ All notable changes to amontillado are documented here. The format follows
   where it is (`--no-rename-directory` keeps it). `amo name --from-tags [PICTURE...]` names
   records fetched without a name (before 0.2, or when the name was taken) as `amo fetch` would,
   from the tags their info.yaml keeps. The index and any theme profile's wallpaper link follow.
+- A `{variant}` placeholder for reload commands: `dark` or `light`, the variant the app was
+  rendered in (for the wallpaper hook, that of an app without its own). The config template and
+  [docs/colour-scheme-hooks.md](docs/colour-scheme-hooks.md) show hooks that set the desktop's
+  colour scheme with it (gsettings, darkman), which libadwaita needs for readable accent text.
 
 ### Fixed
 
