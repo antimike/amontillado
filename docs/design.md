@@ -8,7 +8,10 @@ matugen formats, the registry and `amo theme sync`, apply with profile swaps; al
 crops, `amo list` search over the index, and the commented config template. v0.3
 (2026-11-05): the built-in libadwaita template and the `{variant}` reload placeholder for a
 colour-scheme hook ([colour-scheme-hooks.md](colour-scheme-hooks.md)), `amo name` (also
-`--from-tags`) and `amo add-derived`.
+`--from-tags`) and `amo add-derived`. Towards v0.4 (on main, unreleased, 2026-11-06): the
+GTK4-only `libadwaita-vars` template ("Template sources") with GNOME's palette remapped
+(`gnome-*-hex`, "Formats and views"), and a live test that takes any scheme or library picture
+and captures without keyboard focus, optionally off screen.
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -1292,7 +1295,11 @@ Agreed with MH, 2026-10-30:
    Design agreed 2026-10-30: "Theme engine (v0.2)".
    Also for v0.2, **a commented config template** (built, amo-aqp.18): `amo config init`,
    `amo config check` ("Per-app configuration").
-4. git-annex libraries (epic `amo-qnn`): each root a git-annex repository, info files in git,
+4. v0.3 (epic `amo-e0d`; released 2026-11-05): the `libadwaita` template, the `{variant}`
+   reload placeholder for a colour-scheme hook, `amo name`, `amo add-derived`.
+5. v0.4 (epic `amo-j24`): `libadwaita-vars` (built 2026-11-06, amo-j24.2), `amo edit --tool`
+   (amo-2mf), and the git-annex libraries below.
+6. git-annex libraries (epic `amo-qnn`, part of v0.4): each root a git-annex repository, info files in git,
    images annexed (SHA-256 keys, the same hash as each file's `sha256`); the index stays outside, in
    `$XDG_STATE_HOME`. Encryption of the NSFW library off-machine is a spike (git-remote-gcrypt
    and an encrypted annex remote, or git-crypt, which does not cover annexed content).

@@ -39,6 +39,8 @@ Pre-alpha. v0.1.0 brought measuring, the library, the index, queries, the Wallha
 and test sets, with class thresholds calibrated on a Wallhaven sample; v0.2.0 adds the theme
 engine, interactive crops and search over the index; v0.3.0 a libadwaita template with a
 colour-scheme hook, record naming and hand-made derived files ([CHANGELOG.md](CHANGELOG.md)).
+Unreleased on main, for v0.4: a GTK4-only `libadwaita-vars` template that also sets
+libadwaita's CSS variables and GNOME's palette from the theme.
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install

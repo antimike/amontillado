@@ -33,6 +33,16 @@ on its default (light) scheme.
 tools/libadwaita-live-test.sh mismatch
 ```
 
+### With libadwaita-vars (GTK4)
+
+The built-in `libadwaita-vars` template, for `gtk-4.0/gtk.css` only, sets the standalone text
+colours as CSS variables, so they no longer depend on the scheme: a dark palette under a light
+scheme keeps readable accent, success, warning and error text (checked live with gruvbox and
+Lumina Polaire, 2026-11-06, `tools/libadwaita-live-test.sh vars`). The hook still matters for
+what the stylesheet cannot reach: GtkSourceView styles, per-scheme assets, and apps' own CSS
+under `prefers-color-scheme`. adwaita-1-demo's Tab View demo, for one, picks its page lightness
+by scheme, and under the opposite scheme its page text sinks into the page.
+
 ## Why amontillado leaves it to you
 
 The colour scheme is global. Setting it changes every app that reads it, not only the ones
