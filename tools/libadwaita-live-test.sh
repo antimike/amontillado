@@ -18,7 +18,7 @@ assets=$repo/tools/assets
 usage() {
     cat <<'EOF'
 Usage: tools/libadwaita-live-test.sh [-p PALETTE | -S SCHEME [-S SCHEME] | -P PICTURE]
-                                     [-r] [-s DIR] [-k] [SCENARIO...]
+                                     [-r] [-s DIR [--hidden]] [-k] [SCENARIO...]
 
 Render amontillado's built-in libadwaita and libadwaita-vars templates from a palette and open
 GTK4 apps on them, one scenario at a time: close the app's window to go on to the next.
@@ -54,10 +54,15 @@ Options:
   -s, --screenshot DIR
                       Instead of waiting for you, open each scenario's pages and capture them
                       into DIR (PNG, plus a contact sheet per scenario with ImageMagick), then
-                      close the app (tools/libadwaita_screenshots.py). Specific to MH's setup:
-                      Hyprland only; needs grim, wtype, an AT-SPI bus and the system python3
-                      with PyGObject's Atspi. It types keys into the focused window, checking
-                      before each one that it is the app's: do not switch windows while it runs.
+                      close the app (tools/libadwaita_screenshots.py). Never takes keyboard
+                      focus: work in another window meanwhile, but keep the workspace the run
+                      started on visible (GTK does not update a window it is not drawing).
+                      Specific to MH's setup: Hyprland 0.56+, grim 1.5+, an AT-SPI bus and the
+                      system python3 with PyGObject's Atspi.
+      --hidden        With --screenshot: run the apps on a headless output created for the run
+                      and removed after, so nothing appears on screen. Fires Hyprland's
+                      monitor.added/removed events, which your config may act on (see
+                      tools/libadwaita_screenshots.py --help).
   -k, --keep          Keep the temporary directory (printed at the start).
   -h, --help          Show this help.
 
@@ -75,6 +80,7 @@ picture=
 schemes=()
 screenshots=
 render_only=false
+hidden=false
 keep=false
 scenarios=()
 while (($#)); do
@@ -97,6 +103,7 @@ while (($#)); do
             shift 2
             ;;
         -r | --render-only) render_only=true && shift ;;
+        --hidden) hidden=true && shift ;;
         -k | --keep) keep=true && shift ;;
         -h | --help) usage && exit 0 ;;
         dark | light | mismatch | editor | vars-dark | vars-light) scenarios+=("$1") && shift ;;
@@ -112,6 +119,10 @@ sources=0
 [[ -n $picture ]] && sources=$((sources + 1))
 if ((sources > 1)); then
     echo "libadwaita-live-test: give one of --palette, --scheme, --picture" >&2 && exit 2
+fi
+if $hidden && [[ -z $screenshots ]]; then
+    echo "libadwaita-live-test: --hidden needs --screenshot (there would be nothing to see)" >&2
+    exit 2
 fi
 if ((${#schemes[@]} > 2)); then
     echo "libadwaita-live-test: --scheme takes one scheme or a dark and a light one" >&2 && exit 2
@@ -199,10 +210,11 @@ vars_checklist() {
     the cards alike, with readable text.
   - Animations page: the ball's gradient runs from green-2 $(variable "$dir" green-2) to green-5
     $(variable "$dir" green-5), not GNOME's #57e389 to #26a269.
-  - Tab View demo: tab colours from the palette (blue-3 $(variable "$dir" blue-3), red-3 $(variable "$dir" red-3),
-    ...), not GNOME's.
-  - Expected still $scheme: anything drawn from the scheme rather than the stylesheet (icons
-    and images an app picks per scheme).
+  - Tab View demo: tab page hues from the palette (blue-3 $(variable "$dir" blue-3), red-3 $(variable "$dir" red-3),
+    ...), not GNOME's. Their lightness is the demo's own, by scheme (92 % light, 20 % dark), so
+    here they come out as for a $scheme scheme: expected, and why the colour-scheme hook stays.
+  - Expected still $scheme: anything drawn from the scheme rather than the stylesheet (app CSS
+    under prefers-color-scheme, icons and images an app picks per scheme).
 EOF
 }
 
@@ -261,15 +273,19 @@ launch() {
         XDG_CONFIG_HOME=$work/$dir ADW_DEBUG_COLOR_SCHEME=$scheme "$app" >/dev/null 2>&1 || true
         return
     fi
-    echo "  capturing into $screenshots (do not switch windows)"
-    XDG_CONFIG_HOME=$work/$dir ADW_DEBUG_COLOR_SCHEME=$scheme "$app" >/dev/null 2>&1 &
-    local pid=$! status=0
-    # The system python3: PyGObject (Atspi) is not in the project's venv.
+    local placement=()
+    if $hidden; then
+        placement=(--hidden)
+        echo "  capturing into $screenshots, off screen"
+    else
+        echo "  capturing into $screenshots (keep this workspace visible; focus is yours)"
+    fi
+    # The tool launches the app itself. The system python3: PyGObject (Atspi) is not in the
+    # project's venv.
     /usr/bin/env python3 -I "$repo/tools/libadwaita_screenshots.py" --app "$app" \
-        --prefix "$scenario" "$screenshots" "$@" || status=$?
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-    return "$status"
+        --prefix "$scenario" "${placement[@]}" \
+        --env "XDG_CONFIG_HOME=$work/$dir" --env "ADW_DEBUG_COLOR_SCHEME=$scheme" \
+        "$screenshots" "$@"
 }
 
 vars_pages=("Toggle Groups" "Animations" "Tab View+Run the Demo" "Style Classes+Run the Demo")
