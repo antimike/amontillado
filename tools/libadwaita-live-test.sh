@@ -31,8 +31,8 @@ Scenarios (default: all of them, in this order):
               derives the standalone accent, success, warning and error text colours from the
               scheme, not from the file)
   editor      gnome-text-editor, dark variant, dark colour scheme: a real app
-  vars-dark   adwaita-1-demo on libadwaita-vars, dark variant, forced light scheme
-  vars-light  adwaita-1-demo on libadwaita-vars, light variant, forced dark scheme
+  vars-dark   adwaita-1-demo on libadwaita-vars, dark variant, light colour scheme
+  vars-light  adwaita-1-demo on libadwaita-vars, light variant, dark colour scheme
               Each under the opposite scheme: libadwaita-vars pins what libadwaita would derive
               from the scheme, so these should look like 'dark' and 'light'. Also GNOME's
               palette remapped (Animations, Tab View).
@@ -237,11 +237,11 @@ describe() {
             echo "    scheme: not themed by this template, expected."
             ;;
         vars-dark)
-            echo "== vars-dark: adwaita-1-demo on libadwaita-vars, dark variant, forced light scheme"
+            echo "== vars-dark: adwaita-1-demo on libadwaita-vars, dark variant, prefer-light"
             vars_checklist dark light
             ;;
         vars-light)
-            echo "== vars-light: adwaita-1-demo on libadwaita-vars, light variant, forced dark scheme"
+            echo "== vars-light: adwaita-1-demo on libadwaita-vars, light variant, prefer-dark"
             vars_checklist light dark
             ;;
     esac
@@ -255,6 +255,8 @@ variant_of() {
     esac
 }
 
+# ADW_DEBUG_COLOR_SCHEME takes default, prefer-dark or prefer-light only (libadwaita 1.9); anything
+# else is ignored with a warning, leaving the system's preference.
 launch() {
     local scenario=$1 dir=$2 scheme=$3 app=$4
     shift 4
@@ -303,7 +305,7 @@ for scenario in "${scenarios[@]}"; do
         light) launch light light prefer-light adwaita-1-demo ;;
         mismatch) launch mismatch dark default adwaita-1-demo "Style Classes+Run the Demo" ;;
         editor) launch editor dark prefer-dark gnome-text-editor ;;
-        vars-dark) launch vars-dark dark-vars force-light adwaita-1-demo "${vars_pages[@]}" ;;
-        vars-light) launch vars-light light-vars force-dark adwaita-1-demo "${vars_pages[@]}" ;;
+        vars-dark) launch vars-dark dark-vars prefer-light adwaita-1-demo "${vars_pages[@]}" ;;
+        vars-light) launch vars-light light-vars prefer-dark adwaita-1-demo "${vars_pages[@]}" ;;
     esac
 done
