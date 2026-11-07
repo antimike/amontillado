@@ -3,7 +3,8 @@
 docs/design.md, "Theme engine (v0.2)", "Formats and views". A view is the set of variables a
 template format expects, made from one variant of a palette. Mustache is tinted-theming's
 builder spec: per colour (every base24 key and every role) its hex, per-channel hex, BGR hex,
-RGB 0-255, RGB 0-65535 and 0-1 decimals, plus the scheme variables. pywal is pywal16's
+RGB 0-255, RGB 0-65535 and 0-1 decimals, plus the scheme variables, and amontillado's own
+`gnome-<colour>-hex` (GNOME's palette remapped, amontillado.gnome). pywal is pywal16's
 marker syntax (`{color0}`, `{color0.rgba}`, `{color0.lighten(10).strip}`) over its sixteen
 positional colours. A variable a template names that the view does not have is a render error,
 never an empty string.
@@ -21,6 +22,7 @@ import pystache
 from pystache.common import PystacheError
 from pystache.parser import ParsingError
 
+from amontillado.gnome import gnome_palette
 from amontillado.palette import Palette, Variant
 
 
@@ -43,6 +45,9 @@ def mustache_view(palette: Palette, variant: str) -> dict[str, object]:
             view[f"{name}-rgb-{channel}"] = value
             view[f"{name}-rgb16-{channel}"] = value * 257
             view[f"{name}-dec-{channel}"] = f"{value / 255:.8f}"
+    # GNOME's palette remapped (libadwaita-vars); hex only, outside the builder spec.
+    for name, colour in gnome_palette(colours).items():
+        view[f"gnome-{name}-hex"] = colour.removeprefix("#")
     slug = _slug(palette.name)
     view.update(
         {

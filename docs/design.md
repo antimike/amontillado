@@ -920,7 +920,8 @@ file), `gtk` (`@define-color` for every key: imported by waybar, swaync and wlog
 GTK3 `gtk.css` and libadwaita's `gtk-4.0/gtk.css`), `rofi` (a `* { ... }` block of variables),
 `hyprland` (a Lua table, D62), `hyprlock` (hyprlang `$variables`), `sway` (`set $variable`),
 `dunst` (a `dunstrc.d` drop-in with the urgency colours: dunst has no variables, so this one is a
-small complete theme), `libadwaita` (below), `nvim` (`palette.lua`), `shell` (`export
+small complete theme), `libadwaita` and `libadwaita-vars` (below), `nvim` (`palette.lua`),
+`shell` (`export
 AMO_BASE00=...`), and `json` (the palette as JSON, for anything else). `amo theme templates`
 lists them with their variables.
 
@@ -942,7 +943,34 @@ must match the variant applied, or a dark palette gets dark accent text. amontil
 set the scheme (a global setting other apps and tools read); a reload command naming
 `{variant}` does, written by the user: [colour-scheme-hooks.md](colour-scheme-hooks.md). Not defined: the GNOME palette (`blue_1` … `dark_5`, fixed hues apps name on
 purpose), the names libadwaita derives itself (`theme_*`, `insensitive_*`), and the
-variables-only `--active-toggle-*` and `--overview-*`.
+variables-only `--active-toggle-*` and `--overview-*`: `libadwaita-vars` sets those.
+
+`libadwaita-vars` (amo-j24.2) is the same `@define-color` block followed by a `:root` block of
+libadwaita's CSS variables, so it serves `gtk-4.0/gtk.css` only (with it, `libadwaita` serves
+`gtk-3.0` alone). It **departs** from the planned `@import` of `libadwaita.css`: a
+relative `@import` resolves against the path GTK loaded, so a copied or symlinked `gtk.css`
+would look for `libadwaita.css` in `~/.config/gtk-4.0/`; the block is repeated instead, and a
+test keeps the two templates' colours equal. The `:root` block pins the standalone
+`--accent-color` (`accent`), `--destructive-color` and `--error-color` (`error`),
+`--success-color` and `--warning-color`, which libadwaita otherwise derives from the
+`*_bg_color` by the desktop's colour scheme; `.osd` widgets still derive theirs (libadwaita
+redefines them there), and the symbolic-icon palette follows the pinned ones.
+The active toggle follows Adwaita's construction, since a toggle group's track is its text
+colour at 10 % over whatever surface holds it: in dark, `--active-toggle-bg-color` is `base05` at
+20 % over the track (always lighter than it) with `base07` text; in light, `base11` (the
+lightest ramp colour) with `base05`. An opaque `selection` (`base02`), the first choice, measured
+1.05:1 against the track on a `base01` card in the live test (gruvbox dark), all but invisible.
+`--overview-bg-color`/`-fg-color`
+`base01`/`base05`. Then GNOME's palette, `--blue-1` … `--dark-5`, which libadwaita 1.9
+defines as literals (so `@define-color` cannot reach an app naming `var(--blue-3)`), from the
+view's `gnome-*-hex` ("Formats and views"). Not set: the accent presets `--accent-blue` …
+`--accent-slate` (the system accent's choices, which the stylesheet never reads and the named
+accent overrides) and the non-colour variables (`--border-opacity`, `--window-radius`, ...).
+The colour-scheme hook stays useful: GtkSourceView styles and app assets still follow the
+scheme. Tests: every colour variable of libadwaita 1.9's `:root` blocks is defined (the accent
+presets aside), and each standalone colour reaches 4.5:1 on every libadwaita surface, the
+overview pair 4.5:1, and on every surface the active toggle 1.15:1 against the track (about
+Adwaita's own on its white view) with its text at 4.5:1, on gruvbox after the contrast check.
 Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
 `_` (rofi 2.0): there roles are hyphenated (`on-accent`). The hyprland and hyprlock colours are
 `rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);
@@ -951,7 +979,7 @@ views", then base16-shell's extras `base09`, `base0F`, `base01`, `base02`, `base
 the tab, border, selection and URL colours. Headers name the palette by its slug, never its
 name, so no quote in a name can break a Lua, shell or JSON file. Default output files: `kitty.conf`,
 `colors.css`, `colors.rasi`, `hyprland.lua`, `hyprlock.conf`, `sway`, `dunst.conf`,
-`libadwaita.css`, `palette.lua`, `colors.sh`, `palette.json`.
+`libadwaita.css`, `libadwaita-vars.css`, `palette.lua`, `colors.sh`, `palette.json`.
 
 ### Formats and views
 
@@ -962,7 +990,20 @@ Each format gets a *view* of the palette: the variables its templates expect.
   `accent-rgb16-r`, `accent-dec-r`, `accent-hex-bgr`, ...), and `scheme-name`, `scheme-slug`,
   `scheme-slug-underscored`, `scheme-system` (`base24`), `scheme-variant`,
   `scheme-is-dark-variant` / `scheme-is-light-variant`; also `scheme-author` (the scheme's, or
-  empty) and `scheme-description` (empty), which template headers name. Decimals have eight
+  empty) and `scheme-description` (empty), which template headers name. Outside the spec,
+  amontillado adds `gnome-<colour>-hex` for GNOME's palette remapped onto the palette
+  (`gnome-blue-1-hex` … `gnome-dark-5-hex`, hex only; `amontillado/gnome.py`): each hue family
+  keeps libadwaita 1.9's OKLCH lightness ladder (steps 1-5, *initial*: blue 0.80 0.70 0.61
+  0.56 0.49, green 0.88 0.82 0.76 0.72 0.63, yellow 0.94 0.91 0.87 0.84 0.76, orange 0.85 0.79
+  0.72 0.65 0.57, red 0.68 0.62 0.58 0.52 0.47, purple 0.75 0.64 0.53 0.49 0.42, brown 0.76
+  0.65 0.56 0.52 0.42), the same in both variants as in GNOME's, and takes hue and chroma from
+  its colours: red `base08`/`base12`, orange `base09`, yellow `base0A`/`base13`, green
+  `base0B`/`base14`, blue `base0D`/`base16`, purple `base0E`/`base17`, brown `base0F`. A step
+  darker than both colours takes the darker one's hue and chroma, lighter than both the
+  lighter one's, and in between both are interpolated by lightness (hue the short way round);
+  chroma drops only to stay in gamut. `light-1` … `light-5` and `dark-1` … `dark-5` are the
+  ten ramp colours (`base00`-`base07`, `base10`, `base11`) sorted lightest first, so
+  `light-1` is the lightest and `dark-5` the darkest in either variant. Decimals have eight
   places (`0.48627451`), `rgb16` is the 8-bit value times 257. The output is not HTML-escaped,
   and partials (`{{> name}}`) are a render error: a template is one file, never one read from
   the working directory. pystache renders an unclosed section to the end of the template rather

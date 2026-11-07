@@ -1,0 +1,148 @@
+/* amontillado {{scheme-slug}} ({{scheme-variant}}): libadwaita's named colours and CSS variables, for gtk-4.0/gtk.css only (GTK3 rejects the :root block: use libadwaita for gtk-3.0). */
+/* The @define-color block is the libadwaita template's; the :root block pins what libadwaita would otherwise derive from the desktop's colour scheme or leave at Adwaita's literals. */
+
+@define-color accent_bg_color #{{accent-hex}};
+@define-color accent_fg_color #{{on_accent-hex}};
+@define-color accent_color #{{accent-hex}};
+
+@define-color destructive_bg_color #{{error-hex}};
+@define-color destructive_fg_color #{{base00-hex}};
+@define-color destructive_color #{{error-hex}};
+
+@define-color success_bg_color #{{success-hex}};
+@define-color success_fg_color #{{base00-hex}};
+@define-color success_color #{{success-hex}};
+
+@define-color warning_bg_color #{{warning-hex}};
+@define-color warning_fg_color #{{base00-hex}};
+@define-color warning_color #{{warning-hex}};
+
+@define-color error_bg_color #{{error-hex}};
+@define-color error_fg_color #{{base00-hex}};
+@define-color error_color #{{error-hex}};
+
+@define-color window_bg_color #{{base00-hex}};
+@define-color window_fg_color #{{base05-hex}};
+
+@define-color view_bg_color #{{base10-hex}};
+@define-color view_fg_color #{{base05-hex}};
+
+@define-color headerbar_bg_color #{{base01-hex}};
+@define-color headerbar_fg_color #{{base05-hex}};
+@define-color headerbar_border_color #{{base05-hex}};
+@define-color headerbar_backdrop_color #{{base00-hex}};
+
+@define-color sidebar_bg_color #{{base01-hex}};
+@define-color sidebar_fg_color #{{base05-hex}};
+@define-color sidebar_backdrop_color #{{base00-hex}};
+@define-color sidebar_border_color #{{base02-hex}};
+
+@define-color secondary_sidebar_bg_color #{{base00-hex}};
+@define-color secondary_sidebar_fg_color #{{base05-hex}};
+@define-color secondary_sidebar_backdrop_color #{{base10-hex}};
+@define-color secondary_sidebar_border_color #{{base02-hex}};
+
+@define-color card_bg_color #{{base01-hex}};
+@define-color card_fg_color #{{base05-hex}};
+
+@define-color dialog_bg_color #{{base01-hex}};
+@define-color dialog_fg_color #{{base05-hex}};
+
+@define-color popover_bg_color #{{base01-hex}};
+@define-color popover_fg_color #{{base05-hex}};
+
+@define-color thumbnail_bg_color #{{base01-hex}};
+@define-color thumbnail_fg_color #{{base05-hex}};
+
+@define-color borders #{{base02-hex}};
+@define-color scrollbar_outline_color #{{base00-hex}};
+
+/* Shadows stay black in either variant, as in Adwaita; only their strength differs. */
+{{#scheme-is-dark-variant}}
+@define-color shade_color rgba(0, 0, 0, 0.25);
+@define-color headerbar_shade_color rgba(0, 0, 0, 0.36);
+@define-color headerbar_darker_shade_color rgba(0, 0, 0, 0.9);
+@define-color sidebar_shade_color rgba(0, 0, 0, 0.25);
+@define-color secondary_sidebar_shade_color rgba(0, 0, 0, 0.25);
+@define-color card_shade_color rgba(0, 0, 0, 0.36);
+@define-color popover_shade_color rgba(0, 0, 0, 0.25);
+{{/scheme-is-dark-variant}}
+{{#scheme-is-light-variant}}
+@define-color shade_color rgba(0, 0, 0, 0.07);
+@define-color headerbar_shade_color rgba(0, 0, 0, 0.12);
+@define-color headerbar_darker_shade_color rgba(0, 0, 0, 0.12);
+@define-color sidebar_shade_color rgba(0, 0, 0, 0.07);
+@define-color secondary_sidebar_shade_color rgba(0, 0, 0, 0.07);
+@define-color card_shade_color rgba(0, 0, 0, 0.07);
+@define-color popover_shade_color rgba(0, 0, 0, 0.07);
+{{/scheme-is-light-variant}}
+
+/* The standalone colours, set rather than derived from the *_bg_color by the colour scheme. */
+:root {
+  --accent-color: #{{accent-hex}};
+  --destructive-color: #{{error-hex}};
+  --success-color: #{{success-hex}};
+  --warning-color: #{{warning-hex}};
+  --error-color: #{{error-hex}};
+
+  /* As in Adwaita: the toggle group's track is the text colour at 10 % over whatever surface
+     it sits on, so the active segment is translucent text in dark (lighter than any track) and
+     the lightest ramp colour in light. An opaque base02 all but vanished on a base01 card. */
+{{#scheme-is-dark-variant}}
+  --active-toggle-bg-color: color-mix(in srgb, #{{base05-hex}} 20%, transparent);
+  --active-toggle-fg-color: #{{base07-hex}};
+{{/scheme-is-dark-variant}}
+{{#scheme-is-light-variant}}
+  --active-toggle-bg-color: #{{base11-hex}};
+  --active-toggle-fg-color: #{{base05-hex}};
+{{/scheme-is-light-variant}}
+  --overview-bg-color: #{{base01-hex}};
+  --overview-fg-color: #{{base05-hex}};
+
+  /* GNOME's palette, by hue family from the palette (docs/design.md, "Formats and views"). */
+  --blue-1: #{{gnome-blue-1-hex}};
+  --blue-2: #{{gnome-blue-2-hex}};
+  --blue-3: #{{gnome-blue-3-hex}};
+  --blue-4: #{{gnome-blue-4-hex}};
+  --blue-5: #{{gnome-blue-5-hex}};
+  --green-1: #{{gnome-green-1-hex}};
+  --green-2: #{{gnome-green-2-hex}};
+  --green-3: #{{gnome-green-3-hex}};
+  --green-4: #{{gnome-green-4-hex}};
+  --green-5: #{{gnome-green-5-hex}};
+  --yellow-1: #{{gnome-yellow-1-hex}};
+  --yellow-2: #{{gnome-yellow-2-hex}};
+  --yellow-3: #{{gnome-yellow-3-hex}};
+  --yellow-4: #{{gnome-yellow-4-hex}};
+  --yellow-5: #{{gnome-yellow-5-hex}};
+  --orange-1: #{{gnome-orange-1-hex}};
+  --orange-2: #{{gnome-orange-2-hex}};
+  --orange-3: #{{gnome-orange-3-hex}};
+  --orange-4: #{{gnome-orange-4-hex}};
+  --orange-5: #{{gnome-orange-5-hex}};
+  --red-1: #{{gnome-red-1-hex}};
+  --red-2: #{{gnome-red-2-hex}};
+  --red-3: #{{gnome-red-3-hex}};
+  --red-4: #{{gnome-red-4-hex}};
+  --red-5: #{{gnome-red-5-hex}};
+  --purple-1: #{{gnome-purple-1-hex}};
+  --purple-2: #{{gnome-purple-2-hex}};
+  --purple-3: #{{gnome-purple-3-hex}};
+  --purple-4: #{{gnome-purple-4-hex}};
+  --purple-5: #{{gnome-purple-5-hex}};
+  --brown-1: #{{gnome-brown-1-hex}};
+  --brown-2: #{{gnome-brown-2-hex}};
+  --brown-3: #{{gnome-brown-3-hex}};
+  --brown-4: #{{gnome-brown-4-hex}};
+  --brown-5: #{{gnome-brown-5-hex}};
+  --light-1: #{{gnome-light-1-hex}};
+  --light-2: #{{gnome-light-2-hex}};
+  --light-3: #{{gnome-light-3-hex}};
+  --light-4: #{{gnome-light-4-hex}};
+  --light-5: #{{gnome-light-5-hex}};
+  --dark-1: #{{gnome-dark-1-hex}};
+  --dark-2: #{{gnome-dark-2-hex}};
+  --dark-3: #{{gnome-dark-3-hex}};
+  --dark-4: #{{gnome-dark-4-hex}};
+  --dark-5: #{{gnome-dark-5-hex}};
+}

@@ -16,6 +16,8 @@ just fmt                # format and apply safe fixes
 just install-dev        # editable pipx install of `amontillado` / `amo`
 just libadwaita-live-test  # the libadwaita template in real GTK4 apps (by eye; --help)
 just libadwaita-live-test --screenshot DIR  # the same, captured (Hyprland only; see --help)
+just libadwaita-live-test --screenshot DIR --hidden  # captured on a headless output, off screen
+just libadwaita-live-test -S SCHEME [-S SCHEME] | -P PICTURE  # another palette than gruvbox
 ```
 
 ## Coding standards
