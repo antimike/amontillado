@@ -974,6 +974,8 @@ scheme. Tests: every colour variable of libadwaita 1.9's `:root` blocks is defin
 presets aside), and each standalone colour reaches 4.5:1 on every libadwaita surface, the
 overview pair 4.5:1, and on every surface the active toggle 1.15:1 against the track (about
 Adwaita's own on its white view) with its text at 4.5:1, on gruvbox after the contrast check.
+Checked live (`tools/libadwaita-live-test.sh`): screenshots with gruvbox and Lumina Polaire
+(2026-11-06), and MH's visual check with Catppuccin Mocha and Latte (2026-11-07).
 Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
 `_` (rofi 2.0): there roles are hyphenated (`on-accent`). The hyprland and hyprlock colours are
 `rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);
