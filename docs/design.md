@@ -1307,6 +1307,63 @@ Agreed with MH, 2026-10-30:
     key beside `theme.generator` rather than an app: it changes the palette every app gets.
     matugen's `blend` harmonization was rejected (neighbouring hues collapse). wallust stays.
 
+## git-annex libraries (v0.4)
+
+Each library root may be a git-annex repository: info files in git, images annexed (epic
+`amo-qnn`; "Roadmap", item 6). Repository and remote setup is git configuration owned by the
+dotfiles, not amontillado config; the layout and both remote setups are documented in the layout
+docs (amo-qnn.5).
+
+### git-annex libraries: decisions
+
+1. **The NSFW library is encrypted off-machine with git-remote-gcrypt, never git-crypt**
+   (spike amo-qnn.1, agreed with MH 2026-11-07). Tested with git-annex 10.20260115, git 2.54,
+   git-remote-gcrypt 1.5 and git-crypt 0.8 on throwaway repositories, checking the remotes for
+   plaintext with git objects decompressed:
+   - **gcrypt** (the git side through a `gcrypt::` remote, the images in a git-annex special
+     remote with `encryption=hybrid`): nothing readable off-machine: info files, record names
+     (paths), the git-annex branch (every image's SHA-256 and location log) and commit messages
+     are all encrypted. A fresh clone restores with `git clone gcrypt::URL`, `git annex init`,
+     `git annex enableremote <special remote>`, `git annex get`; the clone's git remote must not
+     carry the special remote's name (`clone -o <that name>` makes enableremote refuse).
+   - **git-crypt fails twice.** First, `git annex init` writes `* filter=annex` into
+     `.git/info/attributes`, which outranks `.gitattributes`, so a `filter=git-crypt` there
+     never applies: info files were pushed in plaintext, silently. Adding the line to
+     `.git/info/attributes` fixes one clone only (it is not versioned), and a clone without it
+     commits plaintext at its first sidecar edit. Second, even when it works it encrypts file
+     contents only: record names (tag-derived with `amo name --from-tags`), the git-annex
+     branch with each image's hash (which identifies a known Wallhaven image) and commit
+     messages stay readable. So the two filters cannot share paths, and git-crypt does not meet
+     the goal anyway.
+2. **MH's setup: git on GitHub, images on the SSD backup drive.** The gcrypt remote is a GitHub
+   repository (opaque there: a few encrypted files; it needs force pushes allowed, since gcrypt
+   rewrites its branch, and `gcrypt.require-explicit-force-push` set so that is explicit).
+   git-annex cannot keep image content in a hosted git repository, so the images go to a second
+   special remote with `encryption=hybrid` (a `directory` remote on the drive). The other
+   setup, one gcrypt remote holding git and images together (`type=gcrypt` on an ssh host or a
+   local or USB path, as tested), is documented beside it.
+3. **One OpenPGP key per machine, Curve25519** (`gpg --quick-gen-key "<name>" default default
+   never`: Ed25519 signing, Cv25519 encryption; the data itself is AES-256, chosen by OpenPGP
+   and gcrypt, not configured), **plus an offline backup key** as one more recipient, so that
+   losing every machine loses nothing. Separate keys, not per-machine subkeys of one key:
+   OpenPGP encrypts to one encryption subkey per key. Every key is a recipient of both remotes:
+   `gcrypt-participants` lists them and the special remote's cipher is encrypted to each.
+   - **Adding a machine** (from one that has access, tested): add its key to
+     `remote.<name>.gcrypt-participants` and push (the manifest, which holds each pack's key,
+     is encrypted to all participants at every push, so the new key reads the whole history; no
+     rewrite), and `git annex enableremote <special remote> keyid+=<key>` (re-encrypts the
+     cipher only, not the images). A key never added cannot decrypt (tested).
+   - **Removing a machine does not revoke what it holds**: `keyid-=` and dropping it from the
+     participants stop it reading what comes later, but it knows the special remote's cipher
+     and has every pack it fetched. Real revocation is a new remote and a new upload.
+   - `gcrypt-publish-participants` (git-annex turns it on) stores the recipients' key ids in the
+     remote: it hides no content but shows whose keys open it; off, gpg tries every secret key.
+4. **`annex.largefiles` takes one pattern per line** (found in the spike, for every annexed
+   root): a gitattributes value cannot contain spaces, so `* annex.largefiles=(include=*.jpg
+   or include=*.png)` is cut to `(include=*.jpg` and the images went into git. The layout uses
+   `* annex.largefiles=nothing`, then `*.jpg annex.largefiles=anything` and so on for `.jpeg`,
+   `.png` and `.webp`.
+
 ## Testing
 
 - No network in tests: the HTTP layer is one small function, replaced by a stub that serves
@@ -1337,8 +1394,9 @@ Agreed with MH, 2026-10-30:
    (built 2026-11-07, amo-2mf), and the git-annex libraries below.
 6. git-annex libraries (epic `amo-qnn`, part of v0.4): each root a git-annex repository, info files in git,
    images annexed (SHA-256 keys, the same hash as each file's `sha256`); the index stays outside, in
-   `$XDG_STATE_HOME`. Encryption of the NSFW library off-machine is a spike (git-remote-gcrypt
-   and an encrypted annex remote, or git-crypt, which does not cover annexed content).
+   `$XDG_STATE_HOME`. The NSFW library is encrypted off-machine with git-remote-gcrypt and an
+   encrypted annex remote, not git-crypt (spike amo-qnn.1, 2026-11-07: "git-annex libraries:
+   decisions").
    **This brings the first non-Python dependencies** (git-annex, written in Haskell;
    git-remote-gcrypt and gnupg). They stay optional and detected at runtime: `pipx install`
    keeps working without them, and the commands that need them say so.
