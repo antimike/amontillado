@@ -741,21 +741,12 @@ def add_derived(
         raise AddError(f"{file}: not an image file")
     inside = file.resolve().parent == directory.resolve()
     name = name or file.name
-    if Path(name).name != name or Path(name).suffix.lower() not in IMAGE_SUFFIXES:
-        raise AddError(f"name {name!r}: not an image file name")
-    if name in record.files:
-        raise AddError(f"{directory}: lists {name} already")
+    check_new_name(directory, record, name, own=inside and name == file.name)
     target = directory / name
-    if target.exists() and not (inside and name == file.name):
-        raise AddError(f"{target} exists")
     present = present_files(directory, record)
     if needs_healing(directory, record, present, ignore=file.name if inside else None):
         raise AddError(f"{directory}: needs healing; run `amo index` first")
-    source = source or original_file(record, present)
-    if source is None:
-        raise AddError(f"{directory}: no original file to derive from")
-    if source not in present:
-        raise AddError(f"{directory}: no file {source} to derive from")
+    source = derived_source(directory, record, present, source)
     sha256 = sha256_file(file)
     same = [other for other in sorted(present) if record.files[other].sha256 == sha256]
     if same:
@@ -774,6 +765,29 @@ def add_derived(
             shutil.move(target, file)
         raise
     return record_entry(config, directory, root, record, present | {name}), name
+
+
+def check_new_name(directory: Path, record: Record, name: str, *, own: bool = False) -> None:
+    """Raise AddError unless `name` can name a new file of the record in `directory`: an
+    image file name the record does not list, and no file there already (unless `own`: the
+    file being added is that one)."""
+    if Path(name).name != name or Path(name).suffix.lower() not in IMAGE_SUFFIXES:
+        raise AddError(f"name {name!r}: not an image file name")
+    if name in record.files:
+        raise AddError(f"{directory}: lists {name} already")
+    if (directory / name).exists() and not own:
+        raise AddError(f"{directory / name} exists")
+
+
+def derived_source(directory: Path, record: Record, present: set[str], source: str | None) -> str:
+    """The record's file a derived file is made from: `source`, or by default the original
+    (`original_file`). Raises AddError if there is none, or `source` is not a present file."""
+    source = source or original_file(record, present)
+    if source is None:
+        raise AddError(f"{directory}: no original file to derive from")
+    if source not in present:
+        raise AddError(f"{directory}: no file {source} to derive from")
+    return source
 
 
 def _size(entry: FileEntry) -> tuple[int, int]:
