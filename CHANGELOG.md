@@ -14,6 +14,12 @@ All notable changes to amontillado are documented here. The format follows
   the desktop's colour scheme), the active-toggle and overview colours, and GNOME's palette
   (`--blue-1` … `--dark-5`) remapped onto the palette by hue family.
 - Mustache view: `gnome-<colour>-hex`, GNOME's palette remapped onto the palette.
+- `amo edit PICTURE [--tool NAME | --extcmd CMD] [--name N] [--from FILE]`: runs an editor on a
+  copy of a record's file in `.amo/edit-*` and adds what it saved as a hand-made derived file
+  (`<stem>-edit.<ext>`). Editors are named in the config, as git's difftool: `edit.default_tool`
+  and `edit.tools.<name>.{cmd,description}`, where `cmd` runs under `sh -c` with `INPUT`,
+  `OUTPUT` and `WORKDIR` set; `amo edit --list-tools` lists them. The config template has
+  examples for GIMP, Krita, Pinta, darktable, RawTherapee, satty, ImageMagick and Inkscape.
 
 ## [0.3.0] - 2026-11-05
 

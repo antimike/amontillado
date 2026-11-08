@@ -11,7 +11,8 @@ colour-scheme hook ([colour-scheme-hooks.md](colour-scheme-hooks.md)), `amo name
 `--from-tags`) and `amo add-derived`. Towards v0.4 (on main, unreleased, 2026-11-06): the
 GTK4-only `libadwaita-vars` template ("Template sources") with GNOME's palette remapped
 (`gnome-*-hex`, "Formats and views"), and a live test that takes any scheme or library picture
-and captures without keyboard focus, optionally off screen.
+and captures without keyboard focus, optionally off screen; `amo edit` with named editor tools
+("Editing", 2026-11-07).
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -132,8 +133,31 @@ files:
   original stays the default file. Refused: a file that is not an image, a name the record
   lists or that exists, a `--from` it does not list or lacks, content one of its files has,
   and a record that needs `amo index`. Without `amo add-derived`, `amo index` adds an unlisted
-  image as an original. Opening an editor on a copy and deriving the result (`amo edit
-  --tool`) is a later step (amo-2mf).
+  image as an original. `amo edit` opens an editor on a copy and adds the result ("Editing").
+- **Editing** (`amo edit`, amo-2mf; agreed with MH 2026-11-07): the same refusals as
+  `amo add-derived`, checked before any tool runs, then the source file (`--from`, default the
+  original as above) is copied into a fresh working directory inside the record,
+  `.amo/edit-*`: `amo index` never looks there (records do not nest), an NSFW picture stays
+  under its root, and the result moves in without crossing a file system. The tool is named
+  like git's difftool: `--tool NAME` picks an entry of `edit.tools` (default
+  `edit.default_tool`), `--extcmd CMD` runs a one-off command line, `--list-tools` lists them
+  with their descriptions. A tool's `cmd` runs under `sh -c` in the working directory with
+  `INPUT` (the copy), `OUTPUT` (a path for the result, not created) and `WORKDIR` added to the
+  environment (git's `$LOCAL`/`$REMOTE` style rather than the `{file}` placeholders of
+  `crop.viewer` and the reload hooks: several named arguments, shell features, and the
+  user's own variables as parameters, `STYLE=x amo edit --tool darktable-cli`); its standard
+  output goes to standard error. It must block: GIMP needs `-n`, `xdg-open` never works.
+  **The result** is `OUTPUT` if the tool wrote it, else the one image (`.jpg`, `.png`,
+  `.webp`, hidden paths left out) in the working directory or below it that is new or changed,
+  which covers editors that keep their own format and export separately (GIMP's `.xcf`,
+  Krita's `.kra`, darktable's `darktable_exported/`): export into the folder the editor opens
+  in. It is added as `<stem>-edit<ext>` (then `-edit-2` ...; `--name` must keep the result's
+  format). A tool that exits non-zero, saves nothing or saves several images fails; the
+  working directory is removed when it holds nothing the tool saved and otherwise kept and
+  named, for `amo add-derived` by hand. Saving nothing within 2 s (*initial*) adds a hint that
+  the tool probably did not block. Not built: tools with declared parameters (`--args`, an
+  `env:` schema), since environment variables cover them; descriptions for shell completion
+  are there when completion is.
 - **Interactive crops** (`amo crop --interactive`, amo-cmj): after the same refusals, the
   original is shown with the box drawn (the rest darkened), starting from the box `--at` gives.
   Arrows or `hjkl` move it by 5% of its size (shifted, or `HJKL`: 25%), `+` and `-` zoom it
@@ -273,7 +297,14 @@ time, so retuning a threshold needs no recomputation.
 library_roots: [~/Pictures/wallpapers]   # searched in addition to the default root
 nsfw_root: ~/private/wallpapers-nsfw     # replaces the default NSFW root
 api_key_command: pass show wallhaven/api-key
+edit:                                    # amo edit's editors ("Editing")
+  default_tool: gimp
+  tools:
+    gimp: {cmd: 'gimp -n "$INPUT"', description: GIMP}
 ```
+
+The template has commented examples for GIMP, Krita, Pinta, darktable and `darktable-cli`,
+RawTherapee and `rawtherapee-cli`, satty, ImageMagick and Inkscape.
 
 Every key is described in the commented template `amo config init` writes
 ([`config.template.yaml`](../src/amontillado/config.template.yaml)). Paths must be absolute (`~`
@@ -475,6 +506,9 @@ amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make ea
 amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
 amo crop PICTURE W:H [--at F] [--interactive] [--force] [--dry-run]   crop a record's original; prints it
 amo add-derived PICTURE FILE [--name N] [--from FILE] [--dry-run]   add a hand-made derived file
+amo edit PICTURE [--tool NAME | --extcmd CMD] [--name N] [--from FILE] [--dry-run]
+                                     edit a copy in an editor, add the result; prints it
+amo edit --list-tools                the editors under edit.tools
 amo name PICTURE NAME [--no-rename-directory] [--dry-run]      name or rename a record
 amo name --from-tags [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
 ```
@@ -1299,8 +1333,8 @@ Agreed with MH, 2026-10-30:
    `amo config check` ("Per-app configuration").
 4. v0.3 (epic `amo-e0d`; released 2026-11-05): the `libadwaita` template, the `{variant}`
    reload placeholder for a colour-scheme hook, `amo name`, `amo add-derived`.
-5. v0.4 (epic `amo-j24`): `libadwaita-vars` (built 2026-11-06, amo-j24.2), `amo edit --tool`
-   (amo-2mf), and the git-annex libraries below.
+5. v0.4 (epic `amo-j24`): `libadwaita-vars` (built 2026-11-06, amo-j24.2), `amo edit`
+   (built 2026-11-07, amo-2mf), and the git-annex libraries below.
 6. git-annex libraries (epic `amo-qnn`, part of v0.4): each root a git-annex repository, info files in git,
    images annexed (SHA-256 keys, the same hash as each file's `sha256`); the index stays outside, in
    `$XDG_STATE_HOME`. Encryption of the NSFW library off-machine is a spike (git-remote-gcrypt

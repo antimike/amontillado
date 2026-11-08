@@ -10,6 +10,8 @@ from amontillado.config import (
     AppConfig,
     ConfigError,
     CropConfig,
+    EditConfig,
+    EditTool,
     ThemeConfig,
     api_key,
     load_config,
@@ -298,3 +300,58 @@ def test_crop_block_errors(home: Path, text: str, error: str) -> None:
     write_config(home, text)
     with pytest.raises(ConfigError, match=re.escape(error)):
         load_config()
+
+
+def test_edit_block(home: Path) -> None:
+    assert load_config().edit == EditConfig()
+    write_config(
+        home,
+        "edit:\n"
+        "  default_tool: gimp\n"
+        "  tools:\n"
+        "    gimp: {cmd: 'gimp -n \"$INPUT\"', description: GIMP}\n"
+        "    magick-modulate:\n"
+        '      cmd: magick "$INPUT" -modulate 100,80 "$OUTPUT"\n',
+    )
+    assert load_config().edit == EditConfig(
+        "gimp",
+        {
+            "gimp": EditTool('gimp -n "$INPUT"', "GIMP"),
+            "magick-modulate": EditTool('magick "$INPUT" -modulate 100,80 "$OUTPUT"'),
+        },
+    )
+
+
+def test_edit_block_without_tools(home: Path) -> None:
+    write_config(home, "edit:\n  tools:\n")
+    assert load_config().edit == EditConfig()
+
+
+@pytest.mark.parametrize(
+    ("text", "error"),
+    [
+        ("edit: []\n", "edit must be a mapping"),
+        ("edit: {default_tool: gimp}\n", "edit.default_tool: 'gimp' is not one of edit.tools"),
+        ("edit: {tools: {gimp: {}}}\n", "edit.tools.gimp.cmd must be a command line"),
+        ("edit: {tools: {gimp: {cmd: '  '}}}\n", "edit.tools.gimp.cmd must be a command line"),
+        ("edit: {tools: {gimp: gimp}}\n", "edit.tools.gimp must be a mapping"),
+        ("edit: {tools: {-x: {cmd: x}}}\n", "edit.tools: '-x' is not a tool name"),
+        ("edit: {tools: {a b: {cmd: x}}}\n", "edit.tools: 'a b' is not a tool name"),
+        (
+            "edit: {tools: {gimp: {cmd: x, description: 3}}}\n",
+            "edit.tools.gimp.description must be text",
+        ),
+    ],
+)
+def test_edit_block_errors(home: Path, text: str, error: str) -> None:
+    write_config(home, text)
+    with pytest.raises(ConfigError, match=re.escape(error)):
+        load_config()
+
+
+def test_unknown_edit_keys_warn(home: Path, caplog: pytest.LogCaptureFixture) -> None:
+    write_config(home, "edit: {tool: gimp, tools: {gimp: {cmd: x, args: y}}}\n")
+    with caplog.at_level(logging.WARNING):
+        load_config()
+    assert "'edit.tool'" in caplog.text
+    assert "'edit.tools.gimp.args'" in caplog.text

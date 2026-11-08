@@ -11,6 +11,8 @@ from __future__ import annotations
 import textwrap
 from dataclasses import dataclass
 
+import yaml
+
 from amontillado.config import (
     CONTRAST_CHOICES,
     FORMATS,
@@ -25,6 +27,8 @@ from amontillado.config import (
 WIDTH = 100
 # The placeholder under theme.apps for an app's own keys.
 APP = "<app>"
+# The placeholder under edit.tools for a tool's own keys.
+TOOL = "<tool>"
 
 
 @dataclass(frozen=True)
@@ -89,6 +93,37 @@ KEYS: tuple[Key, ...] = (
         "(eog, gThumb and Gwenview do; feh needs --reload; xdg-open opens whatever the "
         "desktop's default is).",
         '"xdg-open {file}"',
+    ),
+    Key(
+        "edit",
+        "amo edit: the editors it runs on a copy of a picture's file, by name (docs/design.md, "
+        '"Editing").',
+    ),
+    Key(
+        "edit.default_tool",
+        "The tool amo edit runs without --tool or --extcmd: a name under edit.tools. Unset: "
+        "amo edit needs one of those flags.",
+        "gimp",
+    ),
+    Key(
+        "edit.tools",
+        "Editors by name. A tool's cmd runs with sh -c in a fresh working directory inside the "
+        "record (.amo/edit-*), with INPUT (a copy of the file being edited), OUTPUT (where a "
+        "result may be written; it does not exist yet) and WORKDIR (that directory) added to "
+        "your environment, so a cmd can also read variables you set (STYLE=x amo edit ...). "
+        'Quote them ("$INPUT"). It must block until you are done: an editor that hands the '
+        "file to a running instance and returns finds nothing. The result is OUTPUT if it "
+        "exists, else the one image in the working directory (or below it) that is new or "
+        "changed; files in the editor's own format (.xcf, .kra) are ignored, so export into "
+        "the folder the editor opens in.",
+    ),
+    Key(
+        f"edit.tools.{TOOL}.cmd",
+        "The command line, run by sh -c.",
+    ),
+    Key(
+        f"edit.tools.{TOOL}.description",
+        "One line on what the tool is for, shown by amo edit --list-tools.",
     ),
     Key(
         "theme",
@@ -240,6 +275,73 @@ APP_EXAMPLES = (
     "gtk4: {template: libadwaita-vars}",
 )
 
+
+@dataclass(frozen=True)
+class ToolExample:
+    """A commented example under edit.tools."""
+
+    name: str
+    cmd: str
+    description: str
+    note: str = ""
+
+
+# Commented examples under edit.tools; tests/test_config_keys.py loads them uncommented.
+TOOL_EXAMPLES = (
+    ToolExample(
+        "gimp",
+        'gimp -n "$INPUT"',
+        "GIMP; File > Overwrite the copy, or Export As into its folder",
+        "-n starts a new GIMP: without it the file goes to a running one and gimp returns at once.",
+    ),
+    ToolExample(
+        "krita",
+        'krita "$INPUT"',
+        "Krita; File > Export into its folder",
+        "With Krita's 'Allow only one instance' setting on and Krita running, krita returns "
+        "at once.",
+    ),
+    ToolExample("pinta", 'pinta "$INPUT"', "Pinta; save over the copy"),
+    ToolExample(
+        "darktable",
+        'darktable --library :memory: "$INPUT"',
+        "darktable's darkroom; export (to darktable_exported/ by default)",
+        ":memory: keeps the copy out of your darktable library and its lock.",
+    ),
+    ToolExample(
+        "darktable-cli",
+        'darktable-cli "$INPUT" "$OUTPUT" --style "${STYLE:?a darktable style}"',
+        "a darktable style, no window; STYLE=<name> amo edit ...",
+    ),
+    ToolExample(
+        "rawtherapee",
+        'rawtherapee "$INPUT"',
+        "RawTherapee; Save current image into its folder",
+    ),
+    ToolExample(
+        "rawtherapee-cli",
+        'rawtherapee-cli -Y -o "$WORKDIR" -p "${PROFILE:?a .pp3 file}" -c "$INPUT"',
+        "a RawTherapee profile, no window; PROFILE=<file.pp3>; writes JPEG",
+        "Writes <name>.jpg into the working directory (over the copy if it is a JPEG); -n "
+        "before -c writes PNG.",
+    ),
+    ToolExample(
+        "satty",
+        'satty -f "$INPUT" -o "$WORKDIR/annotated.png" --early-exit',
+        "annotate, blur or redact; saving writes a PNG and closes it",
+    ),
+    ToolExample(
+        "magick-modulate",
+        'magick "$INPUT" -modulate 100,"${SATURATION:-80}" "$OUTPUT"',
+        "ImageMagick, no window; saturation to SATURATION% (default 80)",
+    ),
+    ToolExample(
+        "inkscape",
+        'inkscape "$INPUT"',
+        "Inkscape; Export as PNG into its folder (a vector editor, clumsy for bitmaps)",
+    ),
+)
+
 _BY_PATH = {key.path: key for key in KEYS}
 
 
@@ -289,9 +391,8 @@ def template() -> str:
         "# `amo config init`; `amo config check` validates it. Every key is optional and",
         "# commented out at its default or with an example: uncomment and change what you need.",
     ]
-    app_prefix = f"theme.apps.{APP}."
     for entry in KEYS:
-        if entry.path.startswith(app_prefix):
+        if any(entry.path.startswith(f"{section}.{name}.") for section, name in _ENTRIES.items()):
             continue
         depth = entry.path.count(".")
         indent = "  " * depth
@@ -301,16 +402,46 @@ def template() -> str:
             lines.append(f"{indent}{entry.name}:")
         else:
             lines.append(f"{indent}# {entry.name}: {entry.value}")
+        if entry.path in _ENTRIES:
+            lines.extend(_entry_keys(entry.path, indent + "  "))
         if entry.path == "theme.apps":
-            lines.extend(_apps(indent + "  "))
+            lines.append(f"{indent}  #")
+            lines.extend(
+                f"{indent}  # {example}" if example else f"{indent}  #" for example in APP_EXAMPLES
+            )
+        if entry.path == "edit.tools":
+            lines.extend(tool_example_lines(indent + "  "))
     return "\n".join(lines) + "\n"
 
 
-def _apps(indent: str) -> list[str]:
-    lines = [f"{indent}# An app's keys:"]
+# Sections holding named entries, and the placeholder for an entry's name in KEYS.
+_ENTRIES = {"theme.apps": APP, "edit.tools": TOOL}
+_ENTRY_KINDS = {"theme.apps": "An app's", "edit.tools": "A tool's"}
+
+
+def _entry_keys(section: str, indent: str) -> list[str]:
+    lines = [f"{indent}# {_ENTRY_KINDS[section]} keys:"]
+    prefix = f"{section}.{_ENTRIES[section]}."
     for entry in KEYS:
-        if entry.path.startswith(f"theme.apps.{APP}."):
+        if entry.path.startswith(prefix):
             lines.extend(_comment(f"{entry.name}: {_described(entry)}", indent, "  ", "      "))
-    lines.append(f"{indent}#")
-    lines.extend(f"{indent}# {example}" if example else f"{indent}#" for example in APP_EXAMPLES)
     return lines
+
+
+def tool_example_lines(indent: str = "    ") -> list[str]:
+    """The commented examples under edit.tools, as the template has them."""
+    lines = []
+    for example in TOOL_EXAMPLES:
+        lines.append(f"{indent}#")
+        if example.note:
+            lines.extend(_comment(example.note, indent))
+        lines.append(f"{indent}# {example.name}:")
+        lines.append(f"{indent}#   cmd: {_scalar(example.cmd)}")
+        lines.append(f"{indent}#   description: {_scalar(example.description)}")
+    return lines
+
+
+def _scalar(value: str) -> str:
+    """`value` as a YAML scalar: plain when it can be, quoted when YAML would misread it."""
+    text = yaml.safe_dump(value, width=1_000_000)
+    return text.removesuffix("\n...\n").removesuffix("\n")

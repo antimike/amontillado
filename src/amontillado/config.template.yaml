@@ -30,6 +30,71 @@ crop:
   # Gwenview do; feh needs --reload; xdg-open opens whatever the desktop's default is).
   # viewer: "xdg-open {file}"
 
+# amo edit: the editors it runs on a copy of a picture's file, by name (docs/design.md, "Editing").
+edit:
+
+  # The tool amo edit runs without --tool or --extcmd: a name under edit.tools. Unset: amo edit
+  # needs one of those flags.
+  # default_tool: gimp
+
+  # Editors by name. A tool's cmd runs with sh -c in a fresh working directory inside the record
+  # (.amo/edit-*), with INPUT (a copy of the file being edited), OUTPUT (where a result may be
+  # written; it does not exist yet) and WORKDIR (that directory) added to your environment, so a cmd
+  # can also read variables you set (STYLE=x amo edit ...). Quote them ("$INPUT"). It must block
+  # until you are done: an editor that hands the file to a running instance and returns finds
+  # nothing. The result is OUTPUT if it exists, else the one image in the working directory (or
+  # below it) that is new or changed; files in the editor's own format (.xcf, .kra) are ignored, so
+  # export into the folder the editor opens in.
+  tools:
+    # A tool's keys:
+    #   cmd: The command line, run by sh -c.
+    #   description: One line on what the tool is for, shown by amo edit --list-tools.
+    #
+    # -n starts a new GIMP: without it the file goes to a running one and gimp returns at once.
+    # gimp:
+    #   cmd: gimp -n "$INPUT"
+    #   description: GIMP; File > Overwrite the copy, or Export As into its folder
+    #
+    # With Krita's 'Allow only one instance' setting on and Krita running, krita returns at once.
+    # krita:
+    #   cmd: krita "$INPUT"
+    #   description: Krita; File > Export into its folder
+    #
+    # pinta:
+    #   cmd: pinta "$INPUT"
+    #   description: Pinta; save over the copy
+    #
+    # :memory: keeps the copy out of your darktable library and its lock.
+    # darktable:
+    #   cmd: 'darktable --library :memory: "$INPUT"'
+    #   description: darktable's darkroom; export (to darktable_exported/ by default)
+    #
+    # darktable-cli:
+    #   cmd: darktable-cli "$INPUT" "$OUTPUT" --style "${STYLE:?a darktable style}"
+    #   description: a darktable style, no window; STYLE=<name> amo edit ...
+    #
+    # rawtherapee:
+    #   cmd: rawtherapee "$INPUT"
+    #   description: RawTherapee; Save current image into its folder
+    #
+    # Writes <name>.jpg into the working directory (over the copy if it is a JPEG); -n before -c
+    # writes PNG.
+    # rawtherapee-cli:
+    #   cmd: rawtherapee-cli -Y -o "$WORKDIR" -p "${PROFILE:?a .pp3 file}" -c "$INPUT"
+    #   description: a RawTherapee profile, no window; PROFILE=<file.pp3>; writes JPEG
+    #
+    # satty:
+    #   cmd: satty -f "$INPUT" -o "$WORKDIR/annotated.png" --early-exit
+    #   description: annotate, blur or redact; saving writes a PNG and closes it
+    #
+    # magick-modulate:
+    #   cmd: magick "$INPUT" -modulate 100,"${SATURATION:-80}" "$OUTPUT"
+    #   description: ImageMagick, no window; saturation to SATURATION% (default 80)
+    #
+    # inkscape:
+    #   cmd: inkscape "$INPUT"
+    #   description: Inkscape; Export as PNG into its folder (a vector editor, clumsy for bitmaps)
+
 # The theme engine: amo palette and amo theme (docs/design.md, "Theme engine (v0.2)").
 theme:
 

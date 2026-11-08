@@ -10,11 +10,23 @@ import pytest
 from amontillado import config as config_module
 from amontillado.cli import main
 from amontillado.config import load_config
-from amontillado.config_keys import APP, KEYS, WIDTH, flag_help, names, template
+from amontillado.config_keys import (
+    APP,
+    KEYS,
+    TOOL,
+    TOOL_EXAMPLES,
+    WIDTH,
+    flag_help,
+    names,
+    template,
+    tool_example_lines,
+)
 
 CONFIG = Path(".config/amontillado/config.yaml")
 # A key's value line, commented out; an app's key documentation is indented further.
 VALUE_LINE = re.compile(r"^(\s*)# ((\w+): .*)$")
+# A tool example's name or key line, commented out.
+TOOL_LINE = re.compile(r"^(\s*)# ((?:[\w-]+|  (?:cmd|description)):.*)$")
 EXAMPLE_APPS = {"kitty", "rofi", "waybar", "zed", "mytool"}
 
 
@@ -36,6 +48,8 @@ def test_the_table_covers_every_key_the_config_reads() -> None:
     assert names("theme.wallpaper") == {"reload"}
     assert names("crop") == config_module._CROP_KEYS
     assert names(f"theme.apps.{APP}") == config_module._APP_KEYS
+    assert names("edit") == config_module._EDIT_KEYS
+    assert names(f"edit.tools.{TOOL}") == config_module._TOOL_KEYS
     for key in KEYS:
         assert key.meaning.endswith("."), key.path
 
@@ -48,8 +62,17 @@ def test_the_template_fits_and_loads_as_the_defaults(home: Path) -> None:
     assert load_config() == load_config(home / "none.yaml")
 
 
+def _uncomment_tools(text: str) -> str:
+    """The tool examples' YAML lines uncommented; their notes stay comments."""
+    examples = set(tool_example_lines())
+    return "\n".join(
+        TOOL_LINE.sub(r"\1\2", line) if line in examples else line for line in text.splitlines()
+    )
+
+
 def test_every_commented_value_is_valid(home: Path, caplog: pytest.LogCaptureFixture) -> None:
-    uncommented = "\n".join(_uncomment(line) for line in template().splitlines())
+    text = _uncomment_tools(template())
+    uncommented = "\n".join(_uncomment(line) for line in text.splitlines())
     (home / CONFIG).parent.mkdir(parents=True)
     (home / CONFIG).write_text(uncommented)
     with caplog.at_level(logging.WARNING):
@@ -59,6 +82,10 @@ def test_every_commented_value_is_valid(home: Path, caplog: pytest.LogCaptureFix
     assert config.theme.wallpaper_reload == ("hyprctl", "hyprpaper", "reload", ",{wallpaper}")
     assert set(config.theme.apps) == EXAMPLE_APPS
     assert config.theme.apps["zed"].render_with == "matugen"
+    assert config.edit.default_tool == "gimp"
+    assert {name: tool.cmd for name, tool in config.edit.tools.items()} == {
+        example.name: example.cmd for example in TOOL_EXAMPLES
+    }
 
 
 def test_flag_help_names_the_key_and_its_default() -> None:

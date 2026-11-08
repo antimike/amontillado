@@ -7,6 +7,7 @@ Locations follow the XDG base directory spec; docs/design.md, "Storage", has the
     nsfw_root: ~/private/wallpapers-nsfw     # replaces the default NSFW root
     api_key_command: pass show wallhaven/api-key   # prints the Wallhaven API key
     crop: {preview: auto, viewer: "xdg-open {file}"}   # amo crop --interactive's preview
+    edit: {default_tool: gimp, tools: {gimp: {cmd: 'gimp -n "$INPUT"'}}}   # amo edit's editors
     theme: {...}                             # the theme engine (v0.2), below
 
 `amontillado.config_keys` describes every key (the template `amo config init` writes).
@@ -30,7 +31,7 @@ import yaml
 logger = getLogger(__name__)
 
 APP = "amontillado"
-_KNOWN_KEYS = frozenset({"library_roots", "nsfw_root", "api_key_command", "crop", "theme"})
+_KNOWN_KEYS = frozenset({"library_roots", "nsfw_root", "api_key_command", "crop", "edit", "theme"})
 API_KEY_VARIABLE = "WALLHAVEN_API_KEY"
 
 SOURCES = ("builtin", "tinted", "matugen-themes", "pywal", "url", "path")
@@ -43,6 +44,9 @@ RENDERERS = ("amontillado", "matugen")
 PREVIEWS = ("auto", "kitty", "viewer")
 _CROP_KEYS = frozenset({"preview", "viewer"})
 DEFAULT_VIEWER = ("xdg-open", "{file}")
+_EDIT_KEYS = frozenset({"default_tool", "tools"})
+_TOOL_KEYS = frozenset({"cmd", "description"})
+_TOOL_NAME = re.compile(r"[A-Za-z0-9][\w.+-]*")
 # What a reload command may name, substituted when it runs.
 RELOAD_PLACEHOLDERS = frozenset({"wallpaper", "profile", "dir", "variant"})
 # Names in a profile directory that amontillado writes itself.
@@ -121,6 +125,24 @@ class CropConfig:
 
 
 @dataclass(frozen=True)
+class EditTool:
+    """One editor under `edit.tools`: a command line run by `sh -c`, with INPUT, OUTPUT and
+    WORKDIR in its environment (`amontillado.edit`)."""
+
+    cmd: str
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class EditConfig:
+    """The `edit` block: the editors `amo edit` can run, by name."""
+
+    # None: amo edit needs --tool or --extcmd.
+    default_tool: str | None = None
+    tools: dict[str, EditTool] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Config:
     """Where the library and its index live, and the theme engine's settings."""
 
@@ -130,6 +152,7 @@ class Config:
     api_key_command: str | None = None
     theme: ThemeConfig = field(default_factory=ThemeConfig)
     crop: CropConfig = field(default_factory=CropConfig)
+    edit: EditConfig = field(default_factory=EditConfig)
 
 
 def xdg_dir(variable: str, fallback: str) -> Path:
@@ -175,6 +198,7 @@ def load_config(path: Path | None = None) -> Config:
         api_key_command=command,
         theme=_theme(settings.get("theme")),
         crop=_crop(settings.get("crop")),
+        edit=_edit(settings.get("edit")),
     )
 
 
@@ -298,6 +322,33 @@ def _crop(value: object) -> CropConfig:
         if not any("{file}" in arg for arg in args):
             raise ConfigError("crop.viewer: names no {file}")
     return CropConfig(_choice("crop.preview", crop.get("preview", "auto"), PREVIEWS), args)
+
+
+def _edit(value: object) -> EditConfig:
+    """The `edit` block, checked. Raises ConfigError naming the key."""
+    if value is None:
+        return EditConfig()
+    edit = _settings_mapping("edit", value, _EDIT_KEYS)
+    tools = {}
+    for name, tool in _settings_mapping("edit.tools", edit.get("tools") or {}, None).items():
+        if not isinstance(name, str) or not _TOOL_NAME.fullmatch(name):
+            raise ConfigError(f"edit.tools: {name!r} is not a tool name")
+        tools[name] = _tool(f"edit.tools.{name}", tool)
+    default = edit.get("default_tool")
+    if default is not None and default not in tools:
+        raise ConfigError(f"edit.default_tool: {default!r} is not one of edit.tools")
+    return EditConfig(default, tools)
+
+
+def _tool(where: str, value: object) -> EditTool:
+    tool = _settings_mapping(where, value, _TOOL_KEYS)
+    cmd = tool.get("cmd")
+    if not isinstance(cmd, str) or not cmd.strip():
+        raise ConfigError(f"{where}.cmd must be a command line")
+    description = tool.get("description")
+    if description is not None and not (isinstance(description, str) and description.strip()):
+        raise ConfigError(f"{where}.description must be text")
+    return EditTool(cmd, description)
 
 
 def _app(where: str, value: object) -> AppConfig:
