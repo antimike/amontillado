@@ -12,7 +12,8 @@ colour-scheme hook ([colour-scheme-hooks.md](colour-scheme-hooks.md)), `amo name
 GTK4-only `libadwaita-vars` template ("Template sources") with GNOME's palette remapped
 (`gnome-*-hex`, "Formats and views"), and a live test that takes any scheme or library picture
 and captures without keyboard focus, optionally off screen; `amo edit` with named editor tools
-("Editing", 2026-11-07).
+("Editing", 2026-11-07); every config command under `sh -c` with `AMO_*` variables
+instead of `{placeholder}`s ("Config", 2026-11-08).
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -142,12 +143,12 @@ files:
   like git's difftool: `--tool NAME` picks an entry of `edit.tools` (default
   `edit.default_tool`), `--extcmd CMD` runs a one-off command line, `--list-tools` lists them
   with their descriptions. A tool's `cmd` runs under `sh -c` in the working directory with
-  `INPUT` (the copy), `OUTPUT` (a path for the result, not created) and `WORKDIR` added to the
-  environment (git's `$LOCAL`/`$REMOTE` style rather than the `{file}` placeholders of
-  `crop.viewer` and the reload hooks: several named arguments, shell features, and the
-  user's own variables as parameters, `STYLE=x amo edit --tool darktable-cli`); its standard
+  `AMO_INPUT` (the copy), `AMO_OUTPUT` (a path for the result, not created) and `AMO_WORKDIR`
+  added to the environment, as every config command does ("Config": several named arguments,
+  shell features, and the user's own variables as parameters, `STYLE=x amo edit --tool
+  darktable-cli`); its standard
   output goes to standard error. It must block: GIMP needs `-n`, `xdg-open` never works.
-  **The result** is `OUTPUT` if the tool wrote it, else the one image (`.jpg`, `.png`,
+  **The result** is `AMO_OUTPUT` if the tool wrote it, else the one image (`.jpg`, `.png`,
   `.webp`, hidden paths left out) in the working directory or below it that is new or changed,
   which covers editors that keep their own format and export separately (GIMP's `.xcf`,
   Krita's `.kra`, darktable's `darktable_exported/`): export into the folder the editor opens
@@ -177,7 +178,7 @@ files:
     would need a reply read before cbreak input starts.
   - `viewer`: the preview (at most 1600 pixels a side) written atomically to
     `$XDG_CACHE_HOME/amontillado/crop-preview.png` after each key and shown by `crop.viewer`
-    (default `xdg-open {file}`), started once; the viewer must reload a changed file (eog,
+    (default `xdg-open "$AMO_FILE"`, under `sh -c`), started once; the viewer must reload a changed file (eog,
     gThumb and Gwenview do; feh needs `--reload`). The file is removed afterwards; the viewer
     is left running.
 
@@ -314,8 +315,19 @@ api_key_command: pass show wallhaven/api-key
 edit:                                    # amo edit's editors ("Editing")
   default_tool: gimp
   tools:
-    gimp: {cmd: 'gimp -n "$INPUT"', description: GIMP}
+    gimp: {cmd: 'gimp -n "$AMO_INPUT"', description: GIMP}
 ```
+
+**Every command in the config runs under `sh -c`**, its inputs as `AMO_*` environment variables,
+never substituted into the text (agreed 2026-11-07, amo-j24.3): `theme.wallpaper.reload` and
+`theme.apps.<app>.reload` get `AMO_WALLPAPER`, `AMO_PROFILE`, `AMO_DIR` and `AMO_VARIANT`;
+`crop.viewer` gets `AMO_FILE`; `amo edit`'s tools get `AMO_INPUT`, `AMO_OUTPUT` and
+`AMO_WORKDIR`; `api_key_command` gets none. So pipelines and fallbacks need no wrapper script,
+and quoting is the user's job (`"$AMO_WALLPAPER"`). The prefix keeps generic names such as
+`PROFILE` or `DIR` from silently colliding with the user's own environment; an `AMO_*` variable
+amo itself was started with never reaches a reload hook. The `{placeholder}` syntax of v0.2 and
+v0.3 is gone: a leftover `{wallpaper}`, `{profile}`, `{dir}`, `{variant}` or `{file}` (not
+`${...}`) is a config error naming its variable.
 
 The template has commented examples for GIMP, Krita, Pinta, darktable and `darktable-cli`,
 RawTherapee and `rawtherapee-cli`, satty, ImageMagick and Inkscape.
@@ -325,8 +337,8 @@ Every key is described in the commented template `amo config init` writes
 is expanded). The NSFW root may not be, contain, or lie inside a
 library root, symlinks resolved; that is a config error, since a recursive search would then
 reach NSFW images. Unknown keys are warned about and ignored. The API key comes from
-`WALLHAVEN_API_KEY` first, then the first line printed by `api_key_command` (split into words
-as a shell would, and run without one); it is never written anywhere and never logged.
+`WALLHAVEN_API_KEY` first, then the first line printed by `api_key_command` (run by `sh -c`); it
+is never written anywhere and never logged.
 
 ## Metrics
 
@@ -991,8 +1003,8 @@ these names (`--accent-bg-color: @accent_bg_color`). Not the standalone `accent_
 those from the `*_bg_color` in OKLab by its own colour scheme (lightness at most 0.5 for light,
 at least 0.85 for dark), so the desktop's `color-scheme` (`prefer-dark` for a dark variant)
 must match the variant applied, or a dark palette gets dark accent text. amontillado does not
-set the scheme (a global setting other apps and tools read); a reload command naming
-`{variant}` does, written by the user: [colour-scheme-hooks.md](colour-scheme-hooks.md). Not defined: the GNOME palette (`blue_1` … `dark_5`, fixed hues apps name on
+set the scheme (a global setting other apps and tools read); a reload command reading
+`$AMO_VARIANT` does, written by the user: [colour-scheme-hooks.md](colour-scheme-hooks.md). Not defined: the GNOME palette (`blue_1` … `dark_5`, fixed hues apps name on
 purpose), the names libadwaita derives itself (`theme_*`, `insensitive_*`), and the
 variables-only `--active-toggle-*` and `--overview-*`: `libadwaita-vars` sets those.
 
@@ -1152,7 +1164,7 @@ theme:
   hues: amontillado                     # amontillado | generator ("Generators")
   variant: auto                         # auto | dark | light
   contrast: adjust                      # adjust | report | off
-  wallpaper: {reload: "hyprctl hyprpaper reload ,{wallpaper}"}
+  wallpaper: {reload: 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'}
   apps:
     kitty:    {reload: "pkill -USR1 kitty"}                   # source defaults to builtin
     rofi:     {source: tinted}                                 # complete theme from base16-rofi
@@ -1188,9 +1200,10 @@ once, naming its key (`theme.apps.kitty.reload: ...`); unknown keys warn, as at 
 Beyond the types and choices above: a profile name is a single path component that does not
 start with `.` and is not `current` (both name other things in the cache); `output` is a plain
 file name, not `palette.yaml`, `theme.yaml` or `wallpaper`, and no two apps give the same one;
-`url` is `https://`; a reload command names no placeholder other than `{wallpaper}`, `{profile}`,
-`{dir}` and `{variant}` (the app's variant, `auto` resolved; for the wallpaper hook, that of an
-app without its own); `render_with:
+`url` is `https://`; a reload command (`sh -c`, "Config") names none of the old
+`{placeholder}`s; its `AMO_VARIANT` is the app's variant, `auto` resolved (for the wallpaper hook,
+that of an app without its own), and with no wallpaper `AMO_WALLPAPER` is unset and a command
+naming it is skipped; `render_with:
 matugen` needs `format: matugen` (or `source: matugen-themes`, whose format it is).
 
 `amo config check [FILE]` loads a config as every command does and fails on an error, an

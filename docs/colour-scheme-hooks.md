@@ -1,7 +1,7 @@
 # Colour-scheme hooks
 
 How to keep the desktop's dark/light colour scheme in step with the variant amontillado
-applies, with a reload command and its `{variant}` placeholder. amontillado never sets the
+applies, with a reload command and its `AMO_VARIANT` variable. amontillado never sets the
 scheme itself; this page is about the one line you add to your config if you want it to follow.
 
 ## Why a GTK theme needs it
@@ -52,9 +52,10 @@ apps on the settings portal switch too. Something else may already own it (darkm
 a timer), and setting it needs a D-Bus session. So amontillado only offers the variant to a
 command you write; with no such command, the scheme is never touched.
 
-## `{variant}`
+## `AMO_VARIANT`
 
-Every reload command may name `{variant}`, filled with `dark` or `light` when it runs:
+Every reload command runs under `sh -c` with `AMO_VARIANT` in its environment, `dark` or
+`light` (besides `AMO_WALLPAPER`, `AMO_PROFILE` and `AMO_DIR`: design.md, "Config"):
 
 - in an app's `reload` (`theme.apps.<app>.reload`): the variant that app was rendered in, which
   is `theme.apps.<app>.variant`, else `--variant`, else `theme.variant`, with `auto` resolved
@@ -64,16 +65,16 @@ Every reload command may name `{variant}`, filled with `dark` or `light` when it
 
 Put the hook on the libadwaita app, so the scheme follows the variant of the file GTK actually
 reads, even when that app has its own `variant`. `amo theme apply --dry-run` prints the commands
-with the placeholders filled, so you can check one before it runs:
+with their variables, so you can check one before it runs:
 
 ```text
 $ amo theme apply PICTURE --dry-run
 /tmp/amo-theme-k2n4f0x1
-would run: gsettings set org.gnome.desktop.interface color-scheme prefer-dark
+would run: AMO_DIR=/home/me/.cache/theme/default AMO_PROFILE=default AMO_VARIANT=dark sh -c 'gsettings set org.gnome.desktop.interface color-scheme "prefer-$AMO_VARIANT"'
 ```
 
-Like every reload command, the hook runs after the new profile is swapped in, without a shell
-(split as a shell would split it; a pipeline needs a script), and a failure only warns. Under
+Like every reload command, the hook runs after the new profile is swapped in, under `sh -c`
+(so a pipeline or a `||` fallback needs no script), and a failure only warns. Under
 `amo theme apply --app APP` only that app's command runs (and the wallpaper hook), so a hook
 on the libadwaita app runs when that app is re-rendered and not otherwise.
 
@@ -85,7 +86,7 @@ on the libadwaita app runs when that app is re-rendered and not otherwise.
 theme:
   apps:
     libadwaita:
-      reload: "gsettings set org.gnome.desktop.interface color-scheme prefer-{variant}"
+      reload: 'gsettings set org.gnome.desktop.interface color-scheme "prefer-$AMO_VARIANT"'
 ```
 
 The key GNOME's own settings use. libadwaita apps read it through the settings portal
@@ -102,7 +103,7 @@ this key, so this works outside GNOME (Hyprland, sway) as long as one of those b
 theme:
   apps:
     libadwaita:
-      reload: "darkman set {variant}"
+      reload: 'darkman set "$AMO_VARIANT"'
 ```
 
 When [darkman](https://gitlab.com/WhyNotHugo/darkman) owns the scheme (it implements the portal
@@ -113,26 +114,23 @@ that the scheme and the theme part ways until the next apply.
 
 ### Leaving it out
 
-No `reload` on the libadwaita app (or one without `{variant}`, such as a plain restart) leaves
+No `reload` on the libadwaita app (or one that ignores `AMO_VARIANT`, such as a plain restart) leaves
 the scheme alone. Do that when the scheme follows something else on purpose (a schedule, a
 manual toggle) and set the scheme yourself to match the variant you apply; a mismatch shows as
 the low-contrast standalone colours above.
 
 ## Writing your own
 
-Any command taking `dark` or `light` works. If the tool wants other words, wrap it in a script:
-
-```sh
-#!/bin/sh
-# ~/.local/bin/scheme-follow: amontillado's {variant} -> plasma's colour schemes
-case $1 in
-    dark) exec plasma-apply-colorscheme BreezeDark ;;
-    light) exec plasma-apply-colorscheme BreezeLight ;;
-esac
-```
+Any command taking `dark` or `light` works. If the tool wants other words, map them in the
+command itself, or in a script when it grows:
 
 ```yaml
-    libadwaita: {reload: "scheme-follow {variant}"}
+    libadwaita:
+      reload: |
+        case "$AMO_VARIANT" in
+          dark) plasma-apply-colorscheme BreezeDark ;;
+          light) plasma-apply-colorscheme BreezeLight ;;
+        esac
 ```
 
 Keep a hook idempotent and quick: it runs at every apply, often with the variant already set, and
