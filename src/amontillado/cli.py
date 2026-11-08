@@ -54,6 +54,7 @@ from amontillado.config import (
 from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check
 from amontillado.cropper import chooser
+from amontillado.edit import EditError, plan_edit, run_edit
 from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
@@ -467,6 +468,65 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Log what would be added; change nothing."
     )
     add_derived.set_defaults(func=cmd_add_derived)
+
+    edit = commands.add_parser(
+        "edit",
+        help="Edit a copy of a picture in an editor and add the result.",
+        description="Copy one of a record's files into a working directory inside it "
+        "(.amo/edit-*), run an editor on the copy (a tool under edit.tools, or --extcmd) and "
+        "add what it saved as a hand-made derived file, as amo add-derived does. The tool "
+        "runs under sh -c with INPUT (the copy), OUTPUT (where a result may go) and WORKDIR "
+        "in its environment, and must block until you are done. The result is OUTPUT if the "
+        "tool wrote it, else the one image in the working directory (or below it) that is new "
+        "or changed: export into the folder the editor opens in. Saved as <stem>-edit.<ext> "
+        "by default. The working directory is removed once the result is added, or if "
+        "nothing was saved, and otherwise kept and named. Prints the new file's path.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(edit, argparse.SUPPRESS)
+    edit.add_argument(
+        "picture",
+        nargs="?",
+        metavar="PICTURE",
+        help="A file, record directory, name or id (or prefix).",
+    )
+    which = edit.add_mutually_exclusive_group()
+    which.add_argument(
+        "--tool",
+        "-t",
+        metavar="NAME",
+        help=flag_help("edit.default_tool", "The editor: a tool's name under edit.tools"),
+    )
+    which.add_argument(
+        "--extcmd",
+        "-x",
+        metavar="CMD",
+        help="A command line to run instead of a named tool, as a tool's cmd is "
+        "(sh -c, with INPUT, OUTPUT and WORKDIR).",
+    )
+    which.add_argument(
+        "--list-tools",
+        action="store_true",
+        help="List the tools under edit.tools with their descriptions; the default is marked.",
+    )
+    edit.add_argument(
+        "--name",
+        metavar="N",
+        help="The new file's name in the record (default: <stem>-edit.<ext>).",
+    )
+    edit.add_argument(
+        "--from",
+        dest="source",
+        metavar="FILE",
+        help="The record's file to edit (default: the record's original: its default file if "
+        "that is an original, else its largest).",
+    )
+    edit.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Check the record and the tool and log what would run; run nothing.",
+    )
+    edit.set_defaults(func=cmd_edit)
 
     name = commands.add_parser(
         "name",
@@ -1505,6 +1565,69 @@ def cmd_add_derived(args: argparse.Namespace) -> None:
     except (sqlite3.Error, IndexDatabaseError) as exc:
         _index_error(config, exc)
     print(directory / name)
+
+
+def cmd_edit(args: argparse.Namespace) -> None:
+    config = _load_config()
+    if args.list_tools:
+        if args.picture is not None:
+            sys.exit("amontillado: --list-tools takes no PICTURE")
+        _list_tools(config)
+        return
+    if args.picture is None:
+        sys.exit("amontillado: edit needs a PICTURE")
+    command = _edit_command(config, args)
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    try:
+        with closing(connect(config.index_path)) as conn:
+            try:
+                directory, root = record_location(conn, find_record(conn, args.picture))
+                plan = plan_edit(directory, source=args.source, name=args.name)
+            except (AddError, LookupFailed, RecordError) as exc:
+                sys.exit(f"amontillado: {exc}")
+            if args.dry_run:
+                logger.info("would run %s on a copy of %s", command, directory / plan.source)
+                return
+            try:
+                entry, name = run_edit(config, plan, root, command)
+            except EditError as exc:
+                kept = f"; what it saved is in {exc.workdir}" if exc.workdir is not None else ""
+                sys.exit(f"amontillado: {exc}{kept}")
+            except (RecordError, OSError, Image.DecompressionBombError) as exc:
+                sys.exit(f"amontillado: {directory}: {exc}")
+            replace_in_index(conn, entry)
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    print(directory / name)
+
+
+def _edit_command(config: Config, args: argparse.Namespace) -> str:
+    """The command line amo edit runs: --extcmd, else the tool --tool or edit.default_tool
+    names."""
+    if args.extcmd is not None:
+        if not args.extcmd.strip():
+            sys.exit("amontillado: --extcmd is empty")
+        return args.extcmd
+    name = args.tool or config.edit.default_tool
+    if name is None:
+        sys.exit("amontillado: no editor: pass --tool or --extcmd, or set edit.default_tool")
+    tool = config.edit.tools.get(name)
+    if tool is None:
+        known = ", ".join(config.edit.tools) or "none"
+        sys.exit(f"amontillado: no tool {name!r} under edit.tools (tools: {known})")
+    return tool.cmd
+
+
+def _list_tools(config: Config) -> None:
+    tools = config.edit.tools
+    if not tools:
+        logger.info("no tools under edit.tools (amo config init writes examples)")
+        return
+    width = max(len(name) for name in tools)
+    for name, tool in tools.items():
+        default = " (default)" if name == config.edit.default_tool else ""
+        print(f"{name:<{width}}  {tool.description or ''}{default}".rstrip())
 
 
 def cmd_name(args: argparse.Namespace) -> None:

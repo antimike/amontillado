@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
@@ -1128,3 +1129,109 @@ def test_list_where_cannot_widen_purity_or_write(
         # The connection is writable again after a query.
         conn.execute("SELECT 1")
     main(["shown", str(sourced["red"])])
+
+
+def _edit_tools(home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Config with two tools, green (the default) and blue, which save an edit over the copy."""
+    for name, rgb in (("green", (0, 200, 0)), ("blue", (0, 0, 200))):
+        _save(np.full((36, 64, 3), rgb, dtype=np.uint8), tmp_path / f"{name}.png")
+    monkeypatch.setenv("EDITS", str(tmp_path))
+    _write_config(
+        home,
+        {
+            "edit": {
+                "default_tool": "green",
+                "tools": {
+                    "green": {"cmd": 'cp "$EDITS/green.png" "$INPUT"', "description": "go green"},
+                    "blue": {"cmd": 'cp "$EDITS/blue.png" "$INPUT"'},
+                },
+            }
+        },
+    )
+    return tmp_path
+
+
+def test_edit(
+    indexed: dict[str, Path],
+    library: Path,
+    home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _edit_tools(home, monkeypatch, tmp_path)
+    capsys.readouterr()
+    caplog.set_level(logging.INFO)
+    red = str(library / "red")
+    main(["edit", "--dry-run", red])
+    assert capsys.readouterr().out == ""
+    assert "would run cp " in caplog.text and str(library / "red" / "red.png") in caplog.text
+    main(["edit", red])
+    assert capsys.readouterr().out == f"{library / 'red' / 'red-edit.png'}\n"
+    main(["edit", red, "--tool", "blue", "--name", "red-blue.png"])
+    assert capsys.readouterr().out == f"{library / 'red' / 'red-blue.png'}\n"
+    command = 'magick -size 64x36 xc:yellow "$OUTPUT"'
+    if shutil.which("magick"):
+        main(["edit", red, "--extcmd", command, "--from", "red-edit.png"])
+        assert capsys.readouterr().out == f"{library / 'red' / 'red-edit-edit.png'}\n"
+    info = yaml.safe_load((library / "red" / "info.yaml").read_text())
+    assert info["files"]["red-edit.png"]["derived_from"] == "red.png"
+    assert info["files"]["red-blue.png"]["derived_from"] == "red.png"
+    assert {"red-edit.png", "red-blue.png"} <= set(_index_rows(home))
+    assert _list(capsys, "--hue", "red") == {"red"}
+
+
+def test_edit_list_tools(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _edit_tools(home, monkeypatch, tmp_path)
+    main(["edit", "--list-tools"])
+    assert capsys.readouterr().out == "blue\ngreen  go green (default)\n"
+
+
+@pytest.mark.parametrize(
+    ("argv", "config", "message"),
+    [
+        (["edit"], True, "edit needs a PICTURE"),
+        (["edit", "RED", "--list-tools"], True, "--list-tools takes no PICTURE"),
+        (
+            ["edit", "RED", "--tool", "gimp"],
+            True,
+            r"no tool 'gimp' under edit.tools \(tools: blue, green\)",
+        ),
+        (["edit", "RED"], False, "no editor: pass --tool or --extcmd"),
+        (["edit", "RED", "--extcmd", " "], False, "--extcmd is empty"),
+        (["edit", "RED", "--extcmd", "true"], False, "saved no image; it returned after"),
+        (["edit", "RED", "--from", "none.png"], True, "no file none.png"),
+        (["edit", "nothing"], True, "no record has that name"),
+    ],
+)
+def test_edit_refusals(
+    indexed: dict[str, Path],
+    home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    config: bool,
+    message: str,
+) -> None:
+    if config:
+        _edit_tools(home, monkeypatch, tmp_path)
+    red = str(indexed["red"].parent)
+    with pytest.raises(SystemExit, match=message):
+        main([red if arg == "RED" else arg for arg in argv])
+
+
+def test_edit_names_what_it_keeps(
+    indexed: dict[str, Path],
+    library: Path,
+    home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _edit_tools(home, monkeypatch, tmp_path)
+    with pytest.raises(
+        SystemExit, match=r"exited with status 1; what it saved is in .*/red/\.amo/edit-"
+    ):
+        main(["edit", str(library / "red"), "--extcmd", 'cp "$EDITS/green.png" "$INPUT"; false'])
