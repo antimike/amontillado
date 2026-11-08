@@ -8,6 +8,10 @@ All notable changes to amontillado are documented here. The format follows
 
 ### Added
 
+- git-annex libraries: a listed file whose annex content is not on this machine (a dropped
+  locked or unlocked file) is *absent*, not missing: it keeps its entry, is indexed from it
+  (index schema 7, flagged), does not fail `amo index --check`, and is skipped by `amo list`;
+  `amo palette` and `amo theme apply` on one say to `git annex get` it.
 - Built-in `libadwaita-vars` template (`libadwaita-vars.css`), for `gtk-4.0/gtk.css` only:
   the `libadwaita` template's named colours plus a `:root` block that sets libadwaita's
   standalone accent, destructive, success, warning and error colours (so they no longer follow
@@ -20,6 +24,11 @@ All notable changes to amontillado are documented here. The format follows
   and `edit.tools.<name>.{cmd,description}`, where `cmd` runs under `sh -c` with `INPUT`,
   `OUTPUT` and `WORKDIR` set; `amo edit --list-tools` lists them. The config template has
   examples for GIMP, Krita, Pinta, darktable, RawTherapee, satty, ImageMagick and Inkscape.
+
+### Changed
+
+- `amo index` no longer searches hidden directories under a root (`.git`, `.Trash-1000`, ...)
+  for records or loose images.
 
 ## [0.3.0] - 2026-11-05
 
