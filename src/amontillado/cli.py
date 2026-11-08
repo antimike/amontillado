@@ -16,7 +16,6 @@ import logging
 import math
 import random
 import re
-import shlex
 import shutil
 import sqlite3
 import sys
@@ -476,8 +475,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Copy one of a record's files into a working directory inside it "
         "(.amo/edit-*), run an editor on the copy (a tool under edit.tools, or --extcmd) and "
         "add what it saved as a hand-made derived file, as amo add-derived does. The tool "
-        "runs under sh -c with INPUT (the copy), OUTPUT (where a result may go) and WORKDIR "
-        "in its environment, and must block until you are done. The result is OUTPUT if the "
+        "runs under sh -c with AMO_INPUT (the copy), AMO_OUTPUT (where a result may go) and "
+        "AMO_WORKDIR in its environment, and must block until you are done. The result is "
+        "AMO_OUTPUT if the "
         "tool wrote it, else the one image in the working directory (or below it) that is new "
         "or changed: export into the folder the editor opens in. Saved as <stem>-edit.<ext> "
         "by default. The working directory is removed once the result is added, or if "
@@ -503,7 +503,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-x",
         metavar="CMD",
         help="A command line to run instead of a named tool, as a tool's cmd is "
-        "(sh -c, with INPUT, OUTPUT and WORKDIR).",
+        "(sh -c, with AMO_INPUT, AMO_OUTPUT and AMO_WORKDIR).",
     )
     which.add_argument(
         "--list-tools",
@@ -1353,8 +1353,8 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
                 shutil.copytree(plan.copy_from, directory, symlinks=True, dirs_exist_ok=True)
             write_theme(plan, directory)
             print(directory)
-            for command in reload_commands(config, plan, directory):
-                print(f"would run: {shlex.join(command)}")
+            for reload in reload_commands(config, plan, directory):
+                print(f"would run: {reload}")
             return
         directory = apply_theme(config, plan, activate=not args.no_activate)
     except (ConfigError, ThemeError, PaletteError, GeneratorError, OSError) as exc:

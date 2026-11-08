@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from amontillado.config import (
     AppConfig,
@@ -127,8 +128,8 @@ def test_api_key_from_the_command(home: Path, no_key_variable: None) -> None:
     [
         ("false", "failed with exit status 1"),
         ("true", "printed nothing"),
-        ("/nonexistent/key-command", "cannot run"),
-        ("printf 'unclosed", "cannot run"),
+        ("/nonexistent/key-command", "failed with exit status 127"),
+        ("printf 'unclosed", "failed with exit status 2"),
     ],
 )
 def test_api_key_command_errors(
@@ -157,7 +158,7 @@ theme:
   hues: generator
   variant: auto
   contrast: report
-  wallpaper: {{reload: "hyprctl hyprpaper reload ,{{wallpaper}}"}}
+  wallpaper: {{reload: 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'}}
   apps:
     kitty:    {{reload: "pkill -USR1 kitty"}}
     waybar:   {{source: builtin, template: gtk, output: waybar-colors.css}}
@@ -198,10 +199,10 @@ def test_theme_block(home: Path) -> None:
         "generator",
         "report",
     )
-    assert theme.wallpaper_reload == ("hyprctl", "hyprpaper", "reload", ",{wallpaper}")
+    assert theme.wallpaper_reload == 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'
     apps = theme.apps
     assert list(apps) == ["kitty", "waybar", "zed", "rofi-alt", "nvim", "bare", "mytool", "pinned"]
-    assert apps["kitty"] == AppConfig(reload=("pkill", "-USR1", "kitty"))
+    assert apps["kitty"] == AppConfig(reload="pkill -USR1 kitty")
     assert apps["nvim"] == apps["bare"] == AppConfig()
     assert apps["zed"].render_with == "matugen"
     assert (apps["rofi-alt"].variant, apps["rofi-alt"].output) == ("light", "rofi-light.rasi")
@@ -227,8 +228,12 @@ def _app(line: str) -> str:
         ("theme: {contrast: strict}\n", "theme.contrast"),
         ("theme: {wallpaper: swaybg}\n", "theme.wallpaper must be a mapping"),
         ("theme: {wallpaper: {reload: [a, b]}}\n", "theme.wallpaper.reload must be a command"),
-        ('theme: {wallpaper: {reload: "x \'"}}\n', "theme.wallpaper.reload: No closing"),
-        ("theme: {wallpaper: {reload: 'x {image}'}}\n", "unknown placeholder {image}"),
+        (
+            "theme: {wallpaper: {reload: 'set {wallpaper}'}}\n",
+            "theme.wallpaper.reload: {wallpaper} is gone: commands run under sh -c with "
+            '$AMO_WALLPAPER in their environment (quote it: "$AMO_WALLPAPER")',
+        ),
+        (_app("{reload: 'darkman set {variant}'}"), "a.reload: {variant} is gone"),
         ("theme: {apps: [kitty]}\n", "theme.apps must be a mapping"),
         (_app("[x]"), "theme.apps.a must be a mapping"),
         (_app("{source: github}"), "theme.apps.a.source"),
@@ -282,16 +287,17 @@ def test_contrast_off_unquoted(home: Path, value: str) -> None:
 
 
 def test_crop_block(home: Path) -> None:
-    assert load_config().crop == CropConfig("auto", ("xdg-open", "{file}"))
-    write_config(home, 'crop: {preview: viewer, viewer: "feh --reload 0.2 {file}"}\n')
-    assert load_config().crop == CropConfig("viewer", ("feh", "--reload", "0.2", "{file}"))
+    assert load_config().crop == CropConfig("auto", 'xdg-open "$AMO_FILE"')
+    write_config(home, """crop: {preview: viewer, viewer: 'feh --reload 0.2 "$AMO_FILE"'}\n""")
+    assert load_config().crop == CropConfig("viewer", 'feh --reload 0.2 "$AMO_FILE"')
 
 
 @pytest.mark.parametrize(
     ("text", "error"),
     [
         ("crop: {preview: sixel}\n", "crop.preview: 'sixel' is not one of auto, kitty, viewer"),
-        ("crop: {viewer: eog}\n", "crop.viewer: names no {file}"),
+        ("crop: {viewer: eog}\n", "crop.viewer: names no $AMO_FILE"),
+        ("crop: {viewer: 'eog {file}'}\n", "crop.viewer: {file} is gone"),
         ("crop: {viewer: 3}\n", "crop.viewer must be a command line"),
         ("crop: []\n", "crop must be a mapping"),
     ],
@@ -309,15 +315,15 @@ def test_edit_block(home: Path) -> None:
         "edit:\n"
         "  default_tool: gimp\n"
         "  tools:\n"
-        "    gimp: {cmd: 'gimp -n \"$INPUT\"', description: GIMP}\n"
+        "    gimp: {cmd: 'gimp -n \"$AMO_INPUT\"', description: GIMP}\n"
         "    magick-modulate:\n"
-        '      cmd: magick "$INPUT" -modulate 100,80 "$OUTPUT"\n',
+        '      cmd: magick "$AMO_INPUT" -modulate 100,80 "$AMO_OUTPUT"\n',
     )
     assert load_config().edit == EditConfig(
         "gimp",
         {
-            "gimp": EditTool('gimp -n "$INPUT"', "GIMP"),
-            "magick-modulate": EditTool('magick "$INPUT" -modulate 100,80 "$OUTPUT"'),
+            "gimp": EditTool('gimp -n "$AMO_INPUT"', "GIMP"),
+            "magick-modulate": EditTool('magick "$AMO_INPUT" -modulate 100,80 "$AMO_OUTPUT"'),
         },
     )
 
@@ -355,3 +361,12 @@ def test_unknown_edit_keys_warn(home: Path, caplog: pytest.LogCaptureFixture) ->
         load_config()
     assert "'edit.tool'" in caplog.text
     assert "'edit.tools.gimp.args'" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "command",
+    ['set "${wallpaper}"', 'printf "%s" "{image}"', "echo {dir"],
+)
+def test_shell_syntax_is_not_an_old_placeholder(home: Path, command: str) -> None:
+    write_config(home, yaml.safe_dump({"theme": {"wallpaper": {"reload": command}}}))
+    assert load_config().theme.wallpaper_reload == command

@@ -1142,8 +1142,11 @@ def _edit_tools(home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
             "edit": {
                 "default_tool": "green",
                 "tools": {
-                    "green": {"cmd": 'cp "$EDITS/green.png" "$INPUT"', "description": "go green"},
-                    "blue": {"cmd": 'cp "$EDITS/blue.png" "$INPUT"'},
+                    "green": {
+                        "cmd": 'cp "$EDITS/green.png" "$AMO_INPUT"',
+                        "description": "go green",
+                    },
+                    "blue": {"cmd": 'cp "$EDITS/blue.png" "$AMO_INPUT"'},
                 },
             }
         },
@@ -1171,7 +1174,7 @@ def test_edit(
     assert capsys.readouterr().out == f"{library / 'red' / 'red-edit.png'}\n"
     main(["edit", red, "--tool", "blue", "--name", "red-blue.png"])
     assert capsys.readouterr().out == f"{library / 'red' / 'red-blue.png'}\n"
-    command = 'magick -size 64x36 xc:yellow "$OUTPUT"'
+    command = 'magick -size 64x36 xc:yellow "$AMO_OUTPUT"'
     if shutil.which("magick"):
         main(["edit", red, "--extcmd", command, "--from", "red-edit.png"])
         assert capsys.readouterr().out == f"{library / 'red' / 'red-edit-edit.png'}\n"
@@ -1234,4 +1237,6 @@ def test_edit_names_what_it_keeps(
     with pytest.raises(
         SystemExit, match=r"exited with status 1; what it saved is in .*/red/\.amo/edit-"
     ):
-        main(["edit", str(library / "red"), "--extcmd", 'cp "$EDITS/green.png" "$INPUT"; false'])
+        main(
+            ["edit", str(library / "red"), "--extcmd", 'cp "$EDITS/green.png" "$AMO_INPUT"; false']
+        )

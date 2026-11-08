@@ -79,7 +79,7 @@ def test_every_commented_value_is_valid(home: Path, caplog: pytest.LogCaptureFix
         config = load_config()
     assert not caplog.records
     assert config.theme.generator == "matugen"
-    assert config.theme.wallpaper_reload == ("hyprctl", "hyprpaper", "reload", ",{wallpaper}")
+    assert config.theme.wallpaper_reload == 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'
     assert set(config.theme.apps) == EXAMPLE_APPS
     assert config.theme.apps["zed"].render_with == "matugen"
     assert config.edit.default_tool == "gimp"

@@ -13,6 +13,7 @@ from amontillado.cli import main
 from amontillado.config import AppConfig, Config, ThemeConfig
 from amontillado.palette import Palette, complete_variant, dump_palette
 from amontillado.theme import (
+    Reload,
     ThemeError,
     apply,
     choose_variant,
@@ -266,46 +267,58 @@ def test_variant(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
 
 def test_reload_commands(tmp_path: Path) -> None:
     apps = {
-        "kitty": AppConfig(reload=("pkill", "-USR1", "kitty")),
-        "nvim": AppConfig(reload=("notify", "{profile}", "{dir}/palette.lua")),
+        "kitty": AppConfig(reload="pkill -USR1 kitty"),
+        "nvim": AppConfig(reload='notify "$AMO_PROFILE" "$AMO_DIR/palette.lua"'),
     }
     config = _config(tmp_path, **apps)
-    config = replace(config, theme=replace(config.theme, wallpaper_reload=("set", "{wallpaper}")))
+    config = replace(config, theme=replace(config.theme, wallpaper_reload='set "$AMO_WALLPAPER"'))
     built = plan(config, _palette(), profile="default", variant="auto", contrast="off")
     directory = tmp_path / "cache" / "default"
+    env = {"AMO_PROFILE": "default", "AMO_DIR": str(directory), "AMO_VARIANT": "dark"}
+    # No wallpaper: AMO_WALLPAPER is unset and the hook naming it is left out.
     assert reload_commands(config, built, directory) == [
-        ("pkill", "-USR1", "kitty"),
-        ("notify", "default", f"{directory}/palette.lua"),
+        Reload("pkill -USR1 kitty", env),
+        Reload('notify "$AMO_PROFILE" "$AMO_DIR/palette.lua"', env),
     ]
     directory.mkdir(parents=True)
-    (directory / "wallpaper").symlink_to("/pictures/a.jpg")
-    assert reload_commands(config, built, directory)[-1] == ("set", "/pictures/a.jpg")
+    (directory / "wallpaper").symlink_to("/pictures/a b.jpg")
+    hook = reload_commands(config, built, directory)[-1]
+    assert hook == Reload('set "$AMO_WALLPAPER"', {**env, "AMO_WALLPAPER": "/pictures/a b.jpg"})
+    assert str(hook) == (
+        f"AMO_DIR={directory} AMO_PROFILE=default AMO_VARIANT=dark "
+        "AMO_WALLPAPER='/pictures/a b.jpg' sh -c 'set \"$AMO_WALLPAPER\"'"
+    )
 
 
 def test_reload_commands_fill_each_apps_variant(tmp_path: Path) -> None:
-    hook = ("gsettings", "set", "x", "color-scheme", "prefer-{variant}")
+    hook = 'gsettings set x color-scheme "prefer-$AMO_VARIANT"'
     apps = {"libadwaita": AppConfig(variant="light", reload=hook), "kitty": AppConfig(reload=hook)}
     config = _config(tmp_path, **apps)
-    config = replace(config, theme=replace(config.theme, wallpaper_reload=("set", "{variant}")))
+    config = replace(config, theme=replace(config.theme, wallpaper_reload="set"))
     both = _palette(variants=("dark", "light"))
     built = plan(config, both, profile="default", variant="auto", contrast="off")
-    assert reload_commands(config, built, tmp_path / "cache" / "default") == [
-        ("gsettings", "set", "x", "color-scheme", "prefer-light"),
-        ("gsettings", "set", "x", "color-scheme", "prefer-dark"),
-        ("set", "dark"),
-    ]
+    variants = [r.env["AMO_VARIANT"] for r in reload_commands(config, built, tmp_path / "x")]
+    assert variants == ["light", "dark", "dark"]
     # A variant the palette lacks resolves as the render does.
     built = plan(config, _palette(), profile="default", variant="light", contrast="off")
-    assert [c[-1] for c in reload_commands(config, built, tmp_path)] == [
-        "prefer-dark",
-        "prefer-dark",
-        "dark",
-    ]
+    variants = [r.env["AMO_VARIANT"] for r in reload_commands(config, built, tmp_path)]
+    assert variants == ["dark", "dark", "dark"]
+
+
+def test_run_reloads_under_sh_with_amo_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "out"
+    # A stale AMO_* from amo's own environment does not reach the command.
+    monkeypatch.setenv("AMO_WALLPAPER", "stale")
+    command = f'echo "$AMO_PROFILE|$AMO_VARIANT|${{AMO_WALLPAPER-unset}}" | tr a-z A-Z > {out}'
+    run_reloads([Reload(command, {"AMO_PROFILE": "p", "AMO_VARIANT": "dark"})])
+    assert out.read_text() == "P|DARK|UNSET\n"
 
 
 def test_failing_reloads_warn(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
-        run_reloads([("false",), ("amo-no-such-command",), ("true",)])
+        run_reloads([Reload("false", {}), Reload("amo-no-such-command", {}), Reload("true", {})])
     assert "reload false: exit status 1" in caplog.text
     assert "reload amo-no-such-command:" in caplog.text
     assert "reload true" not in caplog.text
@@ -326,7 +339,11 @@ def _cli_setup(home: Path) -> Path:
     config.parent.mkdir(parents=True)
     config.write_text(
         yaml.safe_dump(
-            {"theme": {"apps": {"kitty": {"reload": "true {profile} {dir} {variant}"}, "json": {}}}}
+            {
+                "theme": {
+                    "apps": {"kitty": {"reload": 'true "$AMO_PROFILE" "$AMO_VARIANT"'}, "json": {}}
+                }
+            }
         )
     )
     palette = home / "p.yaml"
@@ -353,5 +370,9 @@ def test_cli_dry_run_changes_nothing(home: Path, capsys: pytest.CaptureFixture[s
     main(["theme", "apply", "--palette", str(palette), "--dry-run"])
     out = capsys.readouterr().out.splitlines()
     assert (Path(out[0]) / "kitty.conf").is_file()
-    assert out[1] == f"would run: true default {home / '.cache' / 'theme' / 'default'} dark"
+    directory = home / ".cache" / "theme" / "default"
+    assert out[1] == (
+        f"would run: AMO_DIR={directory} AMO_PROFILE=default AMO_VARIANT=dark "
+        'sh -c \'true "$AMO_PROFILE" "$AMO_VARIANT"\''
+    )
     assert not (home / ".cache" / "theme").exists()

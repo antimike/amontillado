@@ -69,8 +69,8 @@ KEYS: tuple[Key, ...] = (
     ),
     Key(
         "api_key_command",
-        "A command printing the Wallhaven API key on its first line, split as a shell would "
-        "and run without one; WALLHAVEN_API_KEY wins over it. Needed for nsfw results. The "
+        "A command printing the Wallhaven API key on its first line, run by sh -c; "
+        "WALLHAVEN_API_KEY wins over it. Needed for nsfw results. The "
         "key is never logged or written anywhere.",
         "pass show wallhaven/api-key",
     ),
@@ -88,11 +88,12 @@ KEYS: tuple[Key, ...] = (
     ),
     Key(
         "crop.viewer",
-        "The image viewer for preview: viewer, started once with {file} the preview file, "
-        "split as a shell would and run without one. It must reload the file when it changes "
+        "The image viewer for preview: viewer, started once by sh -c with AMO_FILE (the "
+        'preview file) in its environment; quote it ("$AMO_FILE"). It must reload the file '
+        "when it changes "
         "(eog, gThumb and Gwenview do; feh needs --reload; xdg-open opens whatever the "
         "desktop's default is).",
-        '"xdg-open {file}"',
+        "'xdg-open \"$AMO_FILE\"'",
     ),
     Key(
         "edit",
@@ -108,11 +109,12 @@ KEYS: tuple[Key, ...] = (
     Key(
         "edit.tools",
         "Editors by name. A tool's cmd runs with sh -c in a fresh working directory inside the "
-        "record (.amo/edit-*), with INPUT (a copy of the file being edited), OUTPUT (where a "
-        "result may be written; it does not exist yet) and WORKDIR (that directory) added to "
-        "your environment, so a cmd can also read variables you set (STYLE=x amo edit ...). "
-        'Quote them ("$INPUT"). It must block until you are done: an editor that hands the '
-        "file to a running instance and returns finds nothing. The result is OUTPUT if it "
+        "record (.amo/edit-*), with AMO_INPUT (a copy of the file being edited), AMO_OUTPUT "
+        "(where a result may be written; it does not exist yet) and AMO_WORKDIR (that "
+        "directory) added to your environment, so a cmd can also read variables you set "
+        '(STYLE=x amo edit ...). Quote them ("$AMO_INPUT"). It must block until you are done: '
+        "an editor that hands the file to a running instance and returns finds nothing. The "
+        "result is AMO_OUTPUT if it "
         "exists, else the one image in the working directory (or below it) that is new or "
         "changed; files in the editor's own format (.xcf, .kra) are ignored, so export into "
         "the folder the editor opens in.",
@@ -183,12 +185,13 @@ KEYS: tuple[Key, ...] = (
     Key("theme.wallpaper", "The wallpaper hook."),
     Key(
         "theme.wallpaper.reload",
-        "A command run last after each apply, with {wallpaper} (the picture), {profile}, "
-        "{dir} and {variant} (dark or light: the variant of an app without its own) "
-        "substituted; split as a shell would and run without one, so a pipeline needs a "
-        "script. Setting the wallpaper stays your command: amontillado only knows which "
-        "picture belongs to the theme.",
-        '"hyprctl hyprpaper reload ,{wallpaper}"',
+        "A command run last after each apply, by sh -c with AMO_WALLPAPER (the picture; "
+        "unset, and the command skipped if it names it, when the theme has none), "
+        "AMO_PROFILE, AMO_DIR (the profile's directory) and AMO_VARIANT (dark or light: the "
+        "variant of an app without its own) in its environment. Quote them "
+        '("$AMO_WALLPAPER"). Setting the wallpaper stays your command: amontillado only '
+        "knows which picture belongs to the theme.",
+        "'hyprctl hyprpaper reload ,\"$AMO_WALLPAPER\"'",
     ),
     Key(
         "theme.apps",
@@ -236,7 +239,7 @@ KEYS: tuple[Key, ...] = (
     ),
     Key(
         f"theme.apps.{APP}.reload",
-        "A command run after the swap, as theme.wallpaper.reload, but {variant} is this "
+        "A command run after the swap, as theme.wallpaper.reload, but AMO_VARIANT is this "
         "app's. A failure warns: the app may not be running.",
     ),
     Key(
@@ -267,8 +270,8 @@ APP_EXAMPLES = (
     "colour scheme, not the file: a reload that sets the scheme to the variant keeps it",
     "readable (docs/colour-scheme-hooks.md). One of, or no reload to leave the scheme alone:",
     "libadwaita:",
-    '  reload: "gsettings set org.gnome.desktop.interface color-scheme prefer-{variant}"',
-    '  # reload: "darkman set {variant}"',
+    """  reload: 'gsettings set org.gnome.desktop.interface color-scheme "prefer-$AMO_VARIANT"'""",
+    """  # reload: 'darkman set "$AMO_VARIANT"'""",
     "",
     "GTK4 only: libadwaita-vars also sets that text and GNOME's palette (--blue-3 ...), for",
     "gtk-4.0/gtk.css; libadwaita then serves gtk-3.0 (adw-gtk3) alone:",
@@ -290,54 +293,54 @@ class ToolExample:
 TOOL_EXAMPLES = (
     ToolExample(
         "gimp",
-        'gimp -n "$INPUT"',
+        'gimp -n "$AMO_INPUT"',
         "GIMP; File > Overwrite the copy, or Export As into its folder",
         "-n starts a new GIMP: without it the file goes to a running one and gimp returns at once.",
     ),
     ToolExample(
         "krita",
-        'krita "$INPUT"',
+        'krita "$AMO_INPUT"',
         "Krita; File > Export into its folder",
         "With Krita's 'Allow only one instance' setting on and Krita running, krita returns "
         "at once.",
     ),
-    ToolExample("pinta", 'pinta "$INPUT"', "Pinta; save over the copy"),
+    ToolExample("pinta", 'pinta "$AMO_INPUT"', "Pinta; save over the copy"),
     ToolExample(
         "darktable",
-        'darktable --library :memory: "$INPUT"',
+        'darktable --library :memory: "$AMO_INPUT"',
         "darktable's darkroom; export (to darktable_exported/ by default)",
         ":memory: keeps the copy out of your darktable library and its lock.",
     ),
     ToolExample(
         "darktable-cli",
-        'darktable-cli "$INPUT" "$OUTPUT" --style "${STYLE:?a darktable style}"',
+        'darktable-cli "$AMO_INPUT" "$AMO_OUTPUT" --style "${STYLE:?a darktable style}"',
         "a darktable style, no window; STYLE=<name> amo edit ...",
     ),
     ToolExample(
         "rawtherapee",
-        'rawtherapee "$INPUT"',
+        'rawtherapee "$AMO_INPUT"',
         "RawTherapee; Save current image into its folder",
     ),
     ToolExample(
         "rawtherapee-cli",
-        'rawtherapee-cli -Y -o "$WORKDIR" -p "${PROFILE:?a .pp3 file}" -c "$INPUT"',
+        'rawtherapee-cli -Y -o "$AMO_WORKDIR" -p "${PROFILE:?a .pp3 file}" -c "$AMO_INPUT"',
         "a RawTherapee profile, no window; PROFILE=<file.pp3>; writes JPEG",
         "Writes <name>.jpg into the working directory (over the copy if it is a JPEG); -n "
         "before -c writes PNG.",
     ),
     ToolExample(
         "satty",
-        'satty -f "$INPUT" -o "$WORKDIR/annotated.png" --early-exit',
+        'satty -f "$AMO_INPUT" -o "$AMO_WORKDIR/annotated.png" --early-exit',
         "annotate, blur or redact; saving writes a PNG and closes it",
     ),
     ToolExample(
         "magick-modulate",
-        'magick "$INPUT" -modulate 100,"${SATURATION:-80}" "$OUTPUT"',
+        'magick "$AMO_INPUT" -modulate 100,"${SATURATION:-80}" "$AMO_OUTPUT"',
         "ImageMagick, no window; saturation to SATURATION% (default 80)",
     ),
     ToolExample(
         "inkscape",
-        'inkscape "$INPUT"',
+        'inkscape "$AMO_INPUT"',
         "Inkscape; Export as PNG into its folder (a vector editor, clumsy for bitmaps)",
     ),
 )

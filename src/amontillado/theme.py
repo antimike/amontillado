@@ -10,6 +10,7 @@ A render error stops the apply before anything moves.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -200,7 +201,7 @@ class Plan:
     copy_from: Path | None
     # The picture the wallpaper link points to, if any.
     wallpaper: Path | None
-    # The variant of an app without its own (auto resolved): the wallpaper hook's {variant}.
+    # The variant of an app without its own (auto resolved): the wallpaper hook's AMO_VARIANT.
     variant: str
 
 
@@ -342,55 +343,66 @@ def repoint_wallpapers(theme: ThemeConfig, old: Path, new: Path) -> list[str]:
     return moved
 
 
-def reload_commands(config: Config, plan: Plan, directory: Path) -> list[tuple[str, ...]]:
-    """The reload commands to run after `plan`, placeholders filled: each rendered app's, then
-    the wallpaper hook. `directory` holds the written plan (the wallpaper link); `{dir}` is
-    always the profile's path, so a dry run prints what a real one would run. `{variant}` is
-    the variant the app was rendered in; for the wallpaper hook, the plan's. A command
-    naming {wallpaper} when there is none is left out."""
+@dataclass(frozen=True)
+class Reload:
+    """A reload command line for `sh -c` and the AMO_* variables it runs with."""
+
+    command: str
+    env: dict[str, str]
+
+    def __str__(self) -> str:
+        """How a shell would run it: the variables, then `sh -c` and the command line."""
+        assignments = [f"{name}={shlex.quote(value)}" for name, value in sorted(self.env.items())]
+        return " ".join([*assignments, "sh", "-c", shlex.quote(self.command)])
+
+
+def reload_commands(config: Config, plan: Plan, directory: Path) -> list[Reload]:
+    """The reload commands to run after `plan`: each rendered app's, then the wallpaper hook.
+    `directory` holds the written plan (the wallpaper link); AMO_DIR is always the profile's
+    path, so a dry run prints what a real one would run. AMO_VARIANT is the variant the app was
+    rendered in; for the wallpaper hook, the plan's. With no wallpaper, AMO_WALLPAPER is unset
+    and a command naming it is left out."""
     theme = config.theme
     link = directory / WALLPAPER_LINK
     wallpaper = os.readlink(link) if link.is_symlink() else None
-    values = {
-        "profile": plan.profile,
-        "dir": str(profile_dir(theme, plan.profile)),
-        "wallpaper": wallpaper,
-    }
+    values = {"AMO_PROFILE": plan.profile, "AMO_DIR": str(profile_dir(theme, plan.profile))}
+    if wallpaper is not None:
+        values["AMO_WALLPAPER"] = wallpaper
     commands = [(theme.apps[item.app].reload, item.record["variant"]) for item in plan.rendered]
     commands.append((theme.wallpaper_reload, plan.variant))
-    filled = []
+    reloads = []
     for command, variant in commands:
         if command is None:
             continue
-        if wallpaper is None and any("{wallpaper}" in arg for arg in command):
-            logger.info("no wallpaper: not running %s", " ".join(command))
+        if wallpaper is None and "AMO_WALLPAPER" in command:
+            logger.info("no wallpaper: not running %s", command)
             continue
-        filled.append(tuple(_fill(arg, {**values, "variant": variant}) for arg in command))
-    return filled
+        reloads.append(Reload(command, {**values, "AMO_VARIANT": variant}))
+    return reloads
 
 
-def _fill(arg: str, values: dict[str, str | None]) -> str:
-    for name, value in values.items():
-        if value is not None:
-            arg = arg.replace(f"{{{name}}}", value)
-    return arg
-
-
-def run_reloads(commands: Sequence[tuple[str, ...]]) -> None:
-    """Run each command; a failure is a warning (the app may not be running)."""
-    for command in commands:
+def run_reloads(reloads: Sequence[Reload]) -> None:
+    """Run each command under `sh -c`; a failure is a warning (the app may not be running)."""
+    for reload in reloads:
+        # AMO_* from amo's own environment would be stale: only this run's are set.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AMO_")} | reload.env
         try:
             result = subprocess.run(
-                command, capture_output=True, text=True, check=False, timeout=RELOAD_TIMEOUT
+                ["sh", "-c", reload.command],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=RELOAD_TIMEOUT,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            logger.warning("reload %s: %s", " ".join(command), exc)
+            logger.warning("reload %s: %s", reload.command, exc)
             continue
         if result.returncode != 0:
             detail = result.stderr.strip() or f"exit status {result.returncode}"
-            logger.warning("reload %s: %s", " ".join(command), detail)
+            logger.warning("reload %s: %s", reload.command, detail)
         else:
-            logger.debug("reloaded: %s", " ".join(command))
+            logger.debug("reloaded: %s", reload.command)
 
 
 def describe(theme: ThemeConfig, profile: str) -> tuple[dict[str, str], list[str]]:

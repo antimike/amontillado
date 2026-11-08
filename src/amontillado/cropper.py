@@ -321,15 +321,16 @@ def preview_path() -> Path:
 
 
 class ViewerRenderer:
-    """The preview written to `path` after each key (atomically), shown by `command` (its
-    `{file}` replaced), started at the first frame; the status on `status`."""
+    """The preview written to `path` after each key (atomically), shown by `command` (a command
+    line for `sh -c`, with AMO_FILE the preview file), started at the first frame; the status
+    on `status`."""
 
     def __init__(
         self,
-        command: tuple[str, ...],
+        command: str,
         path: Path,
         status: TextIO,
-        start: Callable[[list[str]], object] | None = None,
+        start: Callable[[list[str], dict[str, str]], object] | None = None,
     ) -> None:
         self.command, self.path, self.status = command, path, status
         self.start = start or _start_viewer
@@ -341,7 +342,7 @@ class ViewerRenderer:
         frame.save(partial, "PNG", compress_level=1)
         partial.replace(self.path)
         if not self.started:
-            self.start([arg.replace("{file}", str(self.path)) for arg in self.command])
+            self.start(["sh", "-c", self.command], {**os.environ, "AMO_FILE": str(self.path)})
             self.started = True
         self.status.write(f"\r\x1b[2K{text}")
         self.status.flush()
@@ -352,17 +353,18 @@ class ViewerRenderer:
         self.path.unlink(missing_ok=True)
 
 
-def _start_viewer(command: list[str]) -> object:
+def _start_viewer(command: list[str], env: dict[str, str]) -> object:
     try:
         return subprocess.Popen(
             command,
+            env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
     except OSError as exc:
-        raise OSError(f"crop.viewer {command[0]}: {exc}") from exc
+        raise OSError(f"crop.viewer: {exc}") from exc
 
 
 def place(
