@@ -290,16 +290,52 @@ def test_missing_file_keeps_its_entry(
 
 
 def test_broken_symlink_counts_as_missing(config: Config, save_image: SaveImage) -> None:
-    # git-annex leaves a broken symlink where content was dropped.
     info = mark_record(config.library_roots[0] / "r")
     save_image(info.parent / "a.png")
     save_image(info.parent / "b.png")
     heal_library(config)
     (info.parent / "a.png").unlink()
-    (info.parent / "a.png").symlink_to(".git/annex/objects/gone")
+    (info.parent / "a.png").symlink_to("elsewhere/a.png")
     report = heal_library(config)
-    assert report.missing == [info.parent / "a.png"]
+    assert report.missing == [info.parent / "a.png"] and not report.absent
     assert "a.png" in read_record(info).files
+
+
+def test_dangling_annex_symlink_is_absent_not_missing(
+    config: Config, save_image: SaveImage
+) -> None:
+    # git-annex leaves a dangling symlink where a locked file's content was dropped.
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "a.png", (0, 0, 0), (80, 40))
+    save_image(info.parent / "b.png", (255, 255, 255))
+    heal_library(config)
+    (info.parent / "a.png").unlink()
+    (info.parent / "a.png").symlink_to("../.git/annex/objects/xx/yy/KEY/KEY")
+    report = heal_library(config)
+    assert report.absent == [info.parent / "a.png"] and not report.missing and report.clean
+    (entry,) = report.entries
+    assert (entry.present, entry.absent, entry.default) == (("b.png",), ("a.png",), "b.png")
+
+
+def test_annex_pointer_file_is_absent(config: Config, save_image: SaveImage) -> None:
+    # An unlocked file whose content was dropped is a pointer file naming its key.
+    info = mark_record(config.library_roots[0] / "r")
+    save_image(info.parent / "a.png")
+    heal_library(config)
+    (info.parent / "a.png").write_text("/annex/objects/SHA256E-s1--00.png\n")
+    report = heal_library(config)
+    assert report.absent == [info.parent / "a.png"] and report.clean
+    (entry,) = report.entries
+    assert (entry.present, entry.absent, entry.default) == ((), ("a.png",), "a.png")
+
+
+def test_hidden_directories_are_not_searched(config: Config, save_image: SaveImage) -> None:
+    root = config.library_roots[0]
+    save_image(root / ".git/annex/objects/xx/yy/KEY.png/KEY.png")
+    mark_record(root / ".hidden/r")
+    save_image(root / ".hidden/r/a.png")
+    report = heal_library(config)
+    assert report.records == 0 and not report.loose
 
 
 def test_record_without_files_is_not_indexed(config: Config) -> None:
