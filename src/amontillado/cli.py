@@ -94,6 +94,7 @@ from amontillado.library import (
     add_derived,
     add_picture,
     additions_from_json,
+    annex_absent,
     crop_picture,
     hand_source,
     heal_library,
@@ -1022,6 +1023,9 @@ def cmd_list(args: argparse.Namespace) -> None:
             wanted = matching_records(conn, search) if search else None
             by_record: dict[str, list[IndexedFile]] = {}
             for row in files(conn):
+                # Annexed content not on this machine cannot be shown.
+                if row.absent:
+                    continue
                 if wanted is None or row.record_id in wanted:
                     by_record.setdefault(row.record_id, []).append(row)
     except QueryError as exc:
@@ -1032,10 +1036,13 @@ def cmd_list(args: argparse.Namespace) -> None:
     rows = [_pick(group, ratio) for group in by_record.values()]
     look = _look(args)
     matches = [row for row in rows if _matches(row, args, look, config)]
-    present = [row for row in matches if row.path.is_file()]
+    present = [row for row in matches if row.path.is_file() and not annex_absent(row.path)]
     if len(present) < len(matches):
         gone = len(matches) - len(present)
-        logger.warning("missing from disk: %s; run `amo index`", _count(gone, "file"))
+        logger.warning(
+            "missing from disk or its annex content dropped: %s; run `amo index`",
+            _count(gone, "file"),
+        )
     matches = present
     if args.random is not None:
         matches = random.sample(matches, min(args.random, len(matches)))
@@ -1219,6 +1226,8 @@ def _find_picture(config: Config, query: str) -> _Picture:
         chosen = next((item for item in indexed if item.is_default), None)
     if chosen is None:
         sys.exit(f"amontillado: {query}: the record has no default file")
+    if chosen.absent or annex_absent(chosen.path):
+        sys.exit(f"amontillado: {chosen.path}: its content is not here; `git annex get` it")
     return _Picture(record_id, name, chosen.path, chosen.metrics)
 
 
@@ -1794,6 +1803,7 @@ def _summary(head: str, report: Report, check: bool) -> str:
         f"{report.renamed} renamed" if report.renamed else "",
         f"{_count(len(report.loose), 'image')} outside a record" if report.loose else "",
         f"{_count(len(report.missing), 'file')} missing" if report.missing else "",
+        f"{_count(len(report.absent), 'file')} not here (git-annex)" if report.absent else "",
         _count(len(report.conflicts), "conflict") if report.conflicts else "",
         f"{len(report.failed)} failed" if report.failed else "",
     ]

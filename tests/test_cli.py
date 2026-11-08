@@ -589,7 +589,7 @@ def test_list_skips_missing_files(
 ) -> None:
     indexed["white"].unlink()
     assert _list(capsys) == {"black", "red", "noise"}
-    assert "missing from disk: 1 file" in caplog.text
+    assert "missing from disk or its annex content dropped: 1 file" in caplog.text
 
 
 def test_list_excludes_the_current_nsfw_root(
