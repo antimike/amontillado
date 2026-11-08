@@ -69,6 +69,7 @@ amo list --dark --format rofi | rofi -dmenu -show-icons   # pick one, with thumb
 amo measure some.png                       # metrics and classes of any image, as YAML
 amo list --tag night --where "shown_count = 0"   # search provenance and the whole record
 amo crop forest 21:9 --interactive         # place the crop by hand
+amo edit forest                            # retouch a copy in your editor, keep the result
 
 amo config init                            # a commented config: every key, its meaning
 amo palette forest                         # a picture's palette, both variants, as YAML
