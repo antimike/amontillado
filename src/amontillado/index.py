@@ -26,7 +26,7 @@ from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 # `->` and `->>` came in SQLite 3.38; json_extract works before.
 JSON_ARROWS = (3, 38, 0)
 
@@ -75,7 +75,8 @@ CREATE TABLE files (
     warmth REAL NOT NULL,
     busy REAL NOT NULL,
     bytes INTEGER,
-    mtime_ns INTEGER
+    mtime_ns INTEGER,
+    absent INTEGER NOT NULL DEFAULT 0
 )
 """
 _CREATE_FILES_SHA256 = "CREATE INDEX files_sha256 ON files (sha256)"
@@ -100,13 +101,13 @@ _INSERT_FILE = """
 INSERT INTO files VALUES (
     :path, :record_id, :sha256, :is_default, :width, :height, :lightness, :chroma,
     :colourful_share, :hue, :hue_name, :hue_share, :hue_spread, :warmth, :busy, :bytes,
-    :mtime_ns
+    :mtime_ns, :absent
 )
 """
 # The metric columns in Metrics field order, so that a row unpacks into Metrics.
 _SELECT_FILES = """
 SELECT f.path, f.record_id, r.purity, r.nsfw_root, f.is_default, f.width, f.height,
-    r.thumbnail, f.lightness, f.chroma, f.colourful_share, f.hue, f.hue_name, f.hue_share,
+    r.thumbnail, f.absent, f.lightness, f.chroma, f.colourful_share, f.hue, f.hue_name, f.hue_share,
     f.hue_spread, f.warmth, f.busy
 FROM files f JOIN records r ON r.id = f.record_id
 {where}ORDER BY f.path
@@ -135,6 +136,8 @@ class IndexedFile:
     # The record's thumbnail, if it has one.
     thumbnail: Path | None
     metrics: Metrics
+    # Its git-annex content is not here: listed and measured, but not readable.
+    absent: bool = False
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -166,6 +169,9 @@ def connect(path: Path) -> sqlite3.Connection:
         if version in (2, 3, 4, 5) and _has_table(conn, "records"):
             # No info column before schema 6; the next `amo index` fills it in.
             conn.execute("ALTER TABLE records ADD COLUMN info TEXT")
+        if version in (2, 3, 4, 5, 6) and _has_table(conn, "files"):
+            # Absent annex content was not indexed before schema 7.
+            conn.execute("ALTER TABLE files ADD COLUMN absent INTEGER NOT NULL DEFAULT 0")
         if not _has_table(conn, "records"):
             _create_tables(conn)
         conn.execute(_CREATE_USAGE)
@@ -265,7 +271,7 @@ def _thumbnail(entry: Entry) -> str | None:
 
 def _file_rows(entry: Entry) -> list[dict[str, object]]:
     rows = []
-    for name in entry.present:
+    for name in (*entry.present, *entry.absent):
         file = entry.record.files[name]
         assert file.metrics is not None
         size, mtime_ns = entry.stats.get(name, (None, None))
@@ -280,6 +286,7 @@ def _file_rows(entry: Entry) -> list[dict[str, object]]:
                 **{key: getattr(file.metrics, key) for key in Metrics.__dataclass_fields__},
                 "bytes": size,
                 "mtime_ns": mtime_ns,
+                "absent": name in entry.absent,
             }
         )
     return rows
@@ -309,10 +316,20 @@ def files(conn: sqlite3.Connection, record_id: str | None = None) -> list[Indexe
             height=height,
             thumbnail=Path(thumbnail) if thumbnail is not None else None,
             metrics=Metrics(*metrics),
+            absent=bool(absent),
         )
-        for path, record_id, purity, nsfw_root, is_default, width, height, thumbnail, *metrics in (
-            rows
-        )
+        for (
+            path,
+            record_id,
+            purity,
+            nsfw_root,
+            is_default,
+            width,
+            height,
+            thumbnail,
+            absent,
+            *metrics,
+        ) in rows
     ]
 
 

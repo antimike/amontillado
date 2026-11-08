@@ -9,6 +9,11 @@ alone. Within a record, an unlisted image with the hash of a listed file that is
 that file renamed; other unlisted images are added; listed files that are missing keep their
 entries and are reported. Images outside any record are reported, never moved. A file whose
 size and mtime are what the index last saw is not hashed again.
+
+In a git-annex repository, a listed file whose content is not here (`annex_absent`: a locked
+file's dangling symlink, an unlocked file's pointer) is absent, not missing: it keeps its entry,
+is indexed from it, flagged, and does not fail `--check`. Hidden directories (`.git`) are never
+searched for records.
 """
 
 from __future__ import annotations
@@ -55,6 +60,26 @@ THUMBNAIL_SIZE = 400
 
 # A file's size and mtime (ns): when both are unchanged, so is its content (the hash cache).
 Stat = tuple[int, int]
+# What a git-annex symlink target contains, and what an unlocked file's pointer starts with.
+_ANNEX_OBJECTS = "annex/objects/"
+_POINTER_PREFIX = b"/annex/objects/"
+# A pointer is one line naming a key; a file larger than this is content.
+_POINTER_MAX = 1024
+
+
+def annex_absent(path: Path) -> bool:
+    """Whether `path` is a git-annex file whose content is not here: a symlink into
+    annex/objects that leads nowhere (a locked file), or a pointer file (an unlocked one).
+    Decided from the file alone, without git-annex."""
+    try:
+        if path.is_symlink():
+            return not path.exists() and _ANNEX_OBJECTS in os.readlink(path)
+        if not path.is_file() or path.stat().st_size > _POINTER_MAX:
+            return False
+        with path.open("rb") as file:
+            return file.read(len(_POINTER_PREFIX)) == _POINTER_PREFIX
+    except OSError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -71,6 +96,8 @@ class Entry:
     name: str | None
     # The Stat of each present file when it was hashed, for the hash cache.
     stats: Mapping[str, Stat] = field(default_factory=dict)
+    # Listed files whose annex content is not here, indexed from their entries (complete).
+    absent: tuple[str, ...] = ()
 
     @property
     def id(self) -> str:
@@ -101,6 +128,8 @@ class Report:
     missing: list[Path] = field(default_factory=list)
     conflicts: list[list[Path]] = field(default_factory=list)
     failed: list[tuple[Path, str]] = field(default_factory=list)
+    # Files whose annex content is not here: normal in a git-annex library, not a problem.
+    absent: list[Path] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
@@ -148,7 +177,7 @@ def heal_library(
             continue
         if healed is None:
             continue
-        record, file_hashes, stats = healed
+        record, file_hashes, stats, absent = healed
         for name, digest in file_hashes.items():
             hashes[digest].append(record_dir.directory / name)
         if record.id is not None:
@@ -158,7 +187,7 @@ def heal_library(
         if check:
             continue
         present = tuple(sorted(file_hashes))
-        default = record.default(set(present))
+        default = record.default(set(present)) or record.default(absent)
         if default is None:
             continue
         nsfw = record_dir.directory.resolve().is_relative_to(config.nsfw_root)
@@ -171,6 +200,7 @@ def heal_library(
             default,
             record.name,
             stats,
+            tuple(sorted(absent)),
         )
         if not entry.nsfw_root and entry.purity != "sfw":
             logger.warning(
@@ -219,7 +249,8 @@ def _scan(config: Config, report: Report) -> list[_Found]:
         # os.walk does not follow directory symlinks, so a symlink cannot pull in another tree.
         for dirpath, dirnames, filenames in os.walk(root):
             directory = Path(dirpath)
-            dirnames.sort()
+            # Hidden directories hold no records: .git (whose annex/objects hold images), .amo.
+            dirnames[:] = sorted(name for name in dirnames if not name.startswith("."))
             if directory.resolve() in seen:
                 dirnames.clear()
                 continue
@@ -249,18 +280,23 @@ def _scan(config: Config, report: Report) -> list[_Found]:
 
 def _heal_record(
     found: _Found, report: Report, *, check: bool, known: Mapping[str, tuple[int, int, str]]
-) -> tuple[Record, dict[str, str], dict[str, Stat]] | None:
-    """Heal one record. Returns it (with derived fields filled in unless checking), and the
-    hashes and Stats of its files that are present, or None if it failed; RecordError if its
-    info file cannot be used."""
+) -> tuple[Record, dict[str, str], dict[str, Stat], set[str]] | None:
+    """Heal one record. Returns it (with derived fields filled in unless checking), the hashes
+    and Stats of its files that are present, and the listed files whose annex content is not
+    here and whose entries are complete (so they can be indexed); None if it failed;
+    RecordError if its info file cannot be used."""
     directory, path = found.directory, found.info
     hashes: dict[str, str] = {}
     stats: dict[str, Stat] = {}
+    absent: set[str] = set()
     try:
         record = read_record(path)
         for name in found.images:
             file = directory / name
-            # A broken symlink (an annexed file whose content is not here) is not present.
+            if annex_absent(file):
+                absent.add(name)
+                continue
+            # Any other broken symlink is a missing file.
             if not file.is_file():
                 continue
             # Stat before hashing: a change while hashing then shows at the next index.
@@ -284,7 +320,7 @@ def _heal_record(
         reasons.append("new id")
     files = dict(record.files)
     unlisted = [name for name in hashes if name not in files]
-    missing = [name for name in files if name not in hashes]
+    missing = [name for name in files if name not in hashes and name not in absent]
 
     renames: dict[str, str] = {}
     for old in missing:
@@ -321,8 +357,16 @@ def _heal_record(
         files[name] = FileEntry()
         to_measure.append(name)
 
+    for name in sorted(absent):
+        report.absent.append(directory / name)
+        if name not in files:
+            logger.warning(
+                "%s: content not here and not listed: `git annex get` it", directory / name
+            )
+        else:
+            logger.debug("%s: content not here (git-annex)", directory / name)
     for name in files:
-        if name not in hashes:
+        if name not in hashes and name not in absent:
             report.missing.append(directory / name)
             logger.warning("%s: listed in %s but missing", directory / name, path.name)
     if not files:
@@ -332,7 +376,7 @@ def _heal_record(
     needs_thumbnail = bool(hashes) and (thumbnail is None or not (directory / thumbnail).is_file())
     if needs_thumbnail:
         reasons.append("thumbnail")
-    if record.default_file is not None and record.default_file not in hashes:
+    if record.default_file is not None and record.default_file not in hashes.keys() | absent:
         logger.warning(
             "%s: default_file %s is missing; using another file", directory, record.default_file
         )
@@ -346,9 +390,10 @@ def _heal_record(
             "would heal: " if check else "healed: ",
             "; ".join(reasons),
         )
+    indexable = {name for name in absent if name in files and files[name].complete}
     if check:
         report.measured += len(to_measure)
-        return dataclasses.replace(record, files=files), hashes, stats
+        return dataclasses.replace(record, files=files), hashes, stats, indexable
 
     for name in to_measure:
         file = directory / name
@@ -368,7 +413,7 @@ def _heal_record(
         record = _with_thumbnail(directory, record, set(hashes))
     if reasons:
         write_record(path, record)
-    return record, hashes, stats
+    return record, hashes, stats, indexable
 
 
 def _with_thumbnail(directory: Path, record: Record, present: set[str]) -> Record:
@@ -845,8 +890,22 @@ def name_record(
 
 
 def present_files(directory: Path, record: Record) -> set[str]:
-    """The files `record` lists that are in `directory`."""
-    return {name for name in record.files if (directory / name).is_file()}
+    """The files `record` lists that are in `directory`, with their content (`annex_absent`)."""
+    return {
+        name
+        for name in record.files
+        if (directory / name).is_file() and not annex_absent(directory / name)
+    }
+
+
+def absent_files(directory: Path, record: Record) -> set[str]:
+    """The files `record` lists whose annex content is not here and whose entries are complete:
+    they are indexed, flagged absent."""
+    return {
+        name
+        for name, entry in record.files.items()
+        if entry.complete and annex_absent(directory / name)
+    }
 
 
 def original_file(record: Record, present: set[str]) -> str | None:
@@ -870,6 +929,8 @@ def needs_healing(
         if file.suffix.lower() in IMAGE_SUFFIXES
         and file.name not in record.files
         and file.name != ignore
+        # amo index cannot add what it cannot read; that is `git annex get`'s to fix.
+        and not annex_absent(file)
     ]
     return bool(unlisted) or any(not record.files[name].complete for name in present)
 
@@ -878,8 +939,19 @@ def record_entry(
     config: Config, directory: Path, root: Path, record: Record, present: set[str]
 ) -> Entry:
     """`record`, in `directory` under `root`, as the index takes it."""
-    default = record.default(present)
+    absent = absent_files(directory, record)
+    default = record.default(present) or record.default(absent)
     assert default is not None
     nsfw = directory.resolve().is_relative_to(config.nsfw_root)
     stats = {name: file_stat(directory / name) for name in present}
-    return Entry(directory, root, nsfw, record, tuple(sorted(present)), default, record.name, stats)
+    return Entry(
+        directory,
+        root,
+        nsfw,
+        record,
+        tuple(sorted(present)),
+        default,
+        record.name,
+        stats,
+        tuple(sorted(absent)),
+    )

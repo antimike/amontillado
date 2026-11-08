@@ -252,10 +252,22 @@ have none of the three.
 **Per-file re-pairing**, within one record: an image in the directory that `files` does not
 list, whose hash is that of a listed file that is missing, is that file renamed: its entry
 moves to the new name, and `default_file` and `derived_from` follow. Any other unlisted image is
-measured and added. A listed file that is missing with no match keeps its entry (so does an
-annexed file whose content is not present: a broken symlink), is reported, and fails
-`--check`; the rest of the record is still indexed, and a missing `default_file` falls back to
-the rule above with a warning. A file moved to another record is not re-paired: it is added
+measured and added. A listed file that is missing with no match keeps its entry, is reported,
+and fails `--check`; the rest of the record is still indexed, and a missing `default_file` falls
+back to the rule above with a warning.
+
+**Absent content** (git-annex, amo-qnn.2): a listed file whose annex content is not here is
+*absent*, not missing. It is told from the file alone, without running git-annex: a locked
+file's symlink into `annex/objects` that leads nowhere, or an unlocked file's pointer (a file of
+at most 1 KiB starting `/annex/objects/`). It keeps its entry, is never hashed or measured,
+does not fail `--check` (dropping content is routine), and is counted ("N files not here") by
+`amo index`. Measured elsewhere (the info file travels in git), it is indexed from its entry,
+flagged `absent`, so a record whose every file is absent stays in the index; the default file
+is chosen among the files that are here first. `amo list` skips absent files (a record with
+none here is not printed), and `amo palette` and `amo theme apply` on one fail naming
+`git annex get`. An image that is absent and not listed cannot be added until its content is
+got, and is warned about. Hidden directories under a root (`.git`, whose `annex/objects` hold
+images) are never searched for records. A file moved to another record is not re-paired: it is added
 there, and reported missing from the first. A record directory renamed or moved needs no
 healing at all: its identity is inside it.
 
@@ -272,14 +284,16 @@ cannot be rebuilt):
   purity, category, tags as JSON, source site and id, thumbnail path, license, author, title,
   and the info file as JSON),
   and `files`: one row per file present (path, record id, sha256 (indexed), whether it is the
-  default file, size, every metric, and for the hash cache its size in bytes and mtime in ns).
+  default file, size, every metric, and for the hash cache its size in bytes and mtime in ns),
+  and one per file whose annex content is not here, from its entry, flagged `absent` (no hash
+  cache; only when it was measured).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (6); a newer one than the
+  table. The database's `PRAGMA user_version` is its schema version (7); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
   thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
-  schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`);
-  upgrading adds them empty, for the next `amo index` to fill. The `pictures` view (columns
+  schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`),
+  schemas 2 to 6 the `absent` column of `files`; upgrading adds them empty, for the next `amo index` to fill. The `pictures` view (columns
   under "CLI") is recreated on every open, so changing it needs no migration.
 - `usage`: `id` (the record's), `shown_count`, `last_shown` (ISO 8601, UTC); later perhaps a
   rating. Keyed by record, so it follows a picture through renames and moves. Kept across

@@ -131,7 +131,11 @@ def test_metric_columns_follow_the_dataclass(config: Config) -> None:
 def _as_schema(conn: sqlite3.Connection, version: int) -> None:
     """Make the index look as schema `version` left it: no view, fewer columns."""
     conn.execute("DROP VIEW pictures")
-    dropped = {"records": ["info"], "files": []}
+    dropped: dict[str, list[str]] = {"records": [], "files": []}
+    if version <= 6:
+        dropped["files"].append("absent")
+    if version <= 5:
+        dropped["records"].append("info")
     if version <= 4:
         dropped["records"] += ["license", "author", "title"]
     if version <= 3:
@@ -201,12 +205,24 @@ def test_schema_5_gains_the_info_column_and_the_view(config: Config, save_image:
     _as_schema(conn, 5)
     conn.close()
     conn = connect(config.index_path)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     # Empty until the next rebuild fills it in; the view is there at once.
     assert conn.execute("SELECT info FROM pictures").fetchall() == [(None,)]
     rebuild(conn, heal_library(config).entries)
     [(info,)] = conn.execute("SELECT info FROM pictures").fetchall()
     assert json.loads(info)["files"]["a.png"]["width"] == 64
+
+
+def test_schema_6_gains_the_absent_flag(config: Config, save_image: SaveImage) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    conn = connect(config.index_path)
+    rebuild(conn, heal_library(config).entries)
+    _as_schema(conn, 6)
+    conn.close()
+    conn = connect(config.index_path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    [row] = files(conn)
+    assert not row.absent
 
 
 def test_known_hashes_are_what_was_indexed(config: Config, save_image: SaveImage) -> None:
