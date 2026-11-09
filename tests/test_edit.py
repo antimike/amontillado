@@ -40,7 +40,7 @@ def _edit(config: Config, record: Path, command: str, **plan: str) -> str:
 
 
 def test_an_edit_over_the_copy_is_added(config: Config, record: Path, edited: Path) -> None:
-    name = _edit(config, record, 'cp "$EDITED" "$INPUT"')
+    name = _edit(config, record, 'cp "$EDITED" "$AMO_INPUT"')
     assert name == "pic-edit.png"
     entry = read_record(record / "info.yaml").files[name]
     assert (entry.derived_from, entry.crop) == ("pic.png", None)
@@ -50,7 +50,7 @@ def test_an_edit_over_the_copy_is_added(config: Config, record: Path, edited: Pa
 
 
 def test_output_wins_over_a_changed_copy(config: Config, record: Path, edited: Path) -> None:
-    name = _edit(config, record, 'cp "$EDITED" "$OUTPUT" && echo changed >> "$INPUT"')
+    name = _edit(config, record, 'cp "$EDITED" "$AMO_OUTPUT" && echo changed >> "$AMO_INPUT"')
     assert name == "pic-edit.png"
     assert (record / name).read_bytes() == edited.read_bytes()
 
@@ -68,15 +68,15 @@ def test_an_export_below_the_working_directory_is_found(
 def test_the_default_name_steps_past_a_taken_one(
     config: Config, record: Path, edited: Path, save_image: SaveImage
 ) -> None:
-    assert _edit(config, record, 'cp "$EDITED" "$INPUT"') == "pic-edit.png"
+    assert _edit(config, record, 'cp "$EDITED" "$AMO_INPUT"') == "pic-edit.png"
     save_image(edited, (0, 0, 200), (80, 40))
-    assert _edit(config, record, 'cp "$EDITED" "$INPUT"') == "pic-edit-2.png"
+    assert _edit(config, record, 'cp "$EDITED" "$AMO_INPUT"') == "pic-edit-2.png"
 
 
 def test_name_and_source(config: Config, record: Path, edited: Path, save_image: SaveImage) -> None:
-    _edit(config, record, 'cp "$EDITED" "$INPUT"')
+    _edit(config, record, 'cp "$EDITED" "$AMO_INPUT"')
     save_image(edited, (0, 0, 200), (80, 40))
-    command = 'test "$(basename "$INPUT")" = pic-edit.png && cp "$EDITED" "$INPUT"'
+    command = 'test "$(basename "$AMO_INPUT")" = pic-edit.png && cp "$EDITED" "$AMO_INPUT"'
     name = _edit(config, record, command, source="pic-edit.png", name="blue.png")
     assert name == "blue.png"
     assert read_record(record / "info.yaml").files[name].derived_from == "pic-edit.png"
@@ -88,10 +88,10 @@ def test_name_and_source(config: Config, record: Path, edited: Path, save_image:
         ("true", r"saved no image; it returned after \d", False),
         ("touch pic.xcf", "saved no image", True),
         ('cp "$EDITED" a.png && cp "$EDITED" b.png', r"several images \(a.png, b.png\)", True),
-        ('cp "$EDITED" "$INPUT"; exit 3', "exited with status 3$", True),
-        ("exit 3", "exited with status 3$", False),
+        ('cp "$EDITED" "$AMO_INPUT"; exit 3', "failed with exit status 3$", True),
+        ("exit 3", "failed with exit status 3$", False),
         ("no-such-editor-here", r"status 127 \(command not found\)", False),
-        ('cp "$WORKDIR/pic.png" "$OUTPUT"', "same content as", True),
+        ('cp "$AMO_WORKDIR/pic.png" "$AMO_OUTPUT"', "same content as", True),
     ],
 )
 def test_failures(
@@ -113,7 +113,7 @@ def test_failures(
 
 def test_a_name_of_another_format_is_refused(config: Config, record: Path, edited: Path) -> None:
     with pytest.raises(EditError, match=r"the result is a \.png file") as caught:
-        _edit(config, record, 'cp "$EDITED" "$INPUT"', name="pic-edit.jpg")
+        _edit(config, record, 'cp "$EDITED" "$AMO_INPUT"', name="pic-edit.jpg")
     assert caught.value.workdir is not None
 
 
@@ -125,7 +125,7 @@ def test_a_jpeg_name_takes_a_jpg_result(config: Config, record: Path, edited: Pa
 def test_the_tool_output_goes_to_stderr(
     config: Config, record: Path, edited: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    _edit(config, record, 'echo from-the-tool; cp "$EDITED" "$INPUT"')
+    _edit(config, record, 'echo from-the-tool; cp "$EDITED" "$AMO_INPUT"')
     out, err = capfd.readouterr()
     assert "from-the-tool" not in out and "from-the-tool" in err
 

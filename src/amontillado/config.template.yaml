@@ -11,9 +11,8 @@
 # then reach NSFW images.
 # nsfw_root: ~/.local/share/amontillado/library-nsfw
 
-# A command printing the Wallhaven API key on its first line, split as a shell would and run without
-# one; WALLHAVEN_API_KEY wins over it. Needed for nsfw results. The key is never logged or written
-# anywhere.
+# A command printing the Wallhaven API key on its first line, run by sh -c; WALLHAVEN_API_KEY wins
+# over it. Needed for nsfw results. The key is never logged or written anywhere.
 # api_key_command: pass show wallhaven/api-key
 
 # amo crop --interactive: how it shows the picture and the box being placed.
@@ -25,10 +24,10 @@ crop:
   # viewer works anywhere but must reload a file that changes. Default: auto.
   # preview: auto
 
-  # The image viewer for preview: viewer, started once with {file} the preview file, split as a
-  # shell would and run without one. It must reload the file when it changes (eog, gThumb and
-  # Gwenview do; feh needs --reload; xdg-open opens whatever the desktop's default is).
-  # viewer: "xdg-open {file}"
+  # The image viewer for preview: viewer, started once by sh -c with AMO_FILE (the preview file) in
+  # its environment; quote it ("$AMO_FILE"). It must reload the file when it changes (eog, gThumb
+  # and Gwenview do; feh needs --reload; xdg-open opens whatever the desktop's default is).
+  # viewer: 'xdg-open "$AMO_FILE"'
 
 # amo edit: the editors it runs on a copy of a picture's file, by name (docs/design.md, "Editing").
 edit:
@@ -38,13 +37,13 @@ edit:
   # default_tool: gimp
 
   # Editors by name. A tool's cmd runs with sh -c in a fresh working directory inside the record
-  # (.amo/edit-*), with INPUT (a copy of the file being edited), OUTPUT (where a result may be
-  # written; it does not exist yet) and WORKDIR (that directory) added to your environment, so a cmd
-  # can also read variables you set (STYLE=x amo edit ...). Quote them ("$INPUT"). It must block
-  # until you are done: an editor that hands the file to a running instance and returns finds
-  # nothing. The result is OUTPUT if it exists, else the one image in the working directory (or
-  # below it) that is new or changed; files in the editor's own format (.xcf, .kra) are ignored, so
-  # export into the folder the editor opens in.
+  # (.amo/edit-*), with AMO_INPUT (a copy of the file being edited), AMO_OUTPUT (where a result may
+  # be written; it does not exist yet) and AMO_WORKDIR (that directory) added to your environment,
+  # so a cmd can also read variables you set (STYLE=x amo edit ...). Quote them ("$AMO_INPUT"). It
+  # must block until you are done: an editor that hands the file to a running instance and returns
+  # finds nothing. The result is AMO_OUTPUT if it exists, else the one image in the working
+  # directory (or below it) that is new or changed; files in the editor's own format (.xcf, .kra)
+  # are ignored, so export into the folder the editor opens in.
   tools:
     # A tool's keys:
     #   cmd: The command line, run by sh -c.
@@ -52,47 +51,47 @@ edit:
     #
     # -n starts a new GIMP: without it the file goes to a running one and gimp returns at once.
     # gimp:
-    #   cmd: gimp -n "$INPUT"
+    #   cmd: gimp -n "$AMO_INPUT"
     #   description: GIMP; File > Overwrite the copy, or Export As into its folder
     #
     # With Krita's 'Allow only one instance' setting on and Krita running, krita returns at once.
     # krita:
-    #   cmd: krita "$INPUT"
+    #   cmd: krita "$AMO_INPUT"
     #   description: Krita; File > Export into its folder
     #
     # pinta:
-    #   cmd: pinta "$INPUT"
+    #   cmd: pinta "$AMO_INPUT"
     #   description: Pinta; save over the copy
     #
     # :memory: keeps the copy out of your darktable library and its lock.
     # darktable:
-    #   cmd: 'darktable --library :memory: "$INPUT"'
+    #   cmd: 'darktable --library :memory: "$AMO_INPUT"'
     #   description: darktable's darkroom; export (to darktable_exported/ by default)
     #
     # darktable-cli:
-    #   cmd: darktable-cli "$INPUT" "$OUTPUT" --style "${STYLE:?a darktable style}"
+    #   cmd: darktable-cli "$AMO_INPUT" "$AMO_OUTPUT" --style "${STYLE:?a darktable style}"
     #   description: a darktable style, no window; STYLE=<name> amo edit ...
     #
     # rawtherapee:
-    #   cmd: rawtherapee "$INPUT"
+    #   cmd: rawtherapee "$AMO_INPUT"
     #   description: RawTherapee; Save current image into its folder
     #
     # Writes <name>.jpg into the working directory (over the copy if it is a JPEG); -n before -c
     # writes PNG.
     # rawtherapee-cli:
-    #   cmd: rawtherapee-cli -Y -o "$WORKDIR" -p "${PROFILE:?a .pp3 file}" -c "$INPUT"
+    #   cmd: rawtherapee-cli -Y -o "$AMO_WORKDIR" -p "${PROFILE:?a .pp3 file}" -c "$AMO_INPUT"
     #   description: a RawTherapee profile, no window; PROFILE=<file.pp3>; writes JPEG
     #
     # satty:
-    #   cmd: satty -f "$INPUT" -o "$WORKDIR/annotated.png" --early-exit
+    #   cmd: satty -f "$AMO_INPUT" -o "$AMO_WORKDIR/annotated.png" --early-exit
     #   description: annotate, blur or redact; saving writes a PNG and closes it
     #
     # magick-modulate:
-    #   cmd: magick "$INPUT" -modulate 100,"${SATURATION:-80}" "$OUTPUT"
+    #   cmd: magick "$AMO_INPUT" -modulate 100,"${SATURATION:-80}" "$AMO_OUTPUT"
     #   description: ImageMagick, no window; saturation to SATURATION% (default 80)
     #
     # inkscape:
-    #   cmd: inkscape "$INPUT"
+    #   cmd: inkscape "$AMO_INPUT"
     #   description: Inkscape; Export as PNG into its folder (a vector editor, clumsy for bitmaps)
 
 # The theme engine: amo palette and amo theme (docs/design.md, "Theme engine (v0.2)").
@@ -132,11 +131,12 @@ theme:
   # The wallpaper hook.
   wallpaper:
 
-    # A command run last after each apply, with {wallpaper} (the picture), {profile}, {dir} and
-    # {variant} (dark or light: the variant of an app without its own) substituted; split as a shell
-    # would and run without one, so a pipeline needs a script. Setting the wallpaper stays your
-    # command: amontillado only knows which picture belongs to the theme.
-    # reload: "hyprctl hyprpaper reload ,{wallpaper}"
+    # A command run last after each apply, by sh -c with AMO_WALLPAPER (the picture; unset, and the
+    # command skipped if it names it, when the theme has none), AMO_PROFILE, AMO_DIR (the profile's
+    # directory) and AMO_VARIANT (dark or light: the variant of an app without its own) in its
+    # environment. Quote them ("$AMO_WALLPAPER"). Setting the wallpaper stays your command:
+    # amontillado only knows which picture belongs to the theme.
+    # reload: 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'
 
   # The apps to theme, one entry per app by name; each renders one file into the profile, which the
   # app's own config includes. Every key of an app is optional: {} renders the built-in template of
@@ -159,7 +159,7 @@ theme:
     #   path: For source path: your template file. Not resolved, so a symlink you swap is followed.
     #   output: The file name in the profile directory. Default: the registry's; required for url
     #       and path.
-    #   reload: A command run after the swap, as theme.wallpaper.reload, but {variant} is this
+    #   reload: A command run after the swap, as theme.wallpaper.reload, but AMO_VARIANT is this
     #       app's. A failure warns: the app may not be running.
     #   variant: This app's variant, over theme.variant and --variant.
     #   render_with: Who renders a matugen-format template: amontillado or matugen. matugen renders
@@ -177,8 +177,8 @@ theme:
     # colour scheme, not the file: a reload that sets the scheme to the variant keeps it
     # readable (docs/colour-scheme-hooks.md). One of, or no reload to leave the scheme alone:
     # libadwaita:
-    #   reload: "gsettings set org.gnome.desktop.interface color-scheme prefer-{variant}"
-    #   # reload: "darkman set {variant}"
+    #   reload: 'gsettings set org.gnome.desktop.interface color-scheme "prefer-$AMO_VARIANT"'
+    #   # reload: 'darkman set "$AMO_VARIANT"'
     #
     # GTK4 only: libadwaita-vars also sets that text and GNOME's palette (--blue-3 ...), for
     # gtk-4.0/gtk.css; libadwaita then serves gtk-3.0 (adw-gtk3) alone:

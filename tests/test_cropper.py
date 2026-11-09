@@ -201,10 +201,14 @@ def test_viewer_renderer(tmp_path: Path) -> None:
     started = []
     status_out = io.StringIO()
     path = tmp_path / "cache" / "crop-preview.png"
-    renderer = ViewerRenderer(("eog", "--single", "{file}"), path, status_out, started.append)
+    command = 'eog --single "$AMO_FILE"'
+    renderer = ViewerRenderer(command, path, status_out, lambda *call: started.append(call))
     renderer.show(Image.new("RGB", (20, 10), "red"), "one")
     renderer.show(Image.new("RGB", (20, 10), "blue"), "two")
-    assert started == [["eog", "--single", str(path)]]
+    assert len(started) == 1
+    args, env = started[0]
+    assert args == ["sh", "-c", command]
+    assert env["AMO_FILE"] == str(path)
     with Image.open(path) as image:
         assert image.getpixel((0, 0)) == (0, 0, 255)
     assert status_out.getvalue().endswith("\r\x1b[2Ktwo")

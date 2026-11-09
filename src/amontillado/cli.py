@@ -16,7 +16,6 @@ import logging
 import math
 import random
 import re
-import shlex
 import shutil
 import sqlite3
 import sys
@@ -48,8 +47,11 @@ from amontillado.config import (
     ConfigError,
     api_key,
     check_profile,
+    commands,
     config_path,
     load_config,
+    shellcheck,
+    syntax_error,
 )
 from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check
@@ -476,8 +478,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Copy one of a record's files into a working directory inside it "
         "(.amo/edit-*), run an editor on the copy (a tool under edit.tools, or --extcmd) and "
         "add what it saved as a hand-made derived file, as amo add-derived does. The tool "
-        "runs under sh -c with INPUT (the copy), OUTPUT (where a result may go) and WORKDIR "
-        "in its environment, and must block until you are done. The result is OUTPUT if the "
+        "runs under sh -c with AMO_INPUT (the copy), AMO_OUTPUT (where a result may go) and "
+        "AMO_WORKDIR in its environment, and must block until you are done. The result is "
+        "AMO_OUTPUT if the "
         "tool wrote it, else the one image in the working directory (or below it) that is new "
         "or changed: export into the folder the editor opens in. Saved as <stem>-edit.<ext> "
         "by default. The working directory is removed once the result is added, or if "
@@ -503,7 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-x",
         metavar="CMD",
         help="A command line to run instead of a named tool, as a tool's cmd is "
-        "(sh -c, with INPUT, OUTPUT and WORKDIR).",
+        "(sh -c, with AMO_INPUT, AMO_OUTPUT and AMO_WORKDIR).",
     )
     which.add_argument(
         "--list-tools",
@@ -847,12 +850,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate a config file.",
         description="Load a config file as every command does, and fail if it has an error, an "
         "unknown key, an app whose template cannot be found or read (a fetched one: run amo "
-        "theme sync), or two apps writing one output file. Changes nothing.",
+        "theme sync), two apps writing one output file, or a command (a reload hook, "
+        "crop.viewer, an edit tool, api_key_command) that sh -n cannot parse. Changes nothing.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(check_, argparse.SUPPRESS)
     check_.add_argument(
         "file", nargs="?", type=Path, metavar="FILE", help="The file (default: the config file)."
+    )
+    check_.add_argument(
+        "--shellcheck",
+        action="store_true",
+        help="Also run shellcheck on every command, as a POSIX sh script; its findings are "
+        "problems too (needs shellcheck).",
     )
     check_.set_defaults(func=cmd_config_check)
 
@@ -1353,8 +1363,8 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
                 shutil.copytree(plan.copy_from, directory, symlinks=True, dirs_exist_ok=True)
             write_theme(plan, directory)
             print(directory)
-            for command in reload_commands(config, plan, directory):
-                print(f"would run: {shlex.join(command)}")
+            for reload in reload_commands(config, plan, directory):
+                print(f"would run: {reload}")
             return
         directory = apply_theme(config, plan, activate=not args.no_activate)
     except (ConfigError, ThemeError, PaletteError, GeneratorError, OSError) as exc:
@@ -1422,13 +1432,28 @@ def cmd_config_check(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: {exc}")
     finally:
         config_logger.removeHandler(collect)
-    problems = check_apps(config)
+    problems = check_apps(config) + _check_commands(config, shellcheck_too=args.shellcheck)
     for problem in problems:
         logger.error("%s", problem)
     count = len(problems) + len(collect.messages)
     if count:
         sys.exit(f"amontillado: {path}: {_count(count, 'problem')}")
     logger.info("%s: ok (%s)", path, _count(len(config.theme.apps), "app"))
+
+
+def _check_commands(config: Config, *, shellcheck_too: bool) -> list[str]:
+    """What sh -n (and with `shellcheck_too`, shellcheck) finds in the config's commands."""
+    problems = []
+    for key, command in commands(config):
+        error = syntax_error(command)
+        if error is not None:
+            problems.append(f"{key}: {error}")
+        elif shellcheck_too:
+            try:
+                problems += [f"{key}: {finding}" for finding in shellcheck(command)]
+            except OSError as exc:
+                sys.exit(f"amontillado: --shellcheck: cannot run shellcheck: {exc}")
+    return problems
 
 
 # The provenance options that name one picture, so take one FILE (as --name does).

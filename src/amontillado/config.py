@@ -6,21 +6,23 @@ Locations follow the XDG base directory spec; docs/design.md, "Storage", has the
     library_roots: [~/Pictures/wallpapers]   # searched in addition to the default root
     nsfw_root: ~/private/wallpapers-nsfw     # replaces the default NSFW root
     api_key_command: pass show wallhaven/api-key   # prints the Wallhaven API key
-    crop: {preview: auto, viewer: "xdg-open {file}"}   # amo crop --interactive's preview
-    edit: {default_tool: gimp, tools: {gimp: {cmd: 'gimp -n "$INPUT"'}}}   # amo edit's editors
+    crop: {preview: auto, viewer: 'xdg-open "$AMO_FILE"'}   # amo crop --interactive's preview
+    edit: {default_tool: gimp, tools: {gimp: {cmd: 'gimp -n "$AMO_INPUT"'}}}   # amo edit's editors
     theme: {...}                             # the theme engine (v0.2), below
 
 `amontillado.config_keys` describes every key (the template `amo config init` writes).
 `theme` is docs/design.md, "Theme engine (v0.2)", "Per-app configuration": every key is
 checked here, so that a mistake fails `amo` at once with the key named, not at the next theme
 switch; unknown keys warn.
+
+Every command in the config runs under `sh -c`, its inputs in AMO_* environment variables
+(`shell_command`); quoting them is the user's job.
 """
 
 from __future__ import annotations
 
 import os
 import re
-import shlex
 import subprocess
 from dataclasses import dataclass, field
 from logging import getLogger
@@ -43,12 +45,18 @@ HUES_CHOICES = ("amontillado", "generator")
 RENDERERS = ("amontillado", "matugen")
 PREVIEWS = ("auto", "kitty", "viewer")
 _CROP_KEYS = frozenset({"preview", "viewer"})
-DEFAULT_VIEWER = ("xdg-open", "{file}")
+DEFAULT_VIEWER = 'xdg-open "$AMO_FILE"'
 _EDIT_KEYS = frozenset({"default_tool", "tools"})
 _TOOL_KEYS = frozenset({"cmd", "description"})
 _TOOL_NAME = re.compile(r"[A-Za-z0-9][\w.+-]*")
-# What a reload command may name, substituted when it runs.
-RELOAD_PLACEHOLDERS = frozenset({"wallpaper", "profile", "dir", "variant"})
+# The {placeholder} syntax before v0.4, and the variable each became: a leftover is an error.
+OLD_PLACEHOLDERS = {
+    "wallpaper": "AMO_WALLPAPER",
+    "profile": "AMO_PROFILE",
+    "dir": "AMO_DIR",
+    "variant": "AMO_VARIANT",
+    "file": "AMO_FILE",
+}
 # Names in a profile directory that amontillado writes itself.
 RESERVED_OUTPUTS = frozenset({"palette.yaml", "theme.yaml", "wallpaper"})
 _THEME_KEYS = frozenset(
@@ -68,7 +76,7 @@ _APP_KEYS = frozenset(
         "render_with",
     }
 )
-_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+_OLD_PLACEHOLDER = re.compile(r"(?<!\$)\{(" + "|".join(OLD_PLACEHOLDERS) + r")\}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -92,8 +100,8 @@ class AppConfig:
     sha256: str | None = None
     path: Path | None = None
     output: str | None = None
-    # The command's arguments, split as a shell would; placeholders are not yet substituted.
-    reload: tuple[str, ...] | None = None
+    # A command line for `sh -c`, with AMO_WALLPAPER, AMO_PROFILE, AMO_DIR and AMO_VARIANT.
+    reload: str | None = None
     variant: str | None = None
     render_with: str = "amontillado"
 
@@ -110,7 +118,7 @@ class ThemeConfig:
     hues: str = "amontillado"
     variant: str = "auto"
     contrast: str = "adjust"
-    wallpaper_reload: tuple[str, ...] | None = None
+    wallpaper_reload: str | None = None
     apps: dict[str, AppConfig] = field(default_factory=dict)
 
 
@@ -120,14 +128,14 @@ class CropConfig:
 
     # auto: kitty in a terminal that speaks its graphics protocol, else viewer.
     preview: str = "auto"
-    # The viewer's command, split as a shell would; {file} is the preview file.
-    viewer: tuple[str, ...] = DEFAULT_VIEWER
+    # The viewer's command line for `sh -c`; AMO_FILE is the preview file.
+    viewer: str = DEFAULT_VIEWER
 
 
 @dataclass(frozen=True)
 class EditTool:
-    """One editor under `edit.tools`: a command line run by `sh -c`, with INPUT, OUTPUT and
-    WORKDIR in its environment (`amontillado.edit`)."""
+    """One editor under `edit.tools`: a command line run by `sh -c`, with AMO_INPUT,
+    AMO_OUTPUT and AMO_WORKDIR in its environment (`amontillado.edit`)."""
 
     cmd: str
     description: str | None = None
@@ -202,9 +210,61 @@ def load_config(path: Path | None = None) -> Config:
     )
 
 
+# What the shell exits with for a command it cannot find, or cannot run.
+_SHELL_STATUSES = {126: "not executable", 127: "command not found"}
+
+
+def shell_status(status: int) -> str:
+    """`exit status N`, with what the shell means by 126 and 127."""
+    reason = _SHELL_STATUSES.get(status)
+    return f"exit status {status}" + (f" ({reason})" if reason else "")
+
+
+def commands(config: Config) -> list[tuple[str, str]]:
+    """Every command line in `config`, with its key: the ones `sh -c` runs."""
+    found = []
+    if config.api_key_command is not None:
+        found.append(("api_key_command", config.api_key_command))
+    found.append(("crop.viewer", config.crop.viewer))
+    for name, tool in config.edit.tools.items():
+        found.append((f"edit.tools.{name}.cmd", tool.cmd))
+    if config.theme.wallpaper_reload is not None:
+        found.append(("theme.wallpaper.reload", config.theme.wallpaper_reload))
+    for name, app in config.theme.apps.items():
+        if app.reload is not None:
+            found.append((f"theme.apps.{name}.reload", app.reload))
+    return found
+
+
+def syntax_error(command: str) -> str | None:
+    """What `sh -n` says is wrong with `command` (parsed, never run), or None."""
+    result = subprocess.run(
+        ["sh", "-n", "-c", command], capture_output=True, text=True, check=False
+    )
+    if result.returncode == 0:
+        return None
+    return result.stderr.strip() or shell_status(result.returncode)
+
+
+def shellcheck(command: str) -> list[str]:
+    """shellcheck's findings on `command` as a POSIX sh script, one line each (line:column:
+    level: message [SCnnnn]). Raises OSError if shellcheck cannot run."""
+    result = subprocess.run(
+        ["shellcheck", "--shell=sh", "--format=gcc", "-"],
+        input=command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise OSError(result.stderr.strip() or f"shellcheck: {shell_status(result.returncode)}")
+    # gcc format: -:LINE:COLUMN: LEVEL: MESSAGE [SCnnnn]
+    return [line.removeprefix("-:") for line in result.stdout.splitlines() if line]
+
+
 def api_key(config: Config) -> str | None:
     """The Wallhaven API key: WALLHAVEN_API_KEY if set, else the first line printed by
-    `api_key_command`, else None. Raises ConfigError if the command fails.
+    `api_key_command` (run under `sh -c`), else None. Raises ConfigError if the command fails.
 
     The key is never logged and never written; neither are the command's output or errors,
     which could contain it.
@@ -215,16 +275,20 @@ def api_key(config: Config) -> str | None:
     if config.api_key_command is None:
         return None
     try:
+        # Its own errors are never shown (they could hold the key), so sh -n names a syntax error.
+        error = syntax_error(config.api_key_command)
+        if error is not None:
+            raise ConfigError(f"api_key_command: {error}")
         result = subprocess.run(
-            shlex.split(config.api_key_command),
+            ["sh", "-c", config.api_key_command],
             capture_output=True,
             text=True,
             check=False,
         )
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
         raise ConfigError(f"api_key_command cannot run: {exc}") from exc
     if result.returncode != 0:
-        raise ConfigError(f"api_key_command failed with exit status {result.returncode}")
+        raise ConfigError(f"api_key_command failed with {shell_status(result.returncode)}")
     lines = result.stdout.strip().splitlines()
     if not lines or not lines[0].strip():
         raise ConfigError("api_key_command printed nothing")
@@ -298,7 +362,7 @@ def _theme(value: object) -> ThemeConfig:
         hues=_choice("theme.hues", theme.get("hues", "amontillado"), HUES_CHOICES),
         variant=_choice("theme.variant", theme.get("variant", "auto"), VARIANT_CHOICES),
         contrast=_choice("theme.contrast", _off(theme.get("contrast", "adjust")), CONTRAST_CHOICES),
-        wallpaper_reload=_command("theme.wallpaper.reload", wallpaper.get("reload")),
+        wallpaper_reload=shell_command("theme.wallpaper.reload", wallpaper.get("reload")),
         apps=parsed,
     )
 
@@ -308,20 +372,10 @@ def _crop(value: object) -> CropConfig:
     if value is None:
         return CropConfig()
     crop = _settings_mapping("crop", value, _CROP_KEYS)
-    viewer = crop.get("viewer")
-    args = DEFAULT_VIEWER
-    if viewer is not None:
-        if not isinstance(viewer, str):
-            raise ConfigError("crop.viewer must be a command line")
-        try:
-            args = tuple(shlex.split(viewer))
-        except ValueError as exc:
-            raise ConfigError(f"crop.viewer: {exc}") from exc
-        if not args:
-            raise ConfigError("crop.viewer must be a command line")
-        if not any("{file}" in arg for arg in args):
-            raise ConfigError("crop.viewer: names no {file}")
-    return CropConfig(_choice("crop.preview", crop.get("preview", "auto"), PREVIEWS), args)
+    viewer = shell_command("crop.viewer", crop.get("viewer")) or DEFAULT_VIEWER
+    if "AMO_FILE" not in viewer:
+        raise ConfigError("crop.viewer: names no $AMO_FILE")
+    return CropConfig(_choice("crop.preview", crop.get("preview", "auto"), PREVIEWS), viewer)
 
 
 def _edit(value: object) -> EditConfig:
@@ -393,7 +447,7 @@ def _app(where: str, value: object) -> AppConfig:
         sha256=sha256,
         path=path,
         output=output,
-        reload=_command(f"{where}.reload", app.get("reload")),
+        reload=shell_command(f"{where}.reload", app.get("reload")),
         variant=_choice(f"{where}.variant", app.get("variant"), VARIANT_CHOICES),
         render_with=render_with,
     )
@@ -440,23 +494,18 @@ def check_profile(value: object, key: str = "theme.profile") -> str:
     return value
 
 
-def _command(key: str, value: object) -> tuple[str, ...] | None:
-    """A command line, split as a shell would split it (it runs without one)."""
+def shell_command(key: str, value: object) -> str | None:
+    """A command line for `sh -c`, checked: a string that is not blank and names no {placeholder}
+    of the syntax before v0.4 (the message names its AMO_* variable). Raises ConfigError."""
     if value is None:
         return None
-    if not isinstance(value, str):
+    if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{key} must be a command line")
-    try:
-        args = tuple(shlex.split(value))
-    except ValueError as exc:
-        raise ConfigError(f"{key}: {exc}") from exc
-    if not args:
-        raise ConfigError(f"{key} must be a command line")
-    for arg in args:
-        for name in _PLACEHOLDER.findall(arg):
-            if name not in RELOAD_PLACEHOLDERS:
-                raise ConfigError(
-                    f"{key}: unknown placeholder {{{name}}} "
-                    f"({', '.join(f'{{{p}}}' for p in sorted(RELOAD_PLACEHOLDERS))})"
-                )
-    return args
+    old = _OLD_PLACEHOLDER.search(value)
+    if old is not None:
+        variable = OLD_PLACEHOLDERS[old[1]]
+        raise ConfigError(
+            f"{key}: {{{old[1]}}} is gone: commands run under sh -c with ${variable} in their "
+            f'environment (quote it: "${variable}")'
+        )
+    return value

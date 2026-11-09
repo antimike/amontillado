@@ -21,12 +21,22 @@ All notable changes to amontillado are documented here. The format follows
 - `amo edit PICTURE [--tool NAME | --extcmd CMD] [--name N] [--from FILE]`: runs an editor on a
   copy of a record's file in `.amo/edit-*` and adds what it saved as a hand-made derived file
   (`<stem>-edit.<ext>`). Editors are named in the config, as git's difftool: `edit.default_tool`
-  and `edit.tools.<name>.{cmd,description}`, where `cmd` runs under `sh -c` with `INPUT`,
-  `OUTPUT` and `WORKDIR` set; `amo edit --list-tools` lists them. The config template has
+  and `edit.tools.<name>.{cmd,description}`, where `cmd` runs under `sh -c` with `AMO_INPUT`,
+  `AMO_OUTPUT` and `AMO_WORKDIR` set; `amo edit --list-tools` lists them. The config template has
   examples for GIMP, Krita, Pinta, darktable, RawTherapee, satty, ImageMagick and Inkscape.
 
 ### Changed
 
+- **Breaking:** every command in the config runs under `sh -c`, its inputs as environment
+  variables instead of `{placeholder}`s, so pipelines and fallbacks need no wrapper script:
+  reload hooks get `AMO_WALLPAPER`, `AMO_PROFILE`, `AMO_DIR` and `AMO_VARIANT` (for
+  `{wallpaper}`, `{profile}`, `{dir}`, `{variant}`), `crop.viewer` gets `AMO_FILE` (for
+  `{file}`), and `api_key_command` runs under `sh -c` too. Quote them (`"$AMO_VARIANT"`). A
+  leftover `{placeholder}` is a config error naming its variable. `amo theme apply --dry-run`
+  prints each command with its variables.
+- `amo config check` parses every command with `sh -n`; `--shellcheck` also runs shellcheck
+  on each. A command's exit status 127 or 126 is named (command not found, not executable), and
+  a syntax error in `api_key_command` is named before it runs.
 - `amo index` no longer searches hidden directories under a root (`.git`, `.Trash-1000`, ...)
   for records or loose images.
 

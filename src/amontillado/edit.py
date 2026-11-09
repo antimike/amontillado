@@ -4,11 +4,11 @@ derived file (`add_derived`; docs/design.md, "Editing").
 The copy lives in a working directory inside the record, `.amo/edit-*`: `amo index` never looks
 there (a record's files are directly inside it), an NSFW picture stays under its root, and the
 result moves into the record without crossing a file system. The tool's command line runs under
-`sh -c` in that directory, with INPUT (the copy), OUTPUT (a path for the result, not yet there)
-and WORKDIR added to the environment, and its standard output sent to standard error (amo's own
-is the new file's path). The result is OUTPUT if the tool wrote it, else the one image in the
-working directory, or below it, that is new or changed; hidden files and directories, and files
-in an editor's own format (.xcf, .kra), are not images to it.
+`sh -c` in that directory, with AMO_INPUT (the copy), AMO_OUTPUT (a path for the result, not yet
+there) and AMO_WORKDIR added to the environment, and its standard output sent to standard error
+(amo's own is the new file's path). The result is AMO_OUTPUT if the tool wrote it, else the one
+image in the working directory, or below it, that is new or changed; hidden files and
+directories, and files in an editor's own format (.xcf, .kra), are not images to it.
 
 The working directory is removed once the result is added, or when the tool saved nothing;
 otherwise it is kept and named in the error, so that `amo add-derived` can take a result by
@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from amontillado.config import Config
+from amontillado.config import Config, shell_status
 from amontillado.library import (
     AddError,
     Entry,
@@ -41,8 +41,6 @@ from amontillado.record import IMAGE_SUFFIXES, info_path, read_record, sha256_fi
 # to a running instance instead of blocking.
 QUICK_EXIT = 2.0
 WORK_PREFIX = "edit-"
-# What the shell reports for a command it cannot find.
-_NOT_FOUND = 127
 _SAME_FORMAT = {".jpeg": ".jpg"}
 _STDERR = 2
 
@@ -101,7 +99,12 @@ def run_edit(config: Config, plan: Plan, root: Path, command: str) -> tuple[Entr
     before = sha256_file(copy)
     source = Path(plan.source)
     output = workdir / f"{source.stem}-edit{source.suffix}"
-    env = {**os.environ, "INPUT": str(copy), "OUTPUT": str(output), "WORKDIR": str(workdir)}
+    env = {
+        **os.environ,
+        "AMO_INPUT": str(copy),
+        "AMO_OUTPUT": str(output),
+        "AMO_WORKDIR": str(workdir),
+    }
     started = time.monotonic()
     try:
         status = subprocess.run(
@@ -120,9 +123,8 @@ def run_edit(config: Config, plan: Plan, root: Path, command: str) -> tuple[Entr
     elapsed = time.monotonic() - started
     results = _results(workdir, copy, before, output)
     if status != 0:
-        reason = " (command not found)" if status == _NOT_FOUND else ""
         raise EditError(
-            f"the tool exited with status {status}{reason}", _kept(workdir, copy, before)
+            f"the tool failed with {shell_status(status)}", _kept(workdir, copy, before)
         )
     if not results:
         message = "the tool saved no image"
@@ -150,7 +152,7 @@ def run_edit(config: Config, plan: Plan, root: Path, command: str) -> tuple[Entr
 
 
 def _results(workdir: Path, copy: Path, before: str, output: Path) -> list[Path]:
-    """What the tool saved: OUTPUT if it is there, else every image in `workdir` (or below it,
+    """What the tool saved: AMO_OUTPUT if it is there, else every image in `workdir` (or below it,
     hidden paths left out) other than the copy unchanged."""
     if output.is_file():
         return [output]

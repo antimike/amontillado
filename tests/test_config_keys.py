@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 from importlib.resources import files
 from pathlib import Path
 
@@ -79,7 +80,7 @@ def test_every_commented_value_is_valid(home: Path, caplog: pytest.LogCaptureFix
         config = load_config()
     assert not caplog.records
     assert config.theme.generator == "matugen"
-    assert config.theme.wallpaper_reload == ("hyprctl", "hyprpaper", "reload", ",{wallpaper}")
+    assert config.theme.wallpaper_reload == 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'
     assert set(config.theme.apps) == EXAMPLE_APPS
     assert config.theme.apps["zed"].render_with == "matugen"
     assert config.edit.default_tool == "gimp"
@@ -145,6 +146,30 @@ def test_config_check_names_each_problem(home: Path, caplog: pytest.LogCaptureFi
     with pytest.raises(SystemExit), caplog.at_level(logging.WARNING):
         _check(home, "theme: {apps: {a: {template: kitty}, b: {template: kitty}}}\n")
     assert "theme.apps.b: output kitty.conf is also a's" in caplog.text
+
+
+def test_config_check_parses_every_command(home: Path, caplog: pytest.LogCaptureFixture) -> None:
+    text = (
+        'api_key_command: "printf \'unclosed"\n'
+        "crop: {viewer: 'eog \"$AMO_FILE\" |'}\n"
+        "edit: {tools: {ok: {cmd: 'gimp \"$AMO_INPUT\" || true'}}}\n"
+        "theme: {wallpaper: {reload: 'if true; then'}}\n"
+    )
+    with pytest.raises(SystemExit, match="3 problems"), caplog.at_level(logging.ERROR):
+        _check(home, text)
+    named = {line.split(":")[0] for line in caplog.messages}
+    assert named == {"api_key_command", "crop.viewer", "theme.wallpaper.reload"}
+
+
+@pytest.mark.skipif(shutil.which("shellcheck") is None, reason="needs shellcheck")
+def test_config_check_shellcheck(home: Path, caplog: pytest.LogCaptureFixture) -> None:
+    path = home / "check.yaml"
+    path.write_text("theme: {wallpaper: {reload: 'swww img $AMO_WALLPAPER'}}\n")
+    main(["config", "check", str(path)])  # sh -n alone has nothing to say
+    with pytest.raises(SystemExit, match="1 problem"), caplog.at_level(logging.ERROR):
+        main(["config", "check", "--shellcheck", str(path)])
+    assert "theme.wallpaper.reload: 1:10: note: Double quote" in caplog.text
+    assert "[SC2086]" in caplog.text
 
 
 def test_config_check_without_a_file(home: Path) -> None:
