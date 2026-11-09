@@ -1207,8 +1207,14 @@ naming it is skipped; `render_with:
 matugen` needs `format: matugen` (or `source: matugen-themes`, whose format it is).
 
 `amo config check [FILE]` loads a config as every command does and fails on an error, an
-unknown key, an app whose template cannot be found or read (a fetched one not yet synced), or
-two apps that would write one output file.
+unknown key, an app whose template cannot be found or read (a fetched one not yet synced), two
+apps that would write one output file, or a command (`sh -c`, "Config") that `sh -n` cannot
+parse. `--shellcheck` also runs shellcheck on each command as a POSIX sh script, its findings
+problems too (quoting advice, mostly; opt-in, so a plain check stays a check). Loading the
+config never runs `sh -n`, so other commands pay nothing for it. At run time a command's exit
+status 127 or 126 is named (command not found, not executable); `api_key_command`, whose own
+errors are never shown since they could hold the key, is parsed with `sh -n` first so a syntax
+error is named too.
 
 Whether a result is complete or variables-only comes from the registry (`amo theme templates`
 shows it); a variables-only file does nothing until the app's own config maps the variables.
@@ -1285,7 +1291,7 @@ amo theme sync [--check]                       fetch (or verify) every template 
 amo theme templates [APP]                      registry entries, sources and their variables
 amo theme current [--profile P]                the applied palette's name, picture and time
 amo config init [--stdout] [--force]           write the commented config template
-amo config check [FILE]                        validate a config file
+amo config check [--shellcheck] [FILE]         validate a config file
 ```
 
 PICTURE is any form under "Lookup": its record's default file, or the file named; without one,

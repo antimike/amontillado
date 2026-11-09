@@ -210,6 +210,58 @@ def load_config(path: Path | None = None) -> Config:
     )
 
 
+# What the shell exits with for a command it cannot find, or cannot run.
+_SHELL_STATUSES = {126: "not executable", 127: "command not found"}
+
+
+def shell_status(status: int) -> str:
+    """`exit status N`, with what the shell means by 126 and 127."""
+    reason = _SHELL_STATUSES.get(status)
+    return f"exit status {status}" + (f" ({reason})" if reason else "")
+
+
+def commands(config: Config) -> list[tuple[str, str]]:
+    """Every command line in `config`, with its key: the ones `sh -c` runs."""
+    found = []
+    if config.api_key_command is not None:
+        found.append(("api_key_command", config.api_key_command))
+    found.append(("crop.viewer", config.crop.viewer))
+    for name, tool in config.edit.tools.items():
+        found.append((f"edit.tools.{name}.cmd", tool.cmd))
+    if config.theme.wallpaper_reload is not None:
+        found.append(("theme.wallpaper.reload", config.theme.wallpaper_reload))
+    for name, app in config.theme.apps.items():
+        if app.reload is not None:
+            found.append((f"theme.apps.{name}.reload", app.reload))
+    return found
+
+
+def syntax_error(command: str) -> str | None:
+    """What `sh -n` says is wrong with `command` (parsed, never run), or None."""
+    result = subprocess.run(
+        ["sh", "-n", "-c", command], capture_output=True, text=True, check=False
+    )
+    if result.returncode == 0:
+        return None
+    return result.stderr.strip() or shell_status(result.returncode)
+
+
+def shellcheck(command: str) -> list[str]:
+    """shellcheck's findings on `command` as a POSIX sh script, one line each (line:column:
+    level: message [SCnnnn]). Raises OSError if shellcheck cannot run."""
+    result = subprocess.run(
+        ["shellcheck", "--shell=sh", "--format=gcc", "-"],
+        input=command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise OSError(result.stderr.strip() or f"shellcheck: {shell_status(result.returncode)}")
+    # gcc format: -:LINE:COLUMN: LEVEL: MESSAGE [SCnnnn]
+    return [line.removeprefix("-:") for line in result.stdout.splitlines() if line]
+
+
 def api_key(config: Config) -> str | None:
     """The Wallhaven API key: WALLHAVEN_API_KEY if set, else the first line printed by
     `api_key_command` (run under `sh -c`), else None. Raises ConfigError if the command fails.
@@ -223,6 +275,10 @@ def api_key(config: Config) -> str | None:
     if config.api_key_command is None:
         return None
     try:
+        # Its own errors are never shown (they could hold the key), so sh -n names a syntax error.
+        error = syntax_error(config.api_key_command)
+        if error is not None:
+            raise ConfigError(f"api_key_command: {error}")
         result = subprocess.run(
             ["sh", "-c", config.api_key_command],
             capture_output=True,
@@ -232,7 +288,7 @@ def api_key(config: Config) -> str | None:
     except OSError as exc:
         raise ConfigError(f"api_key_command cannot run: {exc}") from exc
     if result.returncode != 0:
-        raise ConfigError(f"api_key_command failed with exit status {result.returncode}")
+        raise ConfigError(f"api_key_command failed with {shell_status(result.returncode)}")
     lines = result.stdout.strip().splitlines()
     if not lines or not lines[0].strip():
         raise ConfigError("api_key_command printed nothing")

@@ -34,6 +34,9 @@ All notable changes to amontillado are documented here. The format follows
   `{file}`), and `api_key_command` runs under `sh -c` too. Quote them (`"$AMO_VARIANT"`). A
   leftover `{placeholder}` is a config error naming its variable. `amo theme apply --dry-run`
   prints each command with its variables.
+- `amo config check` parses every command with `sh -n`; `--shellcheck` also runs shellcheck
+  on each. A command's exit status 127 or 126 is named (command not found, not executable), and
+  a syntax error in `api_key_command` is named before it runs.
 - `amo index` no longer searches hidden directories under a root (`.git`, `.Trash-1000`, ...)
   for records or loose images.
 

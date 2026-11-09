@@ -1235,7 +1235,7 @@ def test_edit_names_what_it_keeps(
 ) -> None:
     _edit_tools(home, monkeypatch, tmp_path)
     with pytest.raises(
-        SystemExit, match=r"exited with status 1; what it saved is in .*/red/\.amo/edit-"
+        SystemExit, match=r"failed with exit status 1; what it saved is in .*/red/\.amo/edit-"
     ):
         main(
             ["edit", str(library / "red"), "--extcmd", 'cp "$EDITS/green.png" "$AMO_INPUT"; false']

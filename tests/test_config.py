@@ -128,8 +128,8 @@ def test_api_key_from_the_command(home: Path, no_key_variable: None) -> None:
     [
         ("false", "failed with exit status 1"),
         ("true", "printed nothing"),
-        ("/nonexistent/key-command", "failed with exit status 127"),
-        ("printf 'unclosed", "failed with exit status 2"),
+        ("/nonexistent/key-command", r"failed with exit status 127 \(command not found\)"),
+        ("printf 'unclosed", "api_key_command: sh: "),
     ],
 )
 def test_api_key_command_errors(

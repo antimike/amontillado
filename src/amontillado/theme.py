@@ -23,7 +23,7 @@ from pathlib import Path
 import yaml
 
 from amontillado.classes import LIGHT_MIN
-from amontillado.config import AppConfig, Config, ThemeConfig, xdg_dir
+from amontillado.config import AppConfig, Config, ThemeConfig, shell_status, xdg_dir
 from amontillado.contrast import apply_contrast
 from amontillado.generators import GeneratorError, matugen_render
 from amontillado.matugen import MatugenError, material_view, render_matugen
@@ -399,7 +399,7 @@ def run_reloads(reloads: Sequence[Reload]) -> None:
             logger.warning("reload %s: %s", reload.command, exc)
             continue
         if result.returncode != 0:
-            detail = result.stderr.strip() or f"exit status {result.returncode}"
+            detail = result.stderr.strip() or shell_status(result.returncode)
             logger.warning("reload %s: %s", reload.command, detail)
         else:
             logger.debug("reloaded: %s", reload.command)

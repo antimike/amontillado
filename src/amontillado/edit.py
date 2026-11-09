@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from amontillado.config import Config
+from amontillado.config import Config, shell_status
 from amontillado.library import (
     AddError,
     Entry,
@@ -41,8 +41,6 @@ from amontillado.record import IMAGE_SUFFIXES, info_path, read_record, sha256_fi
 # to a running instance instead of blocking.
 QUICK_EXIT = 2.0
 WORK_PREFIX = "edit-"
-# What the shell reports for a command it cannot find.
-_NOT_FOUND = 127
 _SAME_FORMAT = {".jpeg": ".jpg"}
 _STDERR = 2
 
@@ -125,9 +123,8 @@ def run_edit(config: Config, plan: Plan, root: Path, command: str) -> tuple[Entr
     elapsed = time.monotonic() - started
     results = _results(workdir, copy, before, output)
     if status != 0:
-        reason = " (command not found)" if status == _NOT_FOUND else ""
         raise EditError(
-            f"the tool exited with status {status}{reason}", _kept(workdir, copy, before)
+            f"the tool failed with {shell_status(status)}", _kept(workdir, copy, before)
         )
     if not results:
         message = "the tool saved no image"

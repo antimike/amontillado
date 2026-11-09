@@ -47,8 +47,11 @@ from amontillado.config import (
     ConfigError,
     api_key,
     check_profile,
+    commands,
     config_path,
     load_config,
+    shellcheck,
+    syntax_error,
 )
 from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check
@@ -847,12 +850,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate a config file.",
         description="Load a config file as every command does, and fail if it has an error, an "
         "unknown key, an app whose template cannot be found or read (a fetched one: run amo "
-        "theme sync), or two apps writing one output file. Changes nothing.",
+        "theme sync), two apps writing one output file, or a command (a reload hook, "
+        "crop.viewer, an edit tool, api_key_command) that sh -n cannot parse. Changes nothing.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(check_, argparse.SUPPRESS)
     check_.add_argument(
         "file", nargs="?", type=Path, metavar="FILE", help="The file (default: the config file)."
+    )
+    check_.add_argument(
+        "--shellcheck",
+        action="store_true",
+        help="Also run shellcheck on every command, as a POSIX sh script; its findings are "
+        "problems too (needs shellcheck).",
     )
     check_.set_defaults(func=cmd_config_check)
 
@@ -1422,13 +1432,28 @@ def cmd_config_check(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: {exc}")
     finally:
         config_logger.removeHandler(collect)
-    problems = check_apps(config)
+    problems = check_apps(config) + _check_commands(config, shellcheck_too=args.shellcheck)
     for problem in problems:
         logger.error("%s", problem)
     count = len(problems) + len(collect.messages)
     if count:
         sys.exit(f"amontillado: {path}: {_count(count, 'problem')}")
     logger.info("%s: ok (%s)", path, _count(len(config.theme.apps), "app"))
+
+
+def _check_commands(config: Config, *, shellcheck_too: bool) -> list[str]:
+    """What sh -n (and with `shellcheck_too`, shellcheck) finds in the config's commands."""
+    problems = []
+    for key, command in commands(config):
+        error = syntax_error(command)
+        if error is not None:
+            problems.append(f"{key}: {error}")
+        elif shellcheck_too:
+            try:
+                problems += [f"{key}: {finding}" for finding in shellcheck(command)]
+            except OSError as exc:
+                sys.exit(f"amontillado: --shellcheck: cannot run shellcheck: {exc}")
+    return problems
 
 
 # The provenance options that name one picture, so take one FILE (as --name does).
