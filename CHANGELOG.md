@@ -37,6 +37,12 @@ All notable changes to amontillado are documented here. The format follows
 - `amo config check` parses every command with `sh -n`; `--shellcheck` also runs shellcheck
   on each. A command's exit status 127 or 126 is named (command not found, not executable), and
   a syntax error in `api_key_command` is named before it runs.
+- YAML through ruamel.yaml instead of PyYAML. When amo writes an info file it read, only the
+  keys whose values changed are rewritten: hand-written comments, key order, flow style and
+  quoting survive `amo index`, `amo name` and the other commands that write. Files are read as
+  YAML 1.2, where `yes`, `on` and `no` are strings, not booleans; amo quotes any string YAML 1.1
+  or 1.2 would read as another type, so PyYAML still reads its files the same. Long lines no
+  longer fold. `amo index` reads info files faster (ruamel.yaml.clib's C parser).
 - `amo index` no longer searches hidden directories under a root (`.git`, `.Trash-1000`, ...)
   for records or loose images.
 

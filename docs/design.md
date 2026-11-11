@@ -190,8 +190,20 @@ files:
   a GUI of amontillado's own were not taken (sixel: no zoomed redraw without flicker in the
   terminals at hand, and kitty, the user's terminal, prefers its own protocol; a GUI: a
   toolkit dependency for one command).
-- `info.yaml` is loaded with a loader that rejects duplicate keys: `yaml.safe_load` silently
-  keeps the last, which would drop a file listed twice.
+- `info.yaml` is loaded with a loader that rejects duplicate keys (PyYAML's `safe_load`
+  silently kept the last, which would drop a file listed twice; ruamel.yaml rejects them by
+  default).
+- **YAML** (amo-j24.4): ruamel.yaml, YAML 1.2 (`yes`, `on`, `no` are strings), with its C
+  parser (ruamel.yaml.clib) where installed. amo writes an info file it read by changing only
+  the keys whose values changed, in the text it read: comments, key order, flow style and
+  quoting survive, a new key goes after the key that precedes it in the schema, a removed one
+  goes. New files are dumped in PyYAML's shape (what earlier versions wrote): two-space
+  mappings, sequences not indented, `null` spelt out, timestamps as `2026-10-27 18:00:00+00:00`.
+  Lines never fold (ruamel puts a long unfoldable scalar, a URL, on a line of its own, and a
+  round trip writes every scalar again). A string YAML 1.1 or 1.2 would read as another type
+  (`yes`, `y`, `1:30`, `012`, `1e5`) is quoted, so PyYAML reads amo's files as amo does. An old
+  file PyYAML wrote with an unquoted `1e5`-like string reads as a number under 1.2 (rare: a
+  Wallhaven id of digits and one `e`).
 - **Thumbnail** (amo-hq0): a path relative to the record directory naming a small image, for
   picker previews (`amo list --format rofi`). amontillado writes it at `.amo/thumbnail.jpg`:
   in a sub-directory, which the scan of a record never enters, so no version of amontillado
@@ -1417,8 +1429,8 @@ layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
      edited on two machines. Conflicts are by unit, not by line: a top-level key, except that
      each `files` entry is one unit; `default_file` goes with the `files` keys, `name` with the
      record directory. On conflict OURS is left untouched (no conflict markers, which would
-     make the YAML unparseable). Needs comment-preserving YAML: ruamel.yaml replaces pyyaml
-     (amo-j24.4), and info files are updated in place rather than re-dumped.
+     make the YAML unparseable). Needs comment-preserving YAML: ruamel.yaml replaced pyyaml
+     (amo-j24.4, done), and info files are updated in place rather than re-dumped ("Records").
    - Rejected: a built-in `git_commit: true` that runs git from amo's core (couples amo to git;
      the hook payload carries everything a targeted commit needs), and line-based patches
      (`git apply --cached`: context lines make unrelated nearby edits conflict, and say nothing

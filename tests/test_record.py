@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-import yaml
 
+from amontillado import yamlio
 from amontillado.metrics import METRICS_VERSION, Metrics
 from amontillado.record import (
     FileEntry,
@@ -45,12 +45,87 @@ def test_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "info.yaml"
     write_record(path, _record())
     assert read_record(path) == _record()
-    data = yaml.safe_load(path.read_text())
+    data = yamlio.load(path.read_text())
     assert list(data) == ["schema", "id", "name", "source", "fetched", "files"]
     crop = data["files"]["night-city-21x9.png"]
     assert list(crop) == ["sha256", "width", "height", "derived_from", "crop", "metrics"]
     assert crop["crop"] == [0, 257, 3840, 1646]
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_unchanged_record_writes_the_same_text(tmp_path: Path) -> None:
+    path = tmp_path / "info.yaml"
+    write_record(path, _record())
+    text = path.read_text()
+    assert "source:\n  site: wallhaven\n" in text
+    assert "fetched: 2026-10-27 18:00:00+00:00\n" in text
+    write_record(path, read_record(path))
+    assert path.read_text() == text
+
+
+def test_null_is_spelt_out(tmp_path: Path) -> None:
+    path = tmp_path / "info.yaml"
+    write_record(path, Record(id=RECORD_ID, files={"a.png": FileEntry()}))
+    assert "source: null\nfetched: null\n" in path.read_text()
+    assert "    metrics: null\n" in path.read_text()
+
+
+HAND_WRITTEN = f"""\
+# A picture from a friend; keep it.
+id: {RECORD_ID}   # never change this
+schema: 2
+source:
+  site: local
+  tags: [harbour, morning]   # flow style, as typed
+rating: 5
+files:
+  a.png:
+    sha256: {SHA}
+    width: 3840
+    height: 2160
+    note: the original    # by hand
+"""
+
+
+def test_write_changes_only_changed_keys(tmp_path: Path) -> None:
+    path = tmp_path / "info.yaml"
+    path.write_text(HAND_WRITTEN)
+    record = read_record(path)
+    entry = dataclasses.replace(record.files["a.png"], metrics=METRICS)
+    write_record(path, dataclasses.replace(record, name="harbour", files={"a.png": entry}))
+    text = path.read_text()
+    # Comments, key order, flow style and unknown keys stay; a new key goes after the key
+    # that precedes it in the record.
+    assert text.startswith(
+        f"# A picture from a friend; keep it.\nid: {RECORD_ID}   # never change this\n"
+        "name: harbour\nschema: 2\nsource:\n"
+    )
+    assert "  tags: [harbour, morning]   # flow style, as typed\nfetched: null\nrating: 5\n" in text
+    assert "    height: 2160\n    metrics:\n      version:" in text
+    assert text.endswith("      busy: 0.06\n    note: the original    # by hand\n")
+    assert read_record(path).files["a.png"].metrics == METRICS
+
+
+def test_write_removes_keys_the_record_dropped(tmp_path: Path) -> None:
+    path = tmp_path / "info.yaml"
+    path.write_text(HAND_WRITTEN)
+    record = read_record(path)
+    write_record(path, dataclasses.replace(record, extra={}, source=None))
+    text = path.read_text()
+    assert "rating" not in text and "harbour" not in text
+    assert "# A picture from a friend; keep it.\n" in text
+    assert read_record(path).source is None
+
+
+def test_a_value_of_another_type_is_rewritten(tmp_path: Path) -> None:
+    # 2160 == 2160.0 in Python; the file must still say what the record holds.
+    path = tmp_path / "info.yaml"
+    path.write_text(HAND_WRITTEN.replace("height: 2160", "height: 2160.0"))
+    record = read_record(path)
+    assert record.files["a.png"].height is None  # invalid: to be recomputed
+    entry = dataclasses.replace(record.files["a.png"], height=2160)
+    write_record(path, dataclasses.replace(record, files={"a.png": entry}))
+    assert "    height: 2160\n" in path.read_text()
 
 
 def test_unknown_keys_are_kept(tmp_path: Path) -> None:
@@ -122,7 +197,7 @@ def test_thumbnail_round_trips_after_default_file(tmp_path: Path) -> None:
     record = dataclasses.replace(_record(), default_file="night-city.png", thumbnail=".amo/t.jpg")
     write_record(path, record)
     assert read_record(path) == record
-    data = yaml.safe_load(path.read_text())
+    data = yamlio.load(path.read_text())
     assert list(data)[:5] == ["schema", "id", "name", "default_file", "thumbnail"]
     assert record.extra == {}
 
