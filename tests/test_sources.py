@@ -5,8 +5,8 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
-import yaml
 
+from amontillado import yamlio
 from amontillado.cli import main
 from amontillado.config import AppConfig, Config, ThemeConfig
 from amontillado.palette import Palette, complete_variant, dump_palette
@@ -151,7 +151,7 @@ def test_apply_records_the_pin(home: Path) -> None:
 def _write_config(home: Path, apps: dict) -> None:
     path = home / ".config" / "amontillado" / "config.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump({"theme": {"apps": apps}}))
+    path.write_text(yamlio.dump({"theme": {"apps": apps}}))
 
 
 def test_cli_sync(

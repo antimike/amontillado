@@ -10,12 +10,11 @@ from urllib.parse import parse_qsl, urlsplit
 
 import numpy as np
 import pytest
-import yaml
 from conftest import FakeClock, FakeWeb, mark_record
 from PIL import Image
 from rich.console import Console
 
-from amontillado import __version__, cli
+from amontillado import __version__, cli, yamlio
 from amontillado import library as library_module
 from amontillado.cli import get_cli_arguments, main
 from amontillado.wallhaven import Client
@@ -42,7 +41,7 @@ def test_measure_prints_yaml(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     black = _save(np.zeros((36, 64, 3), dtype=np.uint8), tmp_path / "black.png")
     red = _save(np.full((36, 64, 3), (255, 0, 0), dtype=np.uint8), tmp_path / "red.png")
     main(["measure", str(black), str(red)])
-    out = yaml.safe_load(capsys.readouterr().out)
+    out = yamlio.load(capsys.readouterr().out)
     assert [entry["file"] for entry in out] == [str(black), str(red)]
     assert out[0]["metrics"]["hue"] is None
     assert out[0]["classes"] == ["dark", "muted", "sparse"]
@@ -57,9 +56,9 @@ def test_palette_from_scheme(tmp_path: Path, capsys: pytest.CaptureFixture[str])
         zip([f"base{i:02X}" for i in range(16)], [*ramp, *accents, "#906040"], strict=True)
     )
     scheme = tmp_path / "s.yaml"
-    scheme.write_text(yaml.safe_dump({"system": "base16", "name": "S", "palette": colours}))
+    scheme.write_text(yamlio.dump({"system": "base16", "name": "S", "palette": colours}))
     main(["palette", "--from-scheme", str(scheme)])
-    out = yaml.safe_load(capsys.readouterr().out)
+    out = yamlio.load(capsys.readouterr().out)
     assert out["name"] == "S"
     assert out["variants"]["dark"]["roles"]["accent"] == "#6090e0"
     assert len(out["variants"]["dark"]["base24"]) == 24
@@ -76,7 +75,7 @@ def _palette_file(path: Path, base03: str) -> Path:
         zip([f"base{i:02X}" for i in range(16)], [*ramp, *accents, "#c08060"], strict=True)
     )
     data = {"version": 1, "name": "p", "variants": {"dark": {"base24": colours}}}
-    path.write_text(yaml.safe_dump(data))
+    path.write_text(yamlio.dump(data))
     return path
 
 
@@ -96,17 +95,17 @@ def test_palette_check_reports_accents_without_failing(
 ) -> None:
     # Green as a second red: off its hue and close to red, but every pair passes.
     path = _palette_file(tmp_path / "p.yaml", "#707070")
-    data = yaml.safe_load(path.read_text())
+    data = yamlio.load(path.read_text())
     data["variants"]["dark"]["base24"]["base0B"] = "#ff8484"
-    path.write_text(yaml.safe_dump(data))
+    path.write_text(yamlio.dump(data))
     main(["palette", "--check", str(path)])
     assert capsys.readouterr().out == "dark: hues 5/6, distinct 0.8\n"
 
 
 def _scheme_file(path: Path, base03: str) -> Path:
-    palette = yaml.safe_load(_palette_file(path, base03).read_text())
+    palette = yamlio.load(_palette_file(path, base03).read_text())
     colours = palette["variants"]["dark"]["base24"]
-    path.write_text(yaml.safe_dump({"system": "base16", "name": "S", "palette": colours}))
+    path.write_text(yamlio.dump({"system": "base16", "name": "S", "palette": colours}))
     return path
 
 
@@ -126,7 +125,7 @@ def test_palette_from_scheme_contrast(
     (home / ".config/amontillado/config.yaml").write_text(config)
     scheme = _scheme_file(tmp_path / "s.yaml", "#202020")
     main(["palette", "--from-scheme", str(scheme), *argv])
-    dark = yaml.safe_load(capsys.readouterr().out)["variants"]["dark"]
+    dark = yamlio.load(capsys.readouterr().out)["variants"]["dark"]
     assert (dark["base24"]["base03"] != "#202020") is adjusted
     assert ("adjusted" in dark) is adjusted
 
@@ -138,7 +137,7 @@ def test_measure_reports_bad_files(tmp_path: Path, capsys: pytest.CaptureFixture
     with pytest.raises(SystemExit) as exc:
         main(["measure", str(bad), str(good), str(tmp_path / "missing.png")])
     assert exc.value.code == "amontillado: 2 of 3 files could not be measured"
-    out = yaml.safe_load(capsys.readouterr().out)
+    out = yamlio.load(capsys.readouterr().out)
     assert [entry["file"] for entry in out] == [str(good)]
 
 
@@ -170,7 +169,7 @@ def _record(directory: Path, rgb: tuple[int, int, int] = (0, 0, 0), name: str = 
 def test_index_heals_and_indexes(library: Path, home: Path) -> None:
     _record(library / "r")
     main(["index"])
-    assert "a.png" in yaml.safe_load((library / "r" / "info.yaml").read_text())["files"]
+    assert "a.png" in yamlio.load((library / "r" / "info.yaml").read_text())["files"]
     assert _index_rows(home) == ["a.png"]
 
 
@@ -324,9 +323,9 @@ def test_list_prints_the_default_file(
     main(["index"])
     assert _list(capsys, "--dark") == {"black"}
     info = library / "black" / "info.yaml"
-    data = yaml.safe_load(info.read_text())
+    data = yamlio.load(info.read_text())
     data["default_file"] = "small.png"
-    info.write_text(yaml.safe_dump(data))
+    info.write_text(yamlio.dump(data))
     main(["index"])
     assert _list(capsys, "--dark") == {"small"}
 
@@ -371,7 +370,7 @@ def _old_fetched(library: Path, wallhaven_id: str, tags: list[str]) -> Path:
     directory = library / f"wallhaven-{wallhaven_id}"
     _record(directory, (0, 0, 255), f"wallhaven-{wallhaven_id}.png")
     source = {"site": "wallhaven", "id": wallhaven_id, "category": "general", "tags": tags}
-    (directory / "info.yaml").write_text(yaml.safe_dump({"source": source}))
+    (directory / "info.yaml").write_text(yamlio.dump({"source": source}))
     return directory
 
 
@@ -430,14 +429,14 @@ def test_name_and_rename_by_hand(
     # A rename: the old name is free again, the index answers to the new one at once.
     main(["name", "harbour-dawn", "harbour-morning"])
     assert capsys.readouterr().out == f"{nested / 'harbour-morning'}\n"
-    info = yaml.safe_load((nested / "harbour-morning" / "info.yaml").read_text())
+    info = yamlio.load((nested / "harbour-morning" / "info.yaml").read_text())
     assert info["name"] == "harbour-morning"
     main(["name", str(library / "other"), "harbour-dawn"])
     capsys.readouterr()
     # --no-rename-directory keeps the directory.
     main(["name", "--no-rename-directory", str(library / "kept-here"), "meadow"])
     assert capsys.readouterr().out == f"{library / 'kept-here'}\n"
-    assert yaml.safe_load((library / "kept-here" / "info.yaml").read_text())["name"] == "meadow"
+    assert yamlio.load((library / "kept-here" / "info.yaml").read_text())["name"] == "meadow"
     for argv, message in (
         (["meadow", "harbour-dawn"], "name 'harbour-dawn' is taken"),
         (["meadow", "meadow"], "named meadow already"),
@@ -470,7 +469,7 @@ def test_add_derived(
     assert f"would add {edit} as {library / 'red' / 'darker.png'}" in caplog.text
     main(["add-derived", str(library / "red"), str(edit), "--name", "red-darker.png"])
     assert capsys.readouterr().out == f"{library / 'red' / 'red-darker.png'}\n"
-    info = yaml.safe_load((library / "red" / "info.yaml").read_text())
+    info = yamlio.load((library / "red" / "info.yaml").read_text())
     assert info["files"]["red-darker.png"]["derived_from"] == "red.png"
     assert "crop" not in info["files"]["red-darker.png"]
     # Indexed at once; the original is still what amo list prints.
@@ -531,7 +530,7 @@ def test_list_aspect_crops_interactively(
     _terminal(monkeypatch, "i")
     assert _list(capsys, "--aspect", "1:1", "--dark") == {"black-1x1"}
     assert placed and placed[0][:2] == ("black.png", "1x1")
-    info = yaml.safe_load((library / "black" / "info.yaml").read_text())
+    info = yamlio.load((library / "black" / "info.yaml").read_text())
     assert info["files"]["black-1x1.png"]["crop"] == [0, 0, 8, 8]
 
 
@@ -638,7 +637,7 @@ def _usage(home: Path) -> list[tuple[str, int]]:
 
 
 def _id(image: Path) -> str:
-    return yaml.safe_load((image.parent / "info.yaml").read_text())["id"]
+    return yamlio.load((image.parent / "info.yaml").read_text())["id"]
 
 
 def test_shown_records_by_record_id(indexed: dict[str, Path], home: Path) -> None:
@@ -654,9 +653,9 @@ def test_shown_records_by_record_id(indexed: dict[str, Path], home: Path) -> Non
 
 def test_shown_by_name(indexed: dict[str, Path], home: Path) -> None:
     info = indexed["red"].parent / "info.yaml"
-    data = yaml.safe_load(info.read_text())
+    data = yamlio.load(info.read_text())
     data["name"] = "sunset"
-    info.write_text(yaml.safe_dump(data))
+    info.write_text(yamlio.dump(data))
     main(["index"])
     main(["shown", "sunset"])
     assert _usage(home) == [(data["id"], 1)]
@@ -736,7 +735,7 @@ def test_add_records_provenance(library: Path, home: Path) -> None:
             str(image),
         ]
     )
-    info = yaml.safe_load((library / "sunset" / "info.yaml").read_text())
+    info = yamlio.load((library / "sunset" / "info.yaml").read_text())
     assert info["source"] == {
         "site": "wikimedia-commons",
         "url": "https://commons.wikimedia.org/wiki/File:Sunset.png",
@@ -751,9 +750,7 @@ def test_add_records_provenance(library: Path, home: Path) -> None:
     assert row == ("CC0-1.0", "A. Painter", "Sunset", "wikimedia-commons")
     # Healing keeps it: source is authored.
     main(["index"])
-    assert (
-        yaml.safe_load((library / "sunset" / "info.yaml").read_text())["source"] == info["source"]
-    )
+    assert yamlio.load((library / "sunset" / "info.yaml").read_text())["source"] == info["source"]
 
 
 def test_add_from_json(library: Path, home: Path) -> None:
@@ -765,10 +762,10 @@ def test_add_from_json(library: Path, home: Path) -> None:
         ' {"file": "b.png", "author": "B", "purity": "sketchy"}]'
     )
     main(["add", "--from-json", str(seeds)])
-    first = yaml.safe_load((library / "first" / "info.yaml").read_text())
+    first = yamlio.load((library / "first" / "info.yaml").read_text())
     assert (first["name"], first["source"]) == ("first", {"license": "CC0-1.0"})
     nsfw = home / ".local/share/amontillado/library-nsfw"
-    second = yaml.safe_load((nsfw / "b" / "info.yaml").read_text())
+    second = yamlio.load((nsfw / "b" / "info.yaml").read_text())
     assert second["source"] == {"author": "B", "purity": "sketchy"}
 
 
@@ -964,7 +961,7 @@ def test_fetch_test_set_takes_no_look_filters_or_count(
 def _write_config(home: Path, data: dict[str, object]) -> None:
     path = home / ".config" / "amontillado" / "config.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data))
+    path.write_text(yamlio.dump(data))
 
 
 def test_palette_from_a_picture(
@@ -972,7 +969,7 @@ def test_palette_from_a_picture(
 ) -> None:
     red = indexed["red"]
     main(["palette", str(red.parent), "--hues", "generator", "--no-adjust"])
-    palette = yaml.safe_load(capsys.readouterr().out)
+    palette = yamlio.load(capsys.readouterr().out)
     assert palette["name"] == _id(red)
     source = palette["source"]
     assert (source["picture"], source["file"], source["lightness"]) == (_id(red), "red.png", 0.628)
@@ -990,7 +987,7 @@ def test_palette_from_a_picture_is_contrast_checked(
     indexed: dict[str, Path], fake_matugen: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     main(["palette", str(indexed["red"]), "--hues", "generator"])
-    palette = yaml.safe_load(capsys.readouterr().out)
+    palette = yamlio.load(capsys.readouterr().out)
     # matugen's base16 block is near-black on this picture; adjusting moves what it can.
     assert palette["variants"]["dark"]["adjusted"]
 
@@ -999,13 +996,13 @@ def test_palette_hues_from_the_config(
     indexed: dict[str, Path], home: Path, fake_matugen: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     main(["palette", str(indexed["red"])])
-    palette = yaml.safe_load(capsys.readouterr().out)
+    palette = yamlio.load(capsys.readouterr().out)
     assert palette["source"]["hues"] == "amontillado"
     # Named hues pass the contrast check as they are.
     assert "adjusted" not in palette["variants"]["dark"]
     _write_config(home, {"theme": {"hues": "generator"}})
     main(["palette", str(indexed["red"]), "--no-adjust"])
-    assert yaml.safe_load(capsys.readouterr().out)["source"]["hues"] == "generator"
+    assert yamlio.load(capsys.readouterr().out)["source"]["hues"] == "generator"
 
 
 def test_palette_from_a_picture_errors(
@@ -1034,7 +1031,7 @@ def test_theme_apply_a_picture(indexed: dict[str, Path], home: Path, fake_matuge
     main(["theme", "apply", _id(red)[:10]])
     profile = home / ".cache" / "theme" / "default"
     assert Path(profile / "wallpaper").readlink() == red
-    palette = yaml.safe_load((profile / "palette.yaml").read_text())
+    palette = yamlio.load((profile / "palette.yaml").read_text())
     assert palette["source"]["picture"] == _id(red)
     assert (profile / "palette.json").is_file()
     assert _usage(home) == [(_id(red), 1)]
@@ -1076,9 +1073,9 @@ def sourced(indexed: dict[str, Path], home: Path) -> dict[str, Path]:
     }  # fmt: skip
     for name, source in sources.items():
         info = indexed[name].parent / "info.yaml"
-        data = yaml.safe_load(info.read_text())
+        data = yamlio.load(info.read_text())
         data["source"] = source
-        info.write_text(yaml.safe_dump(data, sort_keys=False))
+        info.write_text(yamlio.dump(data))
     main(["index"])
     main(["shown", str(indexed["black"])])
     return indexed
@@ -1178,7 +1175,7 @@ def test_edit(
     if shutil.which("magick"):
         main(["edit", red, "--extcmd", command, "--from", "red-edit.png"])
         assert capsys.readouterr().out == f"{library / 'red' / 'red-edit-edit.png'}\n"
-    info = yaml.safe_load((library / "red" / "info.yaml").read_text())
+    info = yamlio.load((library / "red" / "info.yaml").read_text())
     assert info["files"]["red-edit.png"]["derived_from"] == "red.png"
     assert info["files"]["red-blue.png"]["derived_from"] == "red.png"
     assert {"red-edit.png", "red-blue.png"} <= set(_index_rows(home))
@@ -1190,7 +1187,7 @@ def test_edit_list_tools(
 ) -> None:
     _edit_tools(home, monkeypatch, tmp_path)
     main(["edit", "--list-tools"])
-    assert capsys.readouterr().out == "blue\ngreen  go green (default)\n"
+    assert capsys.readouterr().out == "green  go green (default)\nblue\n"
 
 
 @pytest.mark.parametrize(
@@ -1201,7 +1198,7 @@ def test_edit_list_tools(
         (
             ["edit", "RED", "--tool", "gimp"],
             True,
-            r"no tool 'gimp' under edit.tools \(tools: blue, green\)",
+            r"no tool 'gimp' under edit.tools \(tools: green, blue\)",
         ),
         (["edit", "RED"], False, "no editor: pass --tool or --extcmd"),
         (["edit", "RED", "--extcmd", " "], False, "--extcmd is empty"),

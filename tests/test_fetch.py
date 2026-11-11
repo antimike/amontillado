@@ -9,10 +9,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import yaml
 from conftest import FakeClock, FakeWeb, image_bytes
 from PIL import Image
 
+from amontillado import yamlio
 from amontillado.classes import Look
 from amontillado.config import Config
 from amontillado.fetch import FetchReport, NamingError, Options, fetch, name_from_tags, record_name
@@ -61,7 +61,7 @@ def test_keeps_a_matching_wallpaper_as_a_record(
     directory = config.library_roots[0] / "night-sky-aaa111"
     assert report.kept == [directory / "wallhaven-aaa111.jpg"]
     assert (report.examined, report.rejected, report.failed) == (1, 0, [])
-    info = yaml.safe_load((directory / "info.yaml").read_text())
+    info = yamlio.load((directory / "info.yaml").read_text())
     assert info["name"] == "night-sky-aaa111"
     assert info["source"]["id"] == "aaa111"
     assert info["source"]["tags"] == ["night sky"]
@@ -226,7 +226,7 @@ def test_a_taken_name_leaves_the_record_unnamed(
     report = _fetch(config, conn, web, Look(("dark",)), max_candidates=1)
     directory = config.library_roots[0] / "wallhaven-aaa111"
     assert report.kept == [directory / "wallhaven-aaa111.jpg"]
-    assert "name" not in yaml.safe_load((directory / "info.yaml").read_text())
+    assert "name" not in yamlio.load((directory / "info.yaml").read_text())
 
 
 def _unnamed(config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path) -> Path:
@@ -252,7 +252,7 @@ def test_name_from_tags_names_and_moves(
     assert not directory.exists()
     assert entry.directory == root / name
     assert entry.name == name and entry.present == ("wallhaven-aaa111.jpg",)
-    assert yaml.safe_load((root / name / "info.yaml").read_text())["name"] == name
+    assert yamlio.load((root / name / "info.yaml").read_text())["name"] == name
     with pytest.raises(NamingError, match="named already"):
         name_from_tags(config, root / name, root, set())
 
@@ -275,7 +275,7 @@ def test_name_from_tags_can_keep_the_directory(
         config, directory, config.library_roots[0], set(), rename_directory=False
     )
     assert (name, entry.directory) == ("night-sky-aaa111", directory)
-    assert yaml.safe_load((directory / "info.yaml").read_text())["name"] == name
+    assert yamlio.load((directory / "info.yaml").read_text())["name"] == name
 
 
 def test_name_from_tags_refuses(
