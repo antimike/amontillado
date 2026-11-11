@@ -1344,8 +1344,8 @@ Agreed with MH, 2026-10-30:
 
 Each library root may be a git-annex repository: info files in git, images annexed (epic
 `amo-qnn`; "Roadmap", item 6). Repository and remote setup is git configuration owned by the
-dotfiles, not amontillado config; the layout and both remote setups are documented in the layout
-docs (amo-qnn.5).
+dotfiles, not amontillado config; the layout and a short encrypted setup are documented in the
+layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
 
 ### git-annex libraries: decisions
 
@@ -1396,6 +1396,35 @@ docs (amo-qnn.5).
    or include=*.png)` is cut to `(include=*.jpg` and the images went into git. The layout uses
    `* annex.largefiles=nothing`, then `*.jpg annex.largefiles=anything` and so on for `.jpeg`,
    `.png` and `.webp`.
+5. **amontillado stays VCS-agnostic; version control is an opt-in hook** (agreed with MH
+   2026-11-10). A library is plain files and works the same under git, git-annex, Syncthing,
+   rsync, a backup tool or nothing. amo itself never runs git, git-annex, gpg or gcrypt;
+   recognising annexed files from the file alone ("Absent content") is the only awareness.
+   - **`on_change`** (top-level config key, unset by default, amo-qnn.3): a command run under
+     `sh -c` once per root per run that wrote files, with a JSON payload on stdin: each info
+     file's text before and after amo's write, new files, renames and deletes. amo's writes
+     stand whatever the hook does; a failing hook is a warning.
+   - **`amo hook git-commit`** is the shipped reference hook: one commit per root, limited to
+     the payload's paths. Info files are merged with `amo info merge` (BASE: as amo read it,
+     OURS: the committed version, THEIRS: as amo wrote it) and staged with `git hash-object` +
+     `git update-index`, so a user's uncommitted edit stays unstaged and only amo's change is
+     committed. In an annex root new images go in with `git annex add` (amo-qnn.4), which
+     honours the user's `annex.largefiles`, `annex.addunlocked` and `annex.thin`; `git add`
+     would always add them unlocked. A missing `git` or `git-annex` is a clear message, never
+     a traceback, and `amo config check` flags it.
+   - **`amo info diff` / `amo info merge`** (amo-qnn.6): a schema-aware diff and three-way
+     merge with git's merge-driver contract, also usable as a real merge driver for info files
+     edited on two machines. Conflicts are by unit, not by line: a top-level key, except that
+     each `files` entry is one unit; `default_file` goes with the `files` keys, `name` with the
+     record directory. On conflict OURS is left untouched (no conflict markers, which would
+     make the YAML unparseable). Needs comment-preserving YAML: ruamel.yaml replaces pyyaml
+     (amo-j24.4), and info files are updated in place rather than re-dumped.
+   - Rejected: a built-in `git_commit: true` that runs git from amo's core (couples amo to git;
+     the hook payload carries everything a targeted commit needs), and line-based patches
+     (`git apply --cached`: context lines make unrelated nearby edits conflict, and say nothing
+     about which keys belong together).
+   - Encrypted remotes (gcrypt) are documentation only; the full key and restore runbook lives
+     in the dotfiles.
 
 ## Testing
 
@@ -1431,8 +1460,9 @@ docs (amo-qnn.5).
    encrypted annex remote, not git-crypt (spike amo-qnn.1, 2026-11-07: "git-annex libraries:
    decisions").
    **This brings the first non-Python dependencies** (git-annex, written in Haskell;
-   git-remote-gcrypt and gnupg). They stay optional and detected at runtime: `pipx install`
-   keeps working without them, and the commands that need them say so.
+   git-remote-gcrypt and gnupg). They stay optional: amo never runs them itself, only the
+   opt-in `on_change` hook does ("git-annex libraries: decisions", 5), and `pipx install`
+   keeps working without them.
 
 ## Open questions
 
