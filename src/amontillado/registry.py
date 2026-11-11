@@ -17,8 +17,7 @@ from functools import cache
 from importlib.resources import files
 from pathlib import Path
 
-import yaml
-
+from amontillado import yamlio
 from amontillado.config import xdg_dir
 
 # The registry's sources in the order a default source is chosen ("Per-app configuration").
@@ -73,7 +72,7 @@ def sources_dir() -> Path:
 @cache
 def registry() -> dict[str, dict[str, Entry]]:
     """Every entry of the shipped registry, by source and template name."""
-    data = yaml.safe_load((files("amontillado") / "registry.yaml").read_text())
+    data = yamlio.load((files("amontillado") / "registry.yaml").read_text())
     return parse(data)
 
 

@@ -11,8 +11,7 @@ from __future__ import annotations
 import textwrap
 from dataclasses import dataclass
 
-import yaml
-
+from amontillado import yamlio
 from amontillado.config import (
     CONTRAST_CHOICES,
     FORMATS,
@@ -446,5 +445,4 @@ def tool_example_lines(indent: str = "    ") -> list[str]:
 
 def _scalar(value: str) -> str:
     """`value` as a YAML scalar: plain when it can be, quoted when YAML would misread it."""
-    text = yaml.safe_dump(value, width=1_000_000)
-    return text.removesuffix("\n...\n").removesuffix("\n")
+    return yamlio.dump_scalar(value)
