@@ -1359,8 +1359,9 @@ Agreed with MH, 2026-10-30:
 
 Each library root may be a git-annex repository: info files in git, images annexed (epic
 `amo-qnn`; "Roadmap", item 6). Repository and remote setup is git configuration owned by the
-dotfiles, not amontillado config; the layout and a short encrypted setup are documented in the
-layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
+dotfiles, not amontillado config; the layout, locked and unlocked files, the merge driver, the
+hook payload and a short encrypted setup are in [version-control.md](version-control.md)
+(amo-qnn.5), the full key and restore runbook in the dotfiles.
 
 ### git-annex libraries: decisions
 
@@ -1389,7 +1390,7 @@ layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
    git-annex cannot keep image content in a hosted git repository, so the images go to a second
    special remote with `encryption=hybrid` (a `directory` remote on the drive). The other
    setup, one gcrypt remote holding git and images together (`type=gcrypt` on an ssh host or a
-   local or USB path, as tested), is documented beside it.
+   local or USB path, as tested), is named beside it in version-control.md.
 3. **One OpenPGP key per machine, Curve25519** (`gpg --quick-gen-key "<name>" default default
    never`: Ed25519 signing, Cv25519 encryption; the data itself is AES-256, chosen by OpenPGP
    and gcrypt, not configured), **plus an offline backup key** as one more recipient, so that

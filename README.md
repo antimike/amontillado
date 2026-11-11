@@ -80,6 +80,23 @@ amo theme apply forest                     # theme every configured app from it,
 `amo COMMAND --help` documents every option. The class thresholds (what counts as dark, busy,
 ...), the record format and the fetcher's behaviour are in [docs/design.md](docs/design.md).
 
+## Optional: version control
+
+A library is plain files, and amo works the same under git, git-annex, Syncthing, a backup
+tool or nothing; it never runs git, git-annex, gpg or git-remote-gcrypt on its own, and none of
+them is needed to install or use it. To keep a root in git, opt in:
+
+```yaml
+on_change: amo hook git-commit   # in the config: commit what each amo command writes
+```
+
+Each command that writes under a root then makes one commit there with only its changes, your
+own uncommitted edits left alone; in a git-annex repository new images go in with `git annex
+add`. Without git (or git-annex, for an annexed root) the hook says so and amo's own work is
+unaffected. [docs/version-control.md](docs/version-control.md) has the git-annex layout, locked
+and unlocked files, `amo info merge` as a git merge driver for info files edited on two
+machines, writing your own hook, and one tested encrypted setup.
+
 ## Images and their licences
 
 amontillado downloads images for your personal use. Each image belongs to its creator and stays
@@ -91,6 +108,8 @@ you configure, never stored by the tool.
 ## Documentation
 
 - [docs/design.md](docs/design.md): storage layout, metric definitions, the fetcher, the CLI
+- [docs/version-control.md](docs/version-control.md): a library root in git or git-annex, the
+  on_change hook, merging info files, an encrypted setup
 - [docs/colour-scheme-hooks.md](docs/colour-scheme-hooks.md): keeping the desktop's dark/light
   scheme in step with the theme (libadwaita needs it)
 - [CONTRIBUTING.md](CONTRIBUTING.md): development setup, coding standards, commits and releases
