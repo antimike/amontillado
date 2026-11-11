@@ -283,7 +283,12 @@ def record_text(record: Record) -> str:
 def write_record(path: Path, record: Record) -> None:
     """Write an info file atomically: a temporary file in the same directory, then a rename.
     Only the keys that differ from the text `record` was read from change (`record_text`)."""
-    text = record_text(record)
+    write_text_atomic(path, record_text(record))
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write `text` to `path` atomically: a temporary file in the same directory, then a
+    rename."""
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
