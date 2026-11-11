@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 
 import pytest
-import yaml
 
+from amontillado import yamlio
 from amontillado.config import (
     AppConfig,
     ConfigError,
@@ -368,5 +368,5 @@ def test_unknown_edit_keys_warn(home: Path, caplog: pytest.LogCaptureFixture) ->
     ['set "${wallpaper}"', 'printf "%s" "{image}"', "echo {dir"],
 )
 def test_shell_syntax_is_not_an_old_placeholder(home: Path, command: str) -> None:
-    write_config(home, yaml.safe_dump({"theme": {"wallpaper": {"reload": command}}}))
+    write_config(home, yamlio.dump({"theme": {"wallpaper": {"reload": command}}}))
     assert load_config().theme.wallpaper_reload == command

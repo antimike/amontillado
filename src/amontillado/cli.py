@@ -28,14 +28,13 @@ from logging import getLogger
 from pathlib import Path
 from typing import NoReturn, TypeVar
 
-import yaml
 from PIL import Image
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
-from amontillado import __version__
+from amontillado import __version__, yamlio
 from amontillado.accents import score as accent_score
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
@@ -979,7 +978,7 @@ def cmd_measure(args: argparse.Namespace) -> None:
             {"file": str(path), "metrics": metrics.to_dict(), "classes": classify(metrics)}
         )
     if results:
-        print(yaml.safe_dump(results, sort_keys=False, allow_unicode=True), end="")
+        print(yamlio.dump(results), end="")
     if failed:
         sys.exit(f"amontillado: {failed} of {len(args.files)} files could not be measured")
 

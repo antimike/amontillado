@@ -38,7 +38,8 @@ is here.
 - **No hard-coded paths, hosts or credentials.** Paths come from XDG variables, the config file
   or arguments. The Wallhaven API key comes from the environment or a configured command, and is
   never logged.
-- **Structured formats through their parsers:** `yaml.safe_load` only, stdlib `json`, `sqlite3`
+- **Structured formats through their parsers:** YAML through `amontillado.yamlio` only
+  (ruamel.yaml: `load` is the safe loader, `update_text` the round trip), stdlib `json`, `sqlite3`
   with parameters (never string-built SQL).
 - **Subprocesses** with an argument list, `text=True`, and an explicit `check=`.
 - **Comments** say why, not what; docstrings carry the reference documentation.

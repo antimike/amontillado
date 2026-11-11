@@ -14,8 +14,7 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
 
-import yaml
-
+from amontillado import yamlio
 from amontillado.colour import (
     HEX_PATTERN,
     contrast_ratio,
@@ -219,7 +218,7 @@ def palette_to_data(palette: Palette) -> dict[str, object]:
 
 def dump_palette(palette: Palette) -> str:
     """The palette as a palette file."""
-    return yaml.safe_dump(palette_to_data(palette), sort_keys=False, allow_unicode=True)
+    return yamlio.dump(palette_to_data(palette))
 
 
 @dataclass(frozen=True)
@@ -307,10 +306,10 @@ def _family_name(names: list[str]) -> str:
 
 def _read_yaml(path: Path) -> object:
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
+        return yamlio.load(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise PaletteError(f"{path}: {exc.strerror or exc}") from exc
-    except yaml.YAMLError as exc:
+    except yamlio.YAMLError as exc:
         raise PaletteError(f"{path}: not valid YAML: {exc}") from exc
 
 

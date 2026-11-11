@@ -7,11 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import yaml
 from conftest import SaveImage, mark_record
 from PIL import Image
 
-from amontillado import library
+from amontillado import library, yamlio
 from amontillado.config import Config
 from amontillado.library import (
     THUMBNAIL_SIZE,
@@ -33,9 +32,9 @@ from amontillado.record import ID_PATTERN, read_record, sha256_file
 
 
 def _edit(path: Path, **changes: object) -> None:
-    data = yaml.safe_load(path.read_text()) or {}
+    data = yamlio.load(path.read_text()) or {}
     data.update(changes)
-    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    path.write_text(yamlio.dump(data))
 
 
 def _no_measuring(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,6 +68,17 @@ def test_second_pass_is_clean_and_keeps_the_id(config: Config, save_image: SaveI
     assert report.clean
     assert read_record(info).id == first
     assert len(report.entries) == 1
+
+
+def test_healing_keeps_comments(config: Config, save_image: SaveImage) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    info.write_text("# from the harbour walk\nsource:\n  site: local  # mine\n")
+    save_image(info.parent / "a.png")
+    heal_library(config)
+    text = info.read_text()
+    assert text.startswith("# from the harbour walk\n")
+    assert "  site: local  # mine\n" in text
+    assert read_record(info).files["a.png"].complete
 
 
 def test_check_writes_nothing(config: Config, save_image: SaveImage) -> None:
@@ -137,11 +147,11 @@ def test_old_metrics_are_recomputed_and_source_kept(config: Config, save_image: 
     info = mark_record(config.library_roots[0] / "r")
     save_image(info.parent / "a.png")
     heal_library(config)
-    data = yaml.safe_load(info.read_text())
+    data = yamlio.load(info.read_text())
     data["files"]["a.png"]["metrics"] = {"version": METRICS_VERSION - 1, "lightness": 0.9}
     data["source"] = {"site": "wallhaven", "id": "abc123", "purity": "sfw"}
     data["name"] = "night-city"
-    info.write_text(yaml.safe_dump(data))
+    info.write_text(yamlio.dump(data))
     report = heal_library(config)
     assert report.healed == [(info, "a.png: measured")]
     record = read_record(info)
@@ -243,9 +253,9 @@ def test_renamed_file_keeps_its_entry_without_measuring(
     save_image(directory / "a-crop.png", (9, 9, 9), (32, 36))
     heal_library(config)
     _edit(info, default_file="a.png")
-    data = yaml.safe_load(info.read_text())
+    data = yamlio.load(info.read_text())
     data["files"]["a-crop.png"].update(derived_from="a.png", crop=[0, 0, 32, 36])
-    info.write_text(yaml.safe_dump(data))
+    info.write_text(yamlio.dump(data))
     (directory / "a.png").rename(directory / "b.png")
     _no_measuring(monkeypatch)
     report = heal_library(config)

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
 
-import yaml
+from amontillado import yamlio
 
 logger = getLogger(__name__)
 
@@ -303,8 +303,8 @@ def _read_settings(path: Path) -> dict[str, object]:
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
     try:
-        settings = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
+        settings = yamlio.load(text)
+    except yamlio.YAMLError as exc:
         raise ConfigError(f"{path} is not valid YAML: {exc}") from exc
     if settings is None:
         return {}

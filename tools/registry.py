@@ -21,10 +21,10 @@ import sys
 from logging import getLogger
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.logging import RichHandler
 
+from amontillado import yamlio
 from amontillado.cli import HelpFormatter
 from amontillado.registry import RegistryError, parse
 from amontillado.wallhaven import USER_AGENT, WallhavenError, http_get
@@ -74,7 +74,7 @@ def head_commit(repository: str) -> str:
 
 def check_systems(repository: str, commit: str, path: str) -> None:
     """Exit unless tinted's templates/config.yaml builds `path` for base16 or base24."""
-    config = yaml.safe_load(get(f"{RAW}/{repository}/{commit}/templates/config.yaml"))
+    config = yamlio.load(get(f"{RAW}/{repository}/{commit}/templates/config.yaml").decode())
     name = Path(path).name.removesuffix(".mustache")
     entry = config.get(name) if isinstance(config, dict) else None
     if not isinstance(entry, dict):
@@ -89,7 +89,7 @@ def main() -> None:
     args = get_cli_arguments()
     setup_logger(args)
     text = REGISTRY.read_text()
-    data = yaml.safe_load(text)
+    data = yamlio.load(text)
     changes = 0
     try:
         for repository, pin in data["repositories"].items():
@@ -114,10 +114,8 @@ def main() -> None:
         sys.exit(f"registry: {exc}")
     logger.info("%d change%s", changes, "" if changes == 1 else "s")
     if args.update and changes:
-        header = text[: text.index("version:")]
-        # Flow style for the entries (mappings of scalars), one per line.
-        body = yaml.safe_dump(data, sort_keys=False, default_flow_style=None, width=1000)
-        REGISTRY.write_text(header + body)
+        # Only the changed pins and hashes: comments and the one-line entries stay.
+        REGISTRY.write_text(yamlio.update_text(text, data))
 
 
 if __name__ == "__main__":

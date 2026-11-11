@@ -8,6 +8,7 @@ which nothing could recompute, and lenient about derived ones (`sha256`, `width`
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import os
 import re
@@ -16,8 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-import yaml
-
+from amontillado import yamlio
 from amontillado.metrics import METRICS_VERSION, Metrics
 
 SCHEMA = 2
@@ -86,6 +86,9 @@ class Record:
     extra: dict[str, object] = field(default_factory=dict)
     # A small preview, relative to the record directory; never one of `files`.
     thumbnail: str | None = None
+    # The info file's text as read (None for a record not read from a file). Writing the
+    # record changes only the keys that differ from it, so its comments and layout survive.
+    text: str | None = field(default=None, compare=False, repr=False)
 
     def default(self, present: set[str]) -> str | None:
         """The default file among `present`: `default_file` if present, else the largest
@@ -129,36 +132,19 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-class _UniqueKeyLoader(yaml.SafeLoader):
-    """SafeLoader that rejects duplicate mapping keys instead of keeping the last one."""
-
-    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict:
-        seen: set[object] = set()
-        for key_node, _ in node.value:
-            if key_node.tag == "tag:yaml.org,2002:merge":
-                continue
-            key = self.construct_object(key_node, deep=deep)
-            try:
-                duplicate = key in seen
-            except TypeError:
-                continue  # unhashable: the base class reports it
-            if duplicate:
-                raise yaml.constructor.ConstructorError(
-                    None, None, f"duplicate key {key!r}", key_node.start_mark
-                )
-            seen.add(key)
-        return super().construct_mapping(node, deep=deep)
-
-
 def load_raw(path: Path) -> dict[str, object]:
     """The parsed YAML mapping of an info file, unvalidated; an empty file is an empty mapping.
 
-    Raises RecordError if it is not a YAML mapping, OSError if it cannot be read.
+    Raises RecordError if it is not a YAML mapping (a duplicate key makes it invalid), OSError
+    if it cannot be read.
     """
-    text = path.read_text(encoding="utf-8")
+    return _parse_text(path.read_text(encoding="utf-8"))
+
+
+def _parse_text(text: str) -> dict[str, object]:
     try:
-        data = yaml.load(text, Loader=_UniqueKeyLoader)
-    except yaml.YAMLError as exc:
+        data = yamlio.load(text)
+    except yamlio.YAMLError as exc:
         raise RecordError(f"not valid YAML: {exc}") from exc
     if data is None:
         return {}
@@ -280,13 +266,24 @@ def _is_int(value: object) -> bool:
 
 
 def read_record(path: Path) -> Record:
-    """Read and validate an info file; raises RecordError or OSError."""
-    return parse(load_raw(path))
+    """Read and validate an info file; raises RecordError or OSError. The record keeps the
+    text it was read from, for `write_record`."""
+    text = path.read_text(encoding="utf-8")
+    return dataclasses.replace(parse(_parse_text(text)), text=text)
+
+
+def record_text(record: Record) -> str:
+    """The info file text of `record`: its old text with only the changed keys rewritten when
+    it was read from a file (comments, key order and layout kept), else a fresh dump."""
+    if record.text is not None:
+        return yamlio.update_text(record.text, record.to_dict())
+    return yamlio.dump(record.to_dict())
 
 
 def write_record(path: Path, record: Record) -> None:
-    """Write an info file atomically: a temporary file in the same directory, then a rename."""
-    text = yaml.safe_dump(record.to_dict(), sort_keys=False, allow_unicode=True)
+    """Write an info file atomically: a temporary file in the same directory, then a rename.
+    Only the keys that differ from the text `record` was read from change (`record_text`)."""
+    text = record_text(record)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:

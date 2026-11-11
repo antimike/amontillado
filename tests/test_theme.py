@@ -7,8 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import yaml
 
+from amontillado import yamlio
 from amontillado.cli import main
 from amontillado.config import AppConfig, Config, ThemeConfig
 from amontillado.palette import Palette, complete_variant, dump_palette
@@ -53,8 +53,8 @@ def test_apply_writes_a_profile_and_points_current_at_it(tmp_path: Path) -> None
     assert directory.is_symlink() and os.readlink(cache / "current") == "default"
     assert (cache / "current" / "kitty.conf").read_text().startswith("# amontillado p (dark)")
     assert 'base0D = "#80b0ff"' in (directory / "palette.lua").read_text()
-    assert yaml.safe_load((directory / "palette.yaml").read_text())["name"] == "p"
-    theme = yaml.safe_load((directory / "theme.yaml").read_text())
+    assert yamlio.load((directory / "palette.yaml").read_text())["name"] == "p"
+    theme = yamlio.load((directory / "theme.yaml").read_text())
     assert theme["palette"] == "p"
     assert theme["apps"]["kitty"] == {
         "source": "builtin",
@@ -141,7 +141,7 @@ def test_render_with_matugen_runs_matugen_once_per_variant(
     assert len(runs) == 2
     assert runs[0].startswith(f"image {picture} --source-color-index 0 -c ")
     assert runs[0].endswith("-m dark -q") and runs[1].endswith("-m light -q")
-    theme = yaml.safe_load((directory / "theme.yaml").read_text())
+    theme = yamlio.load((directory / "theme.yaml").read_text())
     assert theme["apps"]["b"]["renderer"] == "matugen 4.2.0"
     assert theme["apps"]["c"]["variant"] == "light"
     assert "renderer" not in theme["apps"]["kitty"]
@@ -226,7 +226,7 @@ def test_rerender_uses_the_profiles_palette_and_wallpaper(tmp_path: Path) -> Non
     picture = tmp_path / "picture.jpg"
     (directory / "wallpaper").symlink_to(picture)
     _apply(config, None)
-    assert yaml.safe_load((directory / "theme.yaml").read_text())["palette"] == "kept"
+    assert yamlio.load((directory / "theme.yaml").read_text())["palette"] == "kept"
     assert os.readlink(directory / "wallpaper") == str(picture)
 
 
@@ -236,7 +236,7 @@ def test_app_subset_keeps_the_others(tmp_path: Path) -> None:
     _apply(config, _palette("new"), only=("nvim",))
     assert (directory / "kitty.conf").read_text().startswith("# amontillado old")
     assert (directory / "palette.lua").read_text().startswith("-- amontillado new")
-    apps = yaml.safe_load((directory / "theme.yaml").read_text())["apps"]
+    apps = yamlio.load((directory / "theme.yaml").read_text())["apps"]
     assert (apps["kitty"]["palette"], apps["nvim"]["palette"]) == ("old", "new")
     info, palettes = describe(config.theme, "default")
     assert info["palette"] == "new"
@@ -338,7 +338,7 @@ def _cli_setup(home: Path) -> Path:
     config = home / ".config" / "amontillado" / "config.yaml"
     config.parent.mkdir(parents=True)
     config.write_text(
-        yaml.safe_dump(
+        yamlio.dump(
             {
                 "theme": {
                     "apps": {"kitty": {"reload": 'true "$AMO_PROFILE" "$AMO_VARIANT"'}, "json": {}}

@@ -20,8 +20,7 @@ from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
-import yaml
-
+from amontillado import yamlio
 from amontillado.classes import LIGHT_MIN
 from amontillado.config import AppConfig, Config, ThemeConfig, shell_status, xdg_dir
 from amontillado.contrast import apply_contrast
@@ -260,10 +259,10 @@ def plan(
 
 def _applied_apps(directory: Path) -> dict[str, dict[str, str]]:
     try:
-        data = yaml.safe_load((directory / THEME_FILE).read_text())
+        data = yamlio.load((directory / THEME_FILE).read_text())
     except FileNotFoundError:
         return {}
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, yamlio.YAMLError) as exc:
         raise ThemeError(f"{directory / THEME_FILE}: {exc}") from exc
     apps = data.get("apps") if isinstance(data, dict) else None
     return apps if isinstance(apps, dict) else {}
@@ -281,7 +280,7 @@ def write(plan: Plan, directory: Path) -> None:
         "palette": plan.palette.name,
         "apps": plan.apps,
     }
-    (directory / THEME_FILE).write_text(yaml.safe_dump(theme, sort_keys=False))
+    (directory / THEME_FILE).write_text(yamlio.dump(theme))
 
 
 def apply(config: Config, plan: Plan, *, activate: bool) -> Path:
@@ -410,10 +409,10 @@ def describe(theme: ThemeConfig, profile: str) -> tuple[dict[str, str], list[str
     apps were rendered from, when they differ (an --app apply with a new palette)."""
     directory = profile_dir(theme, profile)
     try:
-        data = yaml.safe_load((directory / THEME_FILE).read_text())
+        data = yamlio.load((directory / THEME_FILE).read_text())
     except FileNotFoundError as exc:
         raise ThemeError(f"profile {profile} has not been applied") from exc
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, yamlio.YAMLError) as exc:
         raise ThemeError(f"{directory / THEME_FILE}: {exc}") from exc
     if not isinstance(data, dict):
         raise ThemeError(f"{directory / THEME_FILE}: not a mapping")

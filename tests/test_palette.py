@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 
 import pytest
-import yaml
 
+from amontillado import yamlio
 from amontillado.colour import contrast_ratio, hex_to_oklch, hue_distance
 from amontillado.palette import (
     BASE24_KEYS,
@@ -117,7 +117,7 @@ def _palette_data() -> dict:
 
 def test_palette_file_is_completed_and_round_trips(tmp_path: Path) -> None:
     path = tmp_path / "night.yaml"
-    path.write_text(yaml.safe_dump(_palette_data()))
+    path.write_text(yamlio.dump(_palette_data()))
     palette = load_palette(path)
     assert palette.name == "night" and palette.source == {"file": "night.png"}
     [(name, variant)] = palette.variants.items()
@@ -126,7 +126,7 @@ def test_palette_file_is_completed_and_round_trips(tmp_path: Path) -> None:
     assert variant.roles["accent"] == "#7aa2f7"
     dumped = dump_palette(palette)
     assert "'#1b1d2b'" in dumped  # quoted, or YAML would read a comment
-    assert palette_from_data(yaml.safe_load(dumped), "dumped") == palette
+    assert palette_from_data(yamlio.load(dumped), "dumped") == palette
 
 
 def test_adjusted_is_kept() -> None:
@@ -134,7 +134,7 @@ def test_adjusted_is_kept() -> None:
     data["variants"]["dark"]["adjusted"] = ["base03"]
     palette = palette_from_data(data, "p")
     assert palette.variants["dark"].adjusted == ("base03",)
-    assert yaml.safe_load(dump_palette(palette))["variants"]["dark"]["adjusted"] == ["base03"]
+    assert yamlio.load(dump_palette(palette))["variants"]["dark"]["adjusted"] == ["base03"]
 
 
 @pytest.mark.parametrize(
@@ -178,14 +178,14 @@ def _scheme(path: Path, colours: dict[str, str], *, name: str, variant: str | No
     if variant is not None:
         data["variant"] = variant
     data["palette"] = dict(colours)
-    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    path.write_text(yamlio.dump(data))
     return path
 
 
 def _legacy_scheme(path: Path, colours: dict[str, str], *, name: str) -> Path:
     data = {"scheme": name, "author": "someone"}
     data.update({key: value.removeprefix("#").upper() for key, value in colours.items()})
-    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    path.write_text(yamlio.dump(data))
     return path
 
 
@@ -237,7 +237,7 @@ def test_base24_scheme_keeps_its_brights(tmp_path: Path) -> None:
 )
 def test_invalid_scheme(tmp_path: Path, contents: object, message: str) -> None:
     path = tmp_path / "s.yaml"
-    path.write_text(yaml.safe_dump(contents))
+    path.write_text(yamlio.dump(contents))
     with pytest.raises(PaletteError, match=message):
         palette_from_schemes([path])
 
