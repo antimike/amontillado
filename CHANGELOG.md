@@ -48,6 +48,10 @@ All notable changes to amontillado are documented here. The format follows
   your `annex.largefiles`, `annex.addunlocked` and `annex.thin` decide how (locked by default;
   `git add` would always add them unlocked). Without git-annex installed it leaves them
   uncommitted with a warning, and `amo config check` flags an annexed root.
+- [docs/version-control.md](docs/version-control.md): a library root in git or git-annex (the
+  `.gitattributes` layout, locked and unlocked files, `annex.thin`), `amo info merge` as a git
+  merge driver, writing your own `on_change` hook, and one tested encrypted setup; README,
+  "Optional: version control".
 
 ### Changed
 
