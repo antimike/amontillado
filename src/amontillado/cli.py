@@ -60,6 +60,7 @@ from amontillado.edit import EditError, plan_edit, run_edit
 from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
+from amontillado.gitcommit import HookError, git_commit
 from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
@@ -882,6 +883,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     info_merge.set_defaults(func=cmd_info_merge)
 
+    hook = commands.add_parser(
+        "hook",
+        help="Hooks to set as on_change.",
+        description="Commands to run as the on_change hook (a config key): each reads the "
+        "changes amo made under one root, as JSON on stdin.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(hook, argparse.SUPPRESS)
+    hook.set_defaults(func=lambda _args: hook.print_help())
+    hook_commands = hook.add_subparsers(title="commands", metavar="COMMAND")
+    git_commit = hook_commands.add_parser(
+        "git-commit",
+        help="Commit amo's changes to the root's git repository.",
+        description="Set `on_change: amo hook git-commit` to commit what each amo command "
+        "writes, one commit per root that is in a git work tree (others are skipped with a "
+        "warning). Only amo's changes are committed: info files are merged with amo info "
+        "merge against the committed version, so an uncommitted edit of yours stays "
+        "uncommitted (a conflict leaves that record uncommitted, with a warning); new images "
+        "and thumbnails are added unless git ignores them; what you have staged is neither "
+        "committed nor lost. Your git hooks and signing apply. Needs git.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(git_commit, argparse.SUPPRESS)
+    git_commit.set_defaults(func=cmd_hook_git_commit)
+
     config = commands.add_parser(
         "config",
         help="Write or check the config file.",
@@ -911,8 +937,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Load a config file as every command does, and fail if it has an error, an "
         "unknown key, an app whose template cannot be found or read (a fetched one: run amo "
         "theme sync), two apps writing one output file, or a command (a reload hook, "
-        "crop.viewer, an edit tool, api_key_command, on_change) that sh -n cannot parse. "
-        "Changes nothing.",
+        "crop.viewer, an edit tool, api_key_command, on_change) that sh -n cannot parse, or "
+        "on_change: amo hook git-commit without git on PATH. Changes nothing.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(check_, argparse.SUPPRESS)
@@ -1527,6 +1553,19 @@ def cmd_info_merge(args: argparse.Namespace) -> None:
         logger.debug("%s: merged", name)
 
 
+def cmd_hook_git_commit(args: argparse.Namespace) -> None:
+    try:
+        payload = json.loads(sys.stdin.read())
+    except ValueError as exc:
+        sys.exit(f"amontillado: hook git-commit: stdin is not an on_change payload: {exc}")
+    if not isinstance(payload, dict):
+        sys.exit("amontillado: hook git-commit: stdin is not an on_change payload")
+    try:
+        git_commit(payload)
+    except HookError as exc:
+        sys.exit(f"amontillado: hook git-commit: {exc}")
+
+
 def cmd_config_check(args: argparse.Namespace) -> None:
     path = config_path() if args.file is None else args.file
     if not path.is_file():
@@ -1542,12 +1581,20 @@ def cmd_config_check(args: argparse.Namespace) -> None:
     finally:
         config_logger.removeHandler(collect)
     problems = check_apps(config) + _check_commands(config, shellcheck_too=args.shellcheck)
+    problems += _check_on_change(config)
     for problem in problems:
         logger.error("%s", problem)
     count = len(problems) + len(collect.messages)
     if count:
         sys.exit(f"amontillado: {path}: {_count(count, 'problem')}")
     logger.info("%s: ok (%s)", path, _count(len(config.theme.apps), "app"))
+
+
+def _check_on_change(config: Config) -> list[str]:
+    """The hook's own needs: amo hook git-commit needs git."""
+    if config.on_change and "amo hook git-commit" in config.on_change and not shutil.which("git"):
+        return ["on_change: amo hook git-commit needs git, which is not on PATH"]
+    return []
 
 
 def _check_commands(config: Config, *, shellcheck_too: bool) -> list[str]:

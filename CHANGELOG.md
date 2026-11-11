@@ -39,6 +39,12 @@ All notable changes to amontillado are documented here. The format follows
   wrote to, with the changes as JSON on stdin (each info file's text before and after, new
   files, renames) and `AMO_ROOT`, `AMO_COMMAND` set. Unset by default: amo never runs git
   itself. A failing hook is a warning.
+- `amo hook git-commit`, the hook to set as `on_change` for a root in a git repository: one
+  commit per root holding only amo's changes. Info files are merged with `amo info merge`
+  against the committed version, so an uncommitted edit of yours stays uncommitted (a conflict
+  leaves that record out, with a warning); what you have staged is neither committed nor lost;
+  your git hooks and signing apply. `amo config check` flags it when git is not on PATH.
+
 ### Changed
 
 - **Breaking:** every command in the config runs under `sh -c`, its inputs as environment
