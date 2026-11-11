@@ -60,7 +60,7 @@ from amontillado.edit import EditError, plan_edit, run_edit
 from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
-from amontillado.gitcommit import HookError, git_commit
+from amontillado.gitcommit import HookError, annex_repository, git_commit
 from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
@@ -938,7 +938,8 @@ def build_parser() -> argparse.ArgumentParser:
         "unknown key, an app whose template cannot be found or read (a fetched one: run amo "
         "theme sync), two apps writing one output file, or a command (a reload hook, "
         "crop.viewer, an edit tool, api_key_command, on_change) that sh -n cannot parse, or "
-        "on_change: amo hook git-commit without git on PATH. Changes nothing.",
+        "on_change: amo hook git-commit without git (or git-annex, for a root in a git-annex "
+        "repository) on PATH. Changes nothing.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(check_, argparse.SUPPRESS)
@@ -1591,9 +1592,20 @@ def cmd_config_check(args: argparse.Namespace) -> None:
 
 
 def _check_on_change(config: Config) -> list[str]:
-    """The hook's own needs: amo hook git-commit needs git."""
-    if config.on_change and "amo hook git-commit" in config.on_change and not shutil.which("git"):
+    """The hook's own needs: amo hook git-commit needs git, and git-annex for a root in a
+    git-annex repository."""
+    if not (config.on_change and "amo hook git-commit" in config.on_change):
+        return []
+    if not shutil.which("git"):
         return ["on_change: amo hook git-commit needs git, which is not on PATH"]
+    if not shutil.which("git-annex"):
+        roots = (*config.library_roots, config.nsfw_root)
+        return [
+            f"on_change: {root} is in a git-annex repository; amo hook git-commit needs "
+            "git-annex, which is not on PATH"
+            for root in roots
+            if annex_repository(root)
+        ]
     return []
 
 

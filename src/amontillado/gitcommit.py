@@ -9,7 +9,11 @@ a git work tree, makes one commit holding amo's changes and nothing else:
   is not committed stays out of the commit (and stays in the working tree). A conflict leaves
   that record out of the commit, with a warning naming it; the rest is committed;
 - a rename moves the committed entries under the old path to the new one;
-- new files (images, thumbnails) are added as they are (`git add`), unless git ignores them.
+- new files (images, thumbnails) are added as they are (`git add`), unless git ignores them;
+  in a git-annex repository with `git annex add` (amo-qnn.4), which honours the user's
+  `annex.largefiles`, `annex.addunlocked` and `annex.thin` (`git add` would always add an
+  annexed file unlocked); without git-annex installed they are left uncommitted, with a
+  warning.
 
 The commit is built in a temporary index, so whatever you have staged is neither committed nor
 lost, and it is made with `git commit`, so your hooks and signing apply. Afterwards the real
@@ -128,7 +132,19 @@ def git_commit(payload: Mapping[str, object]) -> None:
             staging.run("update-index", "--add", "--cacheinfo", f"{mode},{sha},{path}")
         files = [path for path in plan.files if not skip(path)]
         ignored = _ignored(git, files)
-        if files_to_add := [path for path in files if path not in ignored]:
+        files_to_add = [path for path in files if path not in ignored]
+        if files_to_add and _is_annex(git):
+            if shutil.which("git-annex") is None:
+                logger.warning(
+                    "%s: git-annex is not installed; new files left uncommitted: %s",
+                    root,
+                    ", ".join(files_to_add),
+                )
+                files_to_add = []
+            else:
+                # Locked or unlocked as the user's git config says; into the staging index.
+                staging.run("annex", "add", "-q", "--", *files_to_add)
+        elif files_to_add:
             staging.run("add", "--", *files_to_add)
         tree = staging.run("write-tree").stdout.strip()
         unchanged = git.run("rev-parse", f"{head}^{{tree}}").stdout.strip() if head else _EMPTY
@@ -209,6 +225,34 @@ def _skipper(conflicted: set[str]) -> Callable[[str], bool]:
         return any(path == record or path.startswith(record + "/") for record in conflicted)
 
     return skip
+
+
+def _is_annex(git: _Git) -> bool:
+    """Whether the repository is a git-annex one: `git annex init` set annex.uuid, or it has
+    a git-annex branch (a clone where git annex init has not run, or cannot: images must
+    still not go into git)."""
+    if git.run("config", "--get", "annex.uuid", check=False).returncode == 0:
+        return True
+    refs = ["refs/heads/git-annex", "refs/remotes/*/git-annex"]
+    return bool(git.run("for-each-ref", "--count=1", *refs, check=False).stdout.strip())
+
+
+def annex_repository(path: Path) -> bool:
+    """Whether `path` is in a git-annex repository, from the files alone (for amo config
+    check, which runs no git): the enclosing .git (a directory, or a worktree's `gitdir:`
+    file) has an annex directory."""
+    for directory in (path, *path.parents):
+        dot_git = directory / ".git"
+        if dot_git.is_dir():
+            return (dot_git / "annex").is_dir()
+        if dot_git.is_file():
+            line = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+            git_dir = (directory / line.removeprefix("gitdir:").strip()).resolve()
+            common = git_dir / "commondir"
+            if common.is_file():
+                git_dir = (git_dir / common.read_text().strip()).resolve()
+            return (git_dir / "annex").is_dir()
+    return False
 
 
 def _ignored(git: _Git, paths: Sequence[str]) -> set[str]:
