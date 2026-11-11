@@ -175,3 +175,14 @@ def test_config_check_shellcheck(home: Path, caplog: pytest.LogCaptureFixture) -
 def test_config_check_without_a_file(home: Path) -> None:
     with pytest.raises(SystemExit, match="no config file"):
         main(["config", "check"])
+
+
+def test_config_check_wants_git_for_the_git_commit_hook(
+    home: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _check(home, "on_change: amo hook git-commit\n")
+    monkeypatch.setattr("amontillado.cli.shutil.which", lambda _name: None)
+    with pytest.raises(SystemExit, match="1 problem"):
+        _check(home, "on_change: amo hook git-commit\n")
+    assert "amo hook git-commit needs git, which is not on PATH" in caplog.text
+    _check(home, "on_change: my-own-hook\n")  # nothing to say about another hook

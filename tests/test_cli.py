@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import shutil
@@ -820,6 +821,19 @@ def test_fetch_prints_and_indexes_what_it_keeps(
     main(["index", "--check"])
 
 
+def test_fetch_reports_its_writes_to_on_change(library: Path, home: Path, web: FakeWeb) -> None:
+    _write_config(home, {"on_change": 'cat > "$HOME/payload.json"'})
+    main(["fetch", "--dark"])
+    payload = json.loads((home / "payload.json").read_text())
+    assert payload["command"] == "fetch"
+    assert [(c["type"], c["path"]) for c in payload["changes"]] == [
+        ("info", "night-sky-aaa111/info.yaml"),
+        ("file", "night-sky-aaa111/wallhaven-aaa111.jpg"),
+        ("file", "night-sky-aaa111/.amo/thumbnail.jpg"),
+    ]
+    assert payload["changes"][0]["before"] is None
+
+
 def test_fetch_fails_when_short_of_count(library: Path, web: FakeWeb) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["fetch", "--dark", "--count", "3"])
@@ -1180,6 +1194,27 @@ def test_edit(
     assert info["files"]["red-blue.png"]["derived_from"] == "red.png"
     assert {"red-edit.png", "red-blue.png"} <= set(_index_rows(home))
     assert _list(capsys, "--hue", "red") == {"red"}
+
+
+def test_edit_reports_its_writes_to_on_change(
+    indexed: dict[str, Path],
+    library: Path,
+    home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _edit_tools(home, monkeypatch, tmp_path)
+    config = yamlio.load((home / ".config/amontillado/config.yaml").read_text())
+    _write_config(home, {**config, "on_change": 'cat > "$HOME/payload.json"'})
+    main(["edit", str(library / "red")])
+    payload = json.loads((home / "payload.json").read_text())
+    assert payload["command"] == "edit"
+    # Moved out of the record's .amo/edit-* working directory: a new file, not a rename.
+    kinds = [(c["type"], c["path"]) for c in payload["changes"]]
+    assert kinds == [
+        ("info", "red/info.yaml"),
+        ("file", "red/red-edit.png"),
+    ]
 
 
 def test_edit_list_tools(

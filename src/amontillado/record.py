@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from amontillado import yamlio
+from amontillado import changes, yamlio
 from amontillado.metrics import METRICS_VERSION, Metrics
 
 SCHEMA = 2
@@ -282,8 +282,11 @@ def record_text(record: Record) -> str:
 
 def write_record(path: Path, record: Record) -> None:
     """Write an info file atomically: a temporary file in the same directory, then a rename.
-    Only the keys that differ from the text `record` was read from change (`record_text`)."""
-    write_text_atomic(path, record_text(record))
+    Only the keys that differ from the text `record` was read from change (`record_text`).
+    Reported to `changes`, with the text the record was read from."""
+    text = record_text(record)
+    write_text_atomic(path, text)
+    changes.info_written(path, record.text, text)
 
 
 def write_text_atomic(path: Path, text: str) -> None:

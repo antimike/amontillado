@@ -8,6 +8,7 @@ Locations follow the XDG base directory spec; docs/design.md, "Storage", has the
     api_key_command: pass show wallhaven/api-key   # prints the Wallhaven API key
     crop: {preview: auto, viewer: 'xdg-open "$AMO_FILE"'}   # amo crop --interactive's preview
     edit: {default_tool: gimp, tools: {gimp: {cmd: 'gimp -n "$AMO_INPUT"'}}}   # amo edit's editors
+    on_change: amo hook git-commit           # run after a command writes under a root
     theme: {...}                             # the theme engine (v0.2), below
 
 `amontillado.config_keys` describes every key (the template `amo config init` writes).
@@ -33,7 +34,9 @@ from amontillado import yamlio
 logger = getLogger(__name__)
 
 APP = "amontillado"
-_KNOWN_KEYS = frozenset({"library_roots", "nsfw_root", "api_key_command", "crop", "edit", "theme"})
+_KNOWN_KEYS = frozenset(
+    {"library_roots", "nsfw_root", "api_key_command", "crop", "edit", "on_change", "theme"}
+)
 API_KEY_VARIABLE = "WALLHAVEN_API_KEY"
 
 SOURCES = ("builtin", "tinted", "matugen-themes", "pywal", "url", "path")
@@ -161,6 +164,8 @@ class Config:
     theme: ThemeConfig = field(default_factory=ThemeConfig)
     crop: CropConfig = field(default_factory=CropConfig)
     edit: EditConfig = field(default_factory=EditConfig)
+    # Run under sh -c once per root a command wrote to, the changes on stdin (amontillado.hook).
+    on_change: str | None = None
 
 
 def xdg_dir(variable: str, fallback: str) -> Path:
@@ -207,6 +212,7 @@ def load_config(path: Path | None = None) -> Config:
         theme=_theme(settings.get("theme")),
         crop=_crop(settings.get("crop")),
         edit=_edit(settings.get("edit")),
+        on_change=shell_command("on_change", settings.get("on_change")),
     )
 
 
@@ -228,6 +234,8 @@ def commands(config: Config) -> list[tuple[str, str]]:
     found.append(("crop.viewer", config.crop.viewer))
     for name, tool in config.edit.tools.items():
         found.append((f"edit.tools.{name}.cmd", tool.cmd))
+    if config.on_change is not None:
+        found.append(("on_change", config.on_change))
     if config.theme.wallpaper_reload is not None:
         found.append(("theme.wallpaper.reload", config.theme.wallpaper_reload))
     for name, app in config.theme.apps.items():

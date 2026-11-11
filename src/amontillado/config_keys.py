@@ -127,6 +127,18 @@ KEYS: tuple[Key, ...] = (
         "One line on what the tool is for, shown by amo edit --list-tools.",
     ),
     Key(
+        "on_change",
+        "A command run by sh -c after a command writes under a library root (amo index, fetch, "
+        "add, crop, add-derived, edit, name), once per root it wrote to, with a JSON list of "
+        "the changes on stdin: each info file's text before and after, new files, renames "
+        '(docs/design.md, "git-annex libraries: decisions" 5). AMO_ROOT is the root, '
+        "AMO_COMMAND the command. Its output goes to stderr. Unset: nothing runs; amo never "
+        "runs git itself. amo hook git-commit commits the changes to a root that is a git "
+        "repository, merging info files with amo info merge so your own uncommitted edits "
+        "stay uncommitted. A failing hook is a warning; amo's writes stand.",
+        "amo hook git-commit",
+    ),
+    Key(
         "theme",
         'The theme engine: amo palette and amo theme (docs/design.md, "Theme engine (v0.2)").',
     ),

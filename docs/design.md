@@ -551,6 +551,7 @@ amo name PICTURE NAME [--no-rename-directory] [--dry-run]      name or rename a 
 amo name --from-tags [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
 amo info diff OLD NEW [--json]       the key paths that differ between two info files
 amo info merge BASE OURS THEIRS [--name PATH] [--stdout]   three-way merge (a git merge driver)
+amo hook git-commit                  as on_change: commit amo's changes to the root's git repository
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read,
@@ -1418,6 +1419,17 @@ layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
      `sh -c` once per root per run that wrote files, with a JSON payload on stdin: each info
      file's text before and after amo's write, new files, renames and deletes. amo's writes
      stand whatever the hook does; a failing hook is a warning.
+     Built (amo-qnn.3): the writers report to `amontillado.changes` as they write (info files
+     with the text the record was read from, images and thumbnails, moves); the CLI records
+     every command and, after it (a failed one too: what was written stands), runs the hook
+     per root written to, under `sh -c` with AMO_ROOT and AMO_COMMAND (`index`, `fetch`,
+     `add`, `crop`, `add-derived`, `edit`, `name`) and the payload on stdin; the hook's
+     stdout goes to stderr (amo's stdout is data). The payload (`changes` module docstring):
+     `version` 1, `command`, `root`, and `changes` of `rename` (from, to: within the root,
+     listed first), `info` (path, before or null for a new file, after; a path in a renamed
+     directory is its new one) and `file` (made or replaced, or moved in from outside the
+     root or from a record's `.amo/`). An info file written back as it was read is no change.
+     No command deletes files under a root, so there is no delete change yet.
    - **`amo hook git-commit`** is the shipped reference hook: one commit per root, limited to
      the payload's paths. Info files are merged with `amo info merge` (BASE: as amo read it,
      OURS: the committed version, THEIRS: as amo wrote it) and staged with `git hash-object` +
@@ -1426,6 +1438,15 @@ layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
      honours the user's `annex.largefiles`, `annex.addunlocked` and `annex.thin`; `git add`
      would always add them unlocked. A missing `git` or `git-annex` is a clear message, never
      a traceback, and `amo config check` flags it.
+     Built (amo-qnn.3, `amontillado.gitcommit`): a root outside a git work tree is a
+     warning. The commit is built in a temporary index (`GIT_INDEX_FILE`, read from HEAD):
+     renames move the committed entries, merged info files go in as blobs, new files with
+     `git add` unless git ignores them; then `git commit` on that index, so the user's hooks
+     and signing apply and whatever they staged is neither committed nor lost. Afterwards the
+     real index takes the new commit's entry for each path whose entry was the old commit's;
+     a path the user had staged is left, with a warning. A conflict (or an info file that does
+     not parse) leaves that record's paths out, with a warning naming it. Message:
+     `amo <command>: <record names>` (three, then "and N more"), then each path.
    - **`amo info diff` / `amo info merge`** (amo-qnn.6): a schema-aware diff and three-way
      merge with git's merge-driver contract, also usable as a real merge driver for info files
      edited on two machines. Conflicts are by unit, not by line: a top-level key, except that
