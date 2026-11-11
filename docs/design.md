@@ -549,6 +549,8 @@ amo edit PICTURE [--tool NAME | --extcmd CMD] [--name N] [--from FILE] [--dry-ru
 amo edit --list-tools                the editors under edit.tools
 amo name PICTURE NAME [--no-rename-directory] [--dry-run]      name or rename a record
 amo name --from-tags [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
+amo info diff OLD NEW [--json]       the key paths that differ between two info files
+amo info merge BASE OURS THEIRS [--name PATH] [--stdout]   three-way merge (a git merge driver)
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read,
@@ -1431,6 +1433,19 @@ layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
      record directory. On conflict OURS is left untouched (no conflict markers, which would
      make the YAML unparseable). Needs comment-preserving YAML: ruamel.yaml replaced pyyaml
      (amo-j24.4, done), and info files are updated in place rather than re-dumped ("Records").
+     Built (amo-qnn.6, `amontillado.infomerge`; the CLI is the interface): a unit changed on
+     one side takes that side, changed alike on both is that value, changed differently on
+     both is a conflict; the merge goes into OURS through the round trip (its comments stay)
+     and must parse as a record (`derived_from` naming a file THEIRS removed is a conflict);
+     a differing `schema` among the three is a conflict, never an upgrade; an empty BASE (git's
+     add/add) is an empty mapping. Exit status: 0 merged (OURS rewritten only if THEIRS
+     changed something), 1 a conflict (the units on stderr), 2 an unreadable or non-mapping
+     file. `--name %P` names the path in messages (git passes temporary files), `--stdout`
+     prints the result and writes nothing. `amo info diff` prints `+`/`-`/`~` lines per key
+     path (mappings by key, lists whole; a key with a dot bracketed: `files["a.png"].width`)
+     or `--json`, and exits 0 same, 1 different, 2 unreadable, as diff(1). As git's driver:
+     `info.yaml merge=amo-info` (and `info.yml`) in `.gitattributes`, and
+     `git config merge.amo-info.driver 'amo info merge %O %A %B --name %P'`.
    - Rejected: a built-in `git_commit: true` that runs git from amo's core (couples amo to git;
      the hook payload carries everything a targeted commit needs), and line-based patches
      (`git apply --cached`: context lines make unrelated nearby edits conflict, and say nothing

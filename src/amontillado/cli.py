@@ -12,6 +12,7 @@ docs/design.md has the record format, the metric and class definitions, and the 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import random
@@ -34,7 +35,7 @@ from rich.logging import RichHandler
 from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
-from amontillado import __version__, yamlio
+from amontillado import __version__, infomerge, yamlio
 from amontillado.accents import score as accent_score
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
@@ -110,7 +111,7 @@ from amontillado.palette import (
     load_palette,
     palette_from_schemes,
 )
-from amontillado.record import RecordError, sha256_file
+from amontillado.record import RecordError, sha256_file, write_text_atomic
 from amontillado.registry import RegistryError, registry
 from amontillado.registry import text as registry_text
 from amontillado.registry import variables as template_variables
@@ -821,6 +822,65 @@ def build_parser() -> argparse.ArgumentParser:
     )
     current.set_defaults(func=cmd_theme_current)
 
+    info = commands.add_parser(
+        "info",
+        help="Compare or merge info files.",
+        description='Schema-aware tools for info files (docs/design.md, "git-annex libraries: '
+        'decisions" 5), for version control and on_change hooks. Exit status: 0 the same or '
+        "merged, 1 different or a conflict, 2 an unreadable file.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(info, argparse.SUPPRESS)
+    info.set_defaults(func=lambda _args: info.print_help())
+    info_commands = info.add_subparsers(title="commands", metavar="COMMAND")
+
+    info_diff = info_commands.add_parser(
+        "diff",
+        help="Print the key paths that differ between two info files.",
+        description="Print each key path that differs from OLD to NEW, one per line: `+ path: "
+        "value` added, `- path: value` removed, `~ path: old -> new` changed. Mappings are "
+        "compared key by key, lists as a whole; comments and layout are ignored. Exits 0 if "
+        "there is no difference, 1 if there is, 2 if a file cannot be read.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(info_diff, argparse.SUPPRESS)
+    info_diff.add_argument("old", type=Path, metavar="OLD", help="The first info file.")
+    info_diff.add_argument("new", type=Path, metavar="NEW", help="The second info file.")
+    info_diff.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a JSON list of {path, change, old, new} instead (path: a list of keys).",
+    )
+    info_diff.set_defaults(func=cmd_info_diff)
+
+    info_merge = info_commands.add_parser(
+        "merge",
+        help="Three-way merge of info files (a git merge driver).",
+        description="Merge into OURS what THEIRS changed since BASE, by unit: a top-level key; "
+        "the file names under files with default_file; one files entry. A unit changed on "
+        "both sides, differently, is a conflict; so is a merge that is no valid record, or "
+        "three files of different schema. OURS keeps its comments and layout. Exits 0 merged "
+        "(OURS rewritten, if THEIRS changed anything), 1 on a conflict (OURS untouched, the "
+        "conflicting units on stderr; no conflict markers, which would make the YAML "
+        "unparseable), 2 if a file cannot be read. As git's merge driver: in .gitattributes "
+        "`info.yaml merge=amo-info`, and `git config merge.amo-info.driver 'amo info merge "
+        "%%O %%A %%B --name %%P'`.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(info_merge, argparse.SUPPRESS)
+    info_merge.add_argument("base", type=Path, metavar="BASE", help="The common ancestor.")
+    info_merge.add_argument("ours", type=Path, metavar="OURS", help="Our version; the result.")
+    info_merge.add_argument("theirs", type=Path, metavar="THEIRS", help="Their version.")
+    info_merge.add_argument(
+        "--name", metavar="PATH", help="The path to name in messages (git's %%P)."
+    )
+    info_merge.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Print the merged file instead of rewriting OURS (writes nothing).",
+    )
+    info_merge.set_defaults(func=cmd_info_merge)
+
     config = commands.add_parser(
         "config",
         help="Write or check the config file.",
@@ -1415,6 +1475,54 @@ class _Collect(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         self.messages.append(record.getMessage())
+
+
+def _read_info_text(path: Path) -> str:
+    """An info file's text for amo info; exit status 2 if it cannot be read (1 means a
+    difference or a conflict there)."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.error("%s: %s", path, exc.strerror or exc)
+        sys.exit(2)
+
+
+def cmd_info_diff(args: argparse.Namespace) -> None:
+    old, new = (_load_info(path) for path in (args.old, args.new))
+    changes = infomerge.diff(old, new)
+    if args.json:
+        print(json.dumps([change.to_dict() for change in changes], default=str, indent=2))
+    else:
+        for change in changes:
+            print(change.describe())
+    sys.exit(1 if changes else 0)
+
+
+def _load_info(path: Path) -> dict[str, object]:
+    try:
+        return infomerge.load(_read_info_text(path))
+    except infomerge.InfoError as exc:
+        logger.error("%s: %s", path, exc)
+        sys.exit(2)
+
+
+def cmd_info_merge(args: argparse.Namespace) -> None:
+    name = args.name or str(args.ours)
+    base, ours, theirs = (_read_info_text(path) for path in (args.base, args.ours, args.theirs))
+    try:
+        result = infomerge.merge(base, ours, theirs)
+    except infomerge.InfoError as exc:
+        logger.error("%s: cannot merge: %s", name, exc)
+        sys.exit(2)
+    if result.text is None:
+        for conflict in result.conflicts:
+            logger.error("%s: conflict: %s", name, conflict)
+        sys.exit(1)
+    if args.stdout:
+        print(result.text, end="")
+    elif result.changed:
+        write_text_atomic(args.ours, result.text)
+        logger.debug("%s: merged", name)
 
 
 def cmd_config_check(args: argparse.Namespace) -> None:

@@ -33,7 +33,7 @@ from ruamel.yaml.nodes import ScalarNode
 from ruamel.yaml.representer import RoundTripRepresenter
 from ruamel.yaml.resolver import VersionedResolver
 
-__all__ = ["YAMLError", "dump", "dump_scalar", "load", "update_text"]
+__all__ = ["YAMLError", "dump", "dump_scalar", "load", "same", "update_text"]
 
 _WIDTH = 1_000_000  # no folding
 
@@ -130,7 +130,7 @@ def _merge(document: CommentedMap, data: Mapping[str, object]) -> None:
             old = document[key]
             if isinstance(old, CommentedMap) and isinstance(value, Mapping):
                 _merge(old, value)
-            elif not _same(old, value):
+            elif not same(old, value):
                 document[key] = value
         else:
             keys = list(document)
@@ -139,13 +139,13 @@ def _merge(document: CommentedMap, data: Mapping[str, object]) -> None:
         previous = key
 
 
-def _same(old: object, new: object) -> bool:
-    """Whether a loaded value equals a new one, by type as well as by value: `1` is not `1.0`
-    and `true` is not `1`, though Python's `==` says they are."""
+def same(old: object, new: object) -> bool:
+    """Whether two loaded values are equal, by type as well as by value: `1` is not `1.0` and
+    `true` is not `1`, though Python's `==` says they are."""
     if isinstance(old, Mapping) and isinstance(new, Mapping):
-        return old.keys() == new.keys() and all(_same(old[key], new[key]) for key in old)
+        return old.keys() == new.keys() and all(same(old[key], new[key]) for key in old)
     if isinstance(old, list) and isinstance(new, list):
-        return len(old) == len(new) and all(_same(a, b) for a, b in zip(old, new, strict=True))
+        return len(old) == len(new) and all(same(a, b) for a, b in zip(old, new, strict=True))
     for kind in (bool, int, float, str):
         if isinstance(old, kind) or isinstance(new, kind):
             return isinstance(old, kind) and isinstance(new, kind) and old == new
