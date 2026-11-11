@@ -44,6 +44,10 @@ All notable changes to amontillado are documented here. The format follows
   against the committed version, so an uncommitted edit of yours stays uncommitted (a conflict
   leaves that record out, with a warning); what you have staged is neither committed nor lost;
   your git hooks and signing apply. `amo config check` flags it when git is not on PATH.
+- `amo hook git-commit` in a git-annex repository adds new images with `git annex add`, so
+  your `annex.largefiles`, `annex.addunlocked` and `annex.thin` decide how (locked by default;
+  `git add` would always add them unlocked). Without git-annex installed it leaves them
+  uncommitted with a warning, and `amo config check` flags an annexed root.
 
 ### Changed
 

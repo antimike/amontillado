@@ -1447,6 +1447,15 @@ layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
      a path the user had staged is left, with a warning. A conflict (or an info file that does
      not parse) leaves that record's paths out, with a warning naming it. Message:
      `amo <command>: <record names>` (three, then "and N more"), then each path.
+     In a git-annex repository (annex.uuid set, or a git-annex branch: a clone where `git
+     annex init` has not run must not get images into git either) new files go in with `git
+     annex add` on the temporary index (it honours GIT_INDEX_FILE; tested with git-annex
+     10.20260115), so the user's `annex.largefiles` decides what is annexed (thumbnails stay
+     in git under `**/.amo/** annex.largefiles=nothing`) and `annex.addunlocked` whether it
+     is locked; `annex.thin` applies as git-annex applies it. Without git-annex the new files
+     are left uncommitted with a warning, the info files committed (amo-qnn.4). `amo config
+     check` finds an annexed root from its files (a `.git` with an `annex` directory), since
+     it runs no git.
    - **`amo info diff` / `amo info merge`** (amo-qnn.6): a schema-aware diff and three-way
      merge with git's merge-driver contract, also usable as a real merge driver for info files
      edited on two machines. Conflicts are by unit, not by line: a top-level key, except that

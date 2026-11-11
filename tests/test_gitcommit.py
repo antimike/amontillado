@@ -136,3 +136,80 @@ def test_bad_payload_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO("not json"))
     with pytest.raises(SystemExit, match="stdin is not an on_change payload"):
         main(["hook", "git-commit"])
+
+
+# git-annex roots (amo-qnn.4).
+
+needs_annex = pytest.mark.skipif(shutil.which("git-annex") is None, reason="needs git-annex")
+LAYOUT = (
+    "* annex.largefiles=nothing\n*.png annex.largefiles=anything\n"
+    "**/.amo/** annex.largefiles=nothing\n"
+)
+
+
+@pytest.fixture
+def annex(repo: Path) -> Path:
+    """`repo` as a git-annex repository, images annexed and thumbnails in git."""
+    _git(repo, "annex", "init", "-q", "test")
+    (repo / ".gitattributes").write_text(LAYOUT)
+    _git(repo, "add", ".gitattributes")
+    _git(repo, "commit", "-q", "-m", "layout")
+    return repo
+
+
+def _modes(root: Path) -> dict[str, str]:
+    """{path: mode} of the files the last commit added."""
+    added = _git(root, "show", "--format=", "--name-only", "--diff-filter=A", "HEAD").split()
+    return {path: _git(root, "ls-tree", "HEAD", path).split()[0] for path in added}
+
+
+@needs_annex
+def test_new_images_are_annexed_locked(annex: Path, tmp_path: Path) -> None:
+    main(["add", "--name", "green", str(_image(tmp_path / "in" / "green.png", (0, 255, 0)))])
+    assert _modes(annex) == {
+        "green/.amo/thumbnail.jpg": "100644",  # in git: annex.largefiles=nothing
+        "green/green.png": "120000",  # a locked annexed file: a symlink
+        "green/info.yaml": "100644",
+    }
+    assert (annex / "green" / "green.png").is_symlink()
+    assert _git(annex, "status", "--porcelain") == ""
+
+
+@needs_annex
+def test_annex_addunlocked_is_honoured(annex: Path, tmp_path: Path) -> None:
+    _git(annex, "config", "annex.addunlocked", "true")
+    main(["add", "--name", "green", str(_image(tmp_path / "in" / "green.png", (0, 255, 0)))])
+    assert _modes(annex)["green/green.png"] == "100644"  # an unlocked file's pointer
+    pointer = _git(annex, "cat-file", "blob", "HEAD:green/green.png")
+    assert pointer.startswith("/annex/objects/SHA256E-")
+    assert not (annex / "green" / "green.png").is_symlink()
+
+
+@needs_annex
+def test_without_git_annex_new_files_stay_uncommitted(
+    annex: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A clone where git annex init never ran (no annex.uuid, filter or hooks), on a machine
+    # without git-annex: the hook runs in a subprocess, its PATH holding git and sh alone.
+    _git(annex, "config", "--unset", "annex.uuid")
+    _git(annex, "config", "--remove-section", "filter.annex")
+    (annex / ".git" / "hooks" / "pre-commit").unlink()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").symlink_to(shutil.which("git"))
+    (bin_dir / "sh").symlink_to(shutil.which("sh"))
+    monkeypatch.setenv("PATH", str(bin_dir))
+    main(["add", "--name", "green", str(_image(tmp_path / "in" / "green.png", (0, 255, 0)))])
+    assert "git-annex is not installed; new files left uncommitted" in capfd.readouterr().err
+    assert _git(annex, "show", "--format=", "--name-only", "HEAD") == "green/info.yaml\n"
+
+
+def test_annex_repository_from_the_files(tmp_path: Path) -> None:
+    from amontillado.gitcommit import annex_repository
+
+    (tmp_path / "plain" / ".git").mkdir(parents=True)
+    (tmp_path / "annexed" / ".git" / "annex").mkdir(parents=True)
+    (tmp_path / "annexed" / "sub").mkdir()
+    assert not annex_repository(tmp_path / "plain")
+    assert annex_repository(tmp_path / "annexed" / "sub")
+    assert not annex_repository(tmp_path)

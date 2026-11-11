@@ -186,3 +186,20 @@ def test_config_check_wants_git_for_the_git_commit_hook(
         _check(home, "on_change: amo hook git-commit\n")
     assert "amo hook git-commit needs git, which is not on PATH" in caplog.text
     _check(home, "on_change: my-own-hook\n")  # nothing to say about another hook
+
+
+def test_config_check_wants_git_annex_for_an_annexed_root(
+    home: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    root = home / "annexed"
+    (root / ".git" / "annex").mkdir(parents=True)
+    text = f"on_change: amo hook git-commit\nlibrary_roots: [{root}]\n"
+    _check(home, text)
+    monkeypatch.setattr(
+        "amontillado.cli.shutil.which", lambda name: None if name == "git-annex" else name
+    )
+    with pytest.raises(SystemExit, match="1 problem"):
+        _check(home, text)
+    assert (
+        f"{root} is in a git-annex repository; amo hook git-commit needs git-annex" in caplog.text
+    )
