@@ -6,6 +6,14 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
+Version control without coupling: amo stays plain files and never runs git itself, but an
+opt-in `on_change` hook (and the shipped `amo hook git-commit`) commits what each command
+writes, git-annex libraries with dropped content work, and info files keep their comments and
+merge by key. Also `amo edit`, a GTK4 `libadwaita-vars` template, and config commands under
+`sh -c`.
+
 ### Added
 
 - git-annex libraries: a listed file whose annex content is not on this machine (a dropped
@@ -24,7 +32,6 @@ All notable changes to amontillado are documented here. The format follows
   and `edit.tools.<name>.{cmd,description}`, where `cmd` runs under `sh -c` with `AMO_INPUT`,
   `AMO_OUTPUT` and `AMO_WORKDIR` set; `amo edit --list-tools` lists them. The config template has
   examples for GIMP, Krita, Pinta, darktable, RawTherapee, satty, ImageMagick and Inkscape.
-
 - `amo info diff OLD NEW [--json]`: the key paths that differ between two info files, ignoring
   comments and layout; exit status 0 the same, 1 different, as diff(1).
 - `amo info merge BASE OURS THEIRS [--name PATH] [--stdout]`: a three-way merge of info files
@@ -33,7 +40,6 @@ All notable changes to amontillado are documented here. The format follows
   untouched, the conflicting units on stderr, no conflict markers). Register it for
   `info.yaml` in `.gitattributes` and `merge.amo-info.driver`
   (`amo info merge %O %A %B --name %P`) so info files edited on two machines merge by key.
-
 - `on_change` (config): a command run under `sh -c` after a command writes under a library
   root (`amo index`, `fetch`, `add`, `crop`, `add-derived`, `edit`, `name`), once per root it
   wrote to, with the changes as JSON on stdin (each info file's text before and after, new
@@ -73,6 +79,13 @@ All notable changes to amontillado are documented here. The format follows
   longer fold. `amo index` reads info files faster (ruamel.yaml.clib's C parser).
 - `amo index` no longer searches hidden directories under a root (`.git`, `.Trash-1000`, ...)
   for records or loose images.
+
+### Dependencies
+
+- PyYAML replaced by ruamel.yaml, with ruamel.yaml.clib (CPython) for its C parser.
+- git, git-annex, git-remote-gcrypt and gnupg are optional and never run by amo itself: only
+  the `on_change` hook you set runs anything (`amo hook git-commit` runs git, and git-annex in
+  an annexed root). Installing and using amo needs none of them.
 
 ## [0.3.0] - 2026-11-05
 
