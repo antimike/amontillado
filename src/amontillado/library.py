@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
+from amontillado import changes
 from amontillado.classes import has_aspect
 from amontillado.config import Config
 from amontillado.metrics import image_size, measure_file, write_crop, write_thumbnail
@@ -427,6 +428,7 @@ def _with_thumbnail(directory: Path, record: Record, present: set[str]) -> Recor
     except (OSError, Image.DecompressionBombError) as exc:
         logger.warning("%s: no thumbnail: %s", directory / default, exc)
         return record
+    changes.file_written(directory / THUMBNAIL_PATH)
     return dataclasses.replace(record, thumbnail=THUMBNAIL_PATH)
 
 
@@ -533,6 +535,7 @@ def add_picture(
     record = Record(uuid.uuid4().hex, name=name, source=source, files={file.name: entry})
     placement.directory.mkdir(parents=True)
     shutil.move(file, placement.directory / file.name)
+    changes.moved(file, placement.directory / file.name)
     record = _with_thumbnail(placement.directory, record, {file.name})
     write_record(placement.directory / INFO_NAMES[0], record)
     nsfw = placement.directory.resolve().is_relative_to(config.nsfw_root)
@@ -756,6 +759,7 @@ def crop_picture(
         raise
     record = dataclasses.replace(record, files={**record.files, name: crop})
     write_record(path, record)
+    changes.file_written(target)
     return record_entry(config, directory, root, record, present | {name}), name
 
 
@@ -809,6 +813,10 @@ def add_derived(
         if moved:
             shutil.move(target, file)
         raise
+    if moved:
+        changes.moved(file, target)
+    else:
+        changes.file_written(target)
     return record_entry(config, directory, root, record, present | {name}), name
 
 
@@ -886,6 +894,7 @@ def name_record(
         except BaseException:
             write_record(path, record)
             raise
+        changes.moved(directory, target)
     return record_entry(config, target, root, named, present)
 
 

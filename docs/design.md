@@ -1418,6 +1418,17 @@ layout docs (amo-qnn.5), the full key and restore runbook in the dotfiles.
      `sh -c` once per root per run that wrote files, with a JSON payload on stdin: each info
      file's text before and after amo's write, new files, renames and deletes. amo's writes
      stand whatever the hook does; a failing hook is a warning.
+     Built (amo-qnn.3): the writers report to `amontillado.changes` as they write (info files
+     with the text the record was read from, images and thumbnails, moves); the CLI records
+     every command and, after it (a failed one too: what was written stands), runs the hook
+     per root written to, under `sh -c` with AMO_ROOT and AMO_COMMAND (`index`, `fetch`,
+     `add`, `crop`, `add-derived`, `edit`, `name`) and the payload on stdin; the hook's
+     stdout goes to stderr (amo's stdout is data). The payload (`changes` module docstring):
+     `version` 1, `command`, `root`, and `changes` of `rename` (from, to: within the root,
+     listed first), `info` (path, before or null for a new file, after; a path in a renamed
+     directory is its new one) and `file` (made or replaced, or moved in from outside the
+     root or from a record's `.amo/`). An info file written back as it was read is no change.
+     No command deletes files under a root, so there is no delete change yet.
    - **`amo hook git-commit`** is the shipped reference hook: one commit per root, limited to
      the payload's paths. Info files are merged with `amo info merge` (BASE: as amo read it,
      OURS: the committed version, THEIRS: as amo wrote it) and staged with `git hash-object` +

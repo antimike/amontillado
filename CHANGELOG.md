@@ -34,6 +34,11 @@ All notable changes to amontillado are documented here. The format follows
   `info.yaml` in `.gitattributes` and `merge.amo-info.driver`
   (`amo info merge %O %A %B --name %P`) so info files edited on two machines merge by key.
 
+- `on_change` (config): a command run under `sh -c` after a command writes under a library
+  root (`amo index`, `fetch`, `add`, `crop`, `add-derived`, `edit`, `name`), once per root it
+  wrote to, with the changes as JSON on stdin (each info file's text before and after, new
+  files, renames) and `AMO_ROOT`, `AMO_COMMAND` set. Unset by default: amo never runs git
+  itself. A failing hook is a warning.
 ### Changed
 
 - **Breaking:** every command in the config runs under `sh -c`, its inputs as environment

@@ -35,7 +35,7 @@ from rich.logging import RichHandler
 from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
-from amontillado import __version__, infomerge, yamlio
+from amontillado import __version__, changes, infomerge, yamlio
 from amontillado.accents import score as accent_score
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
@@ -60,6 +60,7 @@ from amontillado.edit import EditError, plan_edit, run_edit
 from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
+from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
     IndexedFile,
@@ -910,7 +911,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Load a config file as every command does, and fail if it has an error, an "
         "unknown key, an app whose template cannot be found or read (a fetched one: run amo "
         "theme sync), two apps writing one output file, or a command (a reload hook, "
-        "crop.viewer, an edit tool, api_key_command) that sh -n cannot parse. Changes nothing.",
+        "crop.viewer, an edit tool, api_key_command, on_change) that sh -n cannot parse. "
+        "Changes nothing.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(check_, argparse.SUPPRESS)
@@ -1489,13 +1491,13 @@ def _read_info_text(path: Path) -> str:
 
 def cmd_info_diff(args: argparse.Namespace) -> None:
     old, new = (_load_info(path) for path in (args.old, args.new))
-    changes = infomerge.diff(old, new)
+    found = infomerge.diff(old, new)
     if args.json:
-        print(json.dumps([change.to_dict() for change in changes], default=str, indent=2))
+        print(json.dumps([change.to_dict() for change in found], default=str, indent=2))
     else:
-        for change in changes:
+        for change in found:
             print(change.describe())
-    sys.exit(1 if changes else 0)
+    sys.exit(1 if found else 0)
 
 
 def _load_info(path: Path) -> dict[str, object]:
@@ -1970,4 +1972,21 @@ def main(argv: list[str] | None = None) -> None:
     if args.func is None:
         build_parser().print_help()
         return
-    args.func(args)
+    with changes.recording() as recorder:
+        try:
+            args.func(args)
+        finally:
+            # Also after a failure: what was written stands, and the hook sees it.
+            _on_change(recorder, args.func.__name__.removeprefix("cmd_").replace("_", "-"))
+
+
+def _on_change(recorder: changes.Recorder, command: str) -> None:
+    """Run the on_change hook for what the command wrote, if it wrote anything."""
+    if not (recorder.infos or recorder.files or recorder.renames):
+        return
+    try:
+        config = load_config()
+    except ConfigError as exc:
+        logger.warning("on_change not run: %s", exc)
+        return
+    run_on_change(config, recorder, command)

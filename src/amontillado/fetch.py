@@ -33,6 +33,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from amontillado import changes
 from amontillado.classes import Look, classify
 from amontillado.config import Config
 from amontillado.index import add as add_to_index
@@ -356,6 +357,8 @@ def _keep(
             thumbnail=THUMBNAIL_PATH,
         )
         write_record(directory / INFO_NAMES[0], record)
+        changes.file_written(file)
+        changes.file_written(directory / THUMBNAIL_PATH)
     except BaseException:
         if directory is not None:
             shutil.rmtree(directory, ignore_errors=True)
