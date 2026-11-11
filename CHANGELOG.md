@@ -25,6 +25,15 @@ All notable changes to amontillado are documented here. The format follows
   `AMO_OUTPUT` and `AMO_WORKDIR` set; `amo edit --list-tools` lists them. The config template has
   examples for GIMP, Krita, Pinta, darktable, RawTherapee, satty, ImageMagick and Inkscape.
 
+- `amo info diff OLD NEW [--json]`: the key paths that differ between two info files, ignoring
+  comments and layout; exit status 0 the same, 1 different, as diff(1).
+- `amo info merge BASE OURS THEIRS [--name PATH] [--stdout]`: a three-way merge of info files
+  by unit (a top-level key; the file names with `default_file`; one `files` entry), with git's
+  merge-driver contract: exit 0 merged into OURS (its comments kept), 1 on a conflict (OURS
+  untouched, the conflicting units on stderr, no conflict markers). Register it for
+  `info.yaml` in `.gitattributes` and `merge.amo-info.driver`
+  (`amo info merge %O %A %B --name %P`) so info files edited on two machines merge by key.
+
 ### Changed
 
 - **Breaking:** every command in the config runs under `sh -c`, its inputs as environment

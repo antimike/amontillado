@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from amontillado import yamlio
+from amontillado.cli import main
 from amontillado.infomerge import Change, InfoError, diff, format_path, load, merge
 
 ID = "3f2a9c1e0b7d4e8f9a6b5c4d3e2f1a0b"
@@ -187,3 +196,92 @@ def test_theirs_removals_apply() -> None:
     merged = load(merge(base, ours, theirs).text)
     assert "rating" not in merged and list(merged["files"]) == ["a.png"]
     assert merged["name"] == "pier"
+
+
+# The commands, and git's merge-driver contract end to end.
+
+
+def _write(directory: Path, **texts: str) -> list[str]:
+    for name, text in texts.items():
+        (directory / name).write_text(text)
+    return [str(directory / name) for name in texts]
+
+
+def test_info_diff_exit_status(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    old, new = _write(tmp_path, old=BASE, new=_with(BASE, name="pier"))
+    with pytest.raises(SystemExit) as exc:
+        main(["info", "diff", old, new])
+    assert exc.value.code == 1
+    assert capsys.readouterr().out == '~ name: "harbour" -> "pier"\n'
+    with pytest.raises(SystemExit) as exc:
+        main(["info", "diff", "--json", old, old])
+    assert exc.value.code == 0
+    assert json.loads(capsys.readouterr().out) == []
+    with pytest.raises(SystemExit) as exc:
+        main(["info", "diff", old, str(tmp_path / "none")])
+    assert exc.value.code == 2
+
+
+def test_info_merge_rewrites_ours_or_leaves_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    base, ours, theirs, other = _write(
+        tmp_path,
+        base=BASE,
+        ours="# mine\n" + BASE,
+        theirs=_with(BASE, rating=5),
+        other=_with(BASE, rating=4),
+    )
+    main(["info", "merge", base, ours, other, "--stdout"])
+    assert "rating: 4" in capsys.readouterr().out
+    assert Path(ours).read_text() == "# mine\n" + BASE
+    main(["info", "merge", base, ours, theirs])
+    assert Path(ours).read_text() == "# mine\n" + BASE + "rating: 5\n"
+    with pytest.raises(SystemExit) as exc:
+        main(["info", "merge", base, ours, other, "--name", "r/info.yaml"])
+    assert exc.value.code == 1
+    assert "r/info.yaml: conflict: rating: changed on both sides" in caplog.text
+    assert Path(ours).read_text() == "# mine\n" + BASE + "rating: 5\n"
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_as_a_git_merge_driver(tmp_path: Path) -> None:
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "COLUMNS": "200"},  # Rich wraps log lines at the width
+        )
+
+    driver = f"{shlex.quote(sys.executable)} -m amontillado info merge %O %A %B --name %P"
+    git("init", "-q", "-b", "main")
+    git("config", "user.name", "t")
+    git("config", "user.email", "t@example.org")
+    git("config", "merge.amo-info.driver", driver)
+    (tmp_path / ".gitattributes").write_text("info.yaml merge=amo-info\n")
+    info = tmp_path / "r" / "info.yaml"
+    info.parent.mkdir()
+    info.write_text(BASE)
+    git("add", ".")
+    git("commit", "-q", "-m", "base")
+    git("switch", "-q", "-c", "other")
+    info.write_text(_with(BASE, name="pier"))
+    git("commit", "-q", "-am", "rename")
+    git("switch", "-q", "main")
+    # An edit on the next line: git's line merge would conflict.
+    info.write_text(BASE.replace("source: null", "source: null  # none: mine"))
+    git("commit", "-q", "-am", "comment")
+    merged = git("merge", "-q", "--no-edit", "other")
+    assert merged.returncode == 0, merged.stderr
+    assert "source: null  # none: mine\n" in info.read_text()
+    assert load(info.read_text())["name"] == "pier"
+
+    git("switch", "-q", "-c", "third", "HEAD~1")
+    info.write_text(_with(info.read_text(), name="quay"))
+    git("commit", "-q", "-am", "quay")
+    git("switch", "-q", "main")
+    conflicted = git("merge", "-q", "--no-edit", "third")
+    assert conflicted.returncode != 0
+    assert "r/info.yaml: conflict: name: changed on both sides" in conflicted.stderr
