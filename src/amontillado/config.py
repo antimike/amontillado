@@ -42,6 +42,7 @@ _KNOWN_KEYS = frozenset(
         "check_stale_index",
         "crop",
         "edit",
+        "group",
         "on_change",
         "theme",
     }
@@ -56,6 +57,10 @@ CONTRAST_CHOICES = ("adjust", "report", "off")
 HUES_CHOICES = ("amontillado", "generator")
 RENDERERS = ("amontillado", "matugen")
 PREVIEWS = ("auto", "kitty", "viewer")
+GROUP_ORDERS = ("least-shown", "nearest")
+_GROUP_KEYS = frozenset({"max_distance", "order"})
+# Two pictures within this palette distance go together (docs/design.md, "Grouping"; *initial*).
+DEFAULT_MAX_DISTANCE = 0.05
 _CROP_KEYS = frozenset({"preview", "viewer"})
 DEFAULT_VIEWER = 'xdg-open "$AMO_FILE"'
 _EDIT_KEYS = frozenset({"default_tool", "tools"})
@@ -163,6 +168,16 @@ class EditConfig:
 
 
 @dataclass(frozen=True)
+class GroupConfig:
+    """The `group` block: how `amo group` picks the pictures that go with the primary."""
+
+    # The palette distance within which a companion is compatible with the primary.
+    max_distance: float = DEFAULT_MAX_DISTANCE
+    # The order companions are taken in: least-shown or nearest.
+    order: str = "least-shown"
+
+
+@dataclass(frozen=True)
 class Config:
     """Where the library and its index live, and the theme engine's settings."""
 
@@ -173,6 +188,7 @@ class Config:
     theme: ThemeConfig = field(default_factory=ThemeConfig)
     crop: CropConfig = field(default_factory=CropConfig)
     edit: EditConfig = field(default_factory=EditConfig)
+    group: GroupConfig = field(default_factory=GroupConfig)
     # Run under sh -c once per root a command wrote to, the changes on stdin (amontillado.hook).
     on_change: str | None = None
     # Whether amo list warns when the library has changed since the last amo index.
@@ -226,6 +242,7 @@ def load_config(path: Path | None = None) -> Config:
         theme=_theme(settings.get("theme")),
         crop=_crop(settings.get("crop")),
         edit=_edit(settings.get("edit")),
+        group=_group(settings.get("group")),
         on_change=shell_command("on_change", settings.get("on_change")),
         check_stale_index=check_stale,
     )
@@ -399,6 +416,19 @@ def _crop(value: object) -> CropConfig:
     if "AMO_FILE" not in viewer:
         raise ConfigError("crop.viewer: names no $AMO_FILE")
     return CropConfig(_choice("crop.preview", crop.get("preview", "auto"), PREVIEWS), viewer)
+
+
+def _group(value: object) -> GroupConfig:
+    """The `group` block, checked. Raises ConfigError naming the key."""
+    if value is None:
+        return GroupConfig()
+    group = _settings_mapping("group", value, _GROUP_KEYS)
+    bound = group.get("max_distance", DEFAULT_MAX_DISTANCE)
+    # bool is an int subclass, and never a distance; NaN fails the comparison.
+    if isinstance(bound, bool) or not isinstance(bound, (int, float)) or not bound >= 0:
+        raise ConfigError(f"group.max_distance: {bound!r} is not a distance (0 or more)")
+    order = _choice("group.order", group.get("order", "least-shown"), GROUP_ORDERS)
+    return GroupConfig(float(bound), order or "least-shown")
 
 
 def _edit(value: object) -> EditConfig:

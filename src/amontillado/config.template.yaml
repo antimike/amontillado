@@ -99,6 +99,21 @@ edit:
     #   cmd: inkscape "$AMO_INPUT"
     #   description: Inkscape; Export as PNG into its folder (a vector editor, clumsy for bitmaps)
 
+# amo group: one picture per monitor, the others going with the first (docs/design.md, "Grouping
+# (v0.7)").
+group:
+
+  # How close (palette distance) a picture must be to the primary monitor's to go with it: 0 is
+  # identical colours, about 0.03 the typical nearest neighbour, 0.09 two pictures picked at random.
+  # Lower gives more coherent sets from fewer pictures. Too few within it: the nearest beyond fill
+  # in, with a warning. --max-distance overrides it. Default: 0.05.
+  # max_distance: 0.05
+
+  # The order amo group takes compatible pictures in: least-shown (fewest showings first, so
+  # successive groups explore the library) or nearest (the closest colours first, the most coherent
+  # set). --order overrides it. Default: least-shown.
+  # order: least-shown
+
 # A command run by sh -c after a command writes under a library root (amo index, fetch, add, crop,
 # add-derived, edit, name), once per root it wrote to, with a JSON list of the changes on stdin:
 # each info file's text before and after, new files, renames (docs/design.md, "git-annex libraries:

@@ -13,6 +13,7 @@ from amontillado.config import (
     CropConfig,
     EditConfig,
     EditTool,
+    GroupConfig,
     ThemeConfig,
     api_key,
     load_config,
@@ -290,6 +291,30 @@ def test_crop_block(home: Path) -> None:
     assert load_config().crop == CropConfig("auto", 'xdg-open "$AMO_FILE"')
     write_config(home, """crop: {preview: viewer, viewer: 'feh --reload 0.2 "$AMO_FILE"'}\n""")
     assert load_config().crop == CropConfig("viewer", 'feh --reload 0.2 "$AMO_FILE"')
+
+
+def test_group_block(home: Path) -> None:
+    assert load_config().group == GroupConfig(0.05, "least-shown")
+    write_config(home, "group:\n")
+    assert load_config().group == GroupConfig(0.05, "least-shown")
+    write_config(home, "group: {max_distance: 0, order: nearest}\n")
+    assert load_config().group == GroupConfig(0.0, "nearest")
+
+
+@pytest.mark.parametrize(
+    ("text", "error"),
+    [
+        ("group: {max_distance: -0.1}\n", "group.max_distance: -0.1 is not a distance"),
+        ("group: {max_distance: true}\n", "group.max_distance: True is not a distance"),
+        ("group: {max_distance: .nan}\n", "group.max_distance: nan is not a distance"),
+        ("group: {order: random}\n", "group.order: 'random' is not one of least-shown, nearest"),
+        ("group: []\n", "group must be a mapping"),
+    ],
+)
+def test_group_block_errors(home: Path, text: str, error: str) -> None:
+    write_config(home, text)
+    with pytest.raises(ConfigError, match=re.escape(error)):
+        load_config()
 
 
 @pytest.mark.parametrize(
