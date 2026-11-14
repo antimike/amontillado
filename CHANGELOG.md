@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
+The theme can follow the desktop: `theme.variant: system` reads the desktop's dark/light
+colour scheme at every apply, so a timer or darkman can own the choice and a wallpaper change
+keeps to it.
+
 ### Added
 
 - `system` variant (`theme.variant`, `--variant`, `theme.apps.<app>.variant`): follows the

@@ -40,8 +40,8 @@ and test sets, with class thresholds calibrated on a Wallhaven sample; v0.2.0 ad
 engine, interactive crops and search over the index; v0.3.0 a libadwaita template with a
 colour-scheme hook, record naming and hand-made derived files; v0.4.0 optional version control
 (an `on_change` hook that can commit to git or git-annex, info files that keep their comments
-and merge by key), `amo edit`, and a GTK4 `libadwaita-vars` template
-([CHANGELOG.md](CHANGELOG.md)).
+and merge by key), `amo edit`, and a GTK4 `libadwaita-vars` template; v0.5.0 a `system`
+variant that follows the desktop's dark/light colour scheme ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
@@ -49,7 +49,7 @@ and merge by key), `amo edit`, and a GTK4 `libadwaita-vars` template
 Pin a tag:
 
 ```sh
-pipx install git+https://github.com/antimike/amontillado@v0.4.0
+pipx install git+https://github.com/antimike/amontillado@v0.5.0
 ```
 
 From a checkout, for development: `just install-dev` (an editable pipx install), or
