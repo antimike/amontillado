@@ -8,12 +8,14 @@ matugen formats, the registry and `amo theme sync`, apply with profile swaps; al
 crops, `amo list` search over the index, and the commented config template. v0.3
 (2026-11-05): the built-in libadwaita template and the `{variant}` reload placeholder for a
 colour-scheme hook ([colour-scheme-hooks.md](colour-scheme-hooks.md)), `amo name` (also
-`--from-tags`) and `amo add-derived`. Towards v0.4 (on main, unreleased, 2026-11-06): the
+`--from-tags`) and `amo add-derived`. v0.4 (2026-11-13): optional version control (the
+`on_change` hook, git-annex libraries, info files merged by key, "git-annex libraries"), the
 GTK4-only `libadwaita-vars` template ("Template sources") with GNOME's palette remapped
 (`gnome-*-hex`, "Formats and views"), and a live test that takes any scheme or library picture
 and captures without keyboard focus, optionally off screen; `amo edit` with named editor tools
 ("Editing", 2026-11-07); every config command under `sh -c` with `AMO_*` variables
-instead of `{placeholder}`s ("Config", 2026-11-08).
+instead of `{placeholder}`s ("Config", 2026-11-08). v0.5 (2026-11-13): the `system` variant,
+which follows the desktop's colour scheme ("Variant").
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -1532,6 +1534,8 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
    amo never runs them itself, only the opt-in `on_change` hook does (`amo hook git-commit`
    runs git and git-annex; gcrypt and gnupg only through git's remotes), and `pipx install`
    keeps working without them ("git-annex libraries: decisions", 5).
+7. v0.5 (released 2026-11-13): the `system` variant, following the desktop's colour scheme
+   (amo-8zi, from chezmoi D78's clock-driven variant; "Variant").
 
 ## Open questions
 
