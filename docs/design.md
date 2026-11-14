@@ -28,7 +28,7 @@ to the user's desktop configuration and call `amo list`.
 **v0.2, the theme engine:** palettes from pictures, presets or tinted-theming schemes,
 contrast checks, and per-app templates rendered into a per-profile cache, with reload commands.
 
-**Later (see "Roadmap"):** palette-aware grouping and selection across monitors.
+**v0.7, grouping:** pictures that go together across monitors ("Grouping (v0.7)").
 
 ## Storage
 
@@ -1493,6 +1493,102 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
    - Encrypted remotes (gcrypt) are documentation only; the full key and restore runbook lives
      in the dotfiles.
 
+## Grouping (v0.7)
+
+**Status: agreed with MH 2026-11-13** (spike amo-50c.1; built in epic `amo-6f0`; the decisions
+are under "Grouping: decisions" below). Pictures that go together, for several monitors, with
+the theme taken from the primary monitor's picture ("Roadmap", item 2). Monitor detection and
+the wallpaper setter stay in the user's desktop configuration: amo takes monitors as arguments.
+
+**Colour signature** (amo-6f0.1). Each file's `metrics` gain a `palette`: 6 colours (*initial*)
+from k-means in OKLab over the measured image (432 px wide, every 4th pixel), each with its
+share of the pixels, largest first, as `[hex, share]` pairs (shares to 3 decimals):
+
+```yaml
+      palette: [["#1b2330", 0.412], ["#3d4a5e", 0.233], ["#c9a46b", 0.118], ...]
+```
+
+The k-means is deterministic (k-means++ from a fixed seed, at most 20 Lloyd steps), so
+measuring a file again writes the same palette and an info file under version control does not
+churn. Metrics version 3: `amo index` measures every file again once (the other metrics are
+unchanged). The index stores the palette as JSON in `files` (index schema 8). A file measured
+before version 3 that is absent (annexed content not here) has no palette until its content is
+got; grouping skips it.
+
+**Distance** between two palettes: each colour's OKLab distance to the nearest colour of the
+other palette, weighted by its share, averaged over both directions (0 for identical palettes).
+A cheap stand-in for earth mover's distance, which would need a linear-programming solver
+(scipy). Two pictures are **compatible** when their distance is at most `group.max_distance`,
+0.05 (*initial*; on the calibration sample the median distance to a picture's nearest neighbour
+was 0.033, its 95th percentile 0.055, and the median between any two pictures 0.09).
+
+**`amo list --like PICTURE`** (amo-6f0.2) orders the matches by distance to PICTURE, nearest
+first, PICTURE itself left out; each record is compared through the file `amo list` would print
+(its default file, or the `--aspect` match: a crop measures differently). `--max-distance D`
+keeps only those within D. It is an order, so it excludes `--order` and `--random`.
+
+**`amo group`** (amo-6f0.3) picks one picture per monitor:
+
+```text
+amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--purity LIST]
+          [--order least-shown|nearest] [--max-distance D] [--format tsv|json]
+          [--non-interactive] [--apply] [--dry-run]
+```
+
+- **Monitors** are given in order, at least one; the first is the primary. Each monitor's file
+  is chosen for its W:H as `--aspect` does, with the same crop offer and fallback ("Records").
+- **The primary** is PICTURE if given, else the first record matching the filters in `amo list
+  --order least-shown` order (never shown first, ties at random).
+- **Companions** are the other records matching the same filters (and purity) and compatible
+  with the primary, distinct, taken in `--order`: `least-shown` (default, `group.order`) explores
+  the library, `nearest` gives the most coherent set. Compatibility is to the primary only: the
+  theme comes from it. Too few compatible records: the nearest beyond the bound fill the rest,
+  with a warning; fewer records than monitors is an error.
+- **Output**: `--format tsv` (default) prints `NAME<TAB>PATH` per monitor in the order given, so
+  the first line is the primary and `amo theme apply` takes its path; `--format json` prints
+  `{"primary": NAME, "monitors": [{"name", "aspect", "path", "record", "distance"}, ...]}`.
+- **Setting the wallpapers** (amo-6f0.6): `group.setter`, a config command run once per monitor
+  under `sh -c` with `AMO_MONITOR` and `AMO_WALLPAPER` ("Config"), only with `--apply`, which
+  also records each picture as shown (as `amo shown`). The config template carries commented
+  examples for hyprpaper, swww, `swaymsg output`, swaybg, wpaperd, feh and xwallpaper; amo
+  holds no setter's syntax in code. A setter that needs every monitor in one call (feh assigns
+  by screen order) reads `--format json` instead.
+
+**Known limitation** (from the spike): a letterboxed picture's bars dominate its palette, so it
+groups with mostly black pictures. To look at in calibration (amo-6f0.4).
+
+**Later** (amo-0k6, not v0.7): saved sets (a set the user liked, kept by name: `amo group
+--save NAME`) and ratings of pictures and sets, with ratings feeding the companion order.
+
+### Grouping: decisions
+
+Agreed with MH 2026-11-13 (spike amo-50c.1). The experiment: 8 random anchors from the 400
+calibration thumbnails, the 5 nearest of each under the existing metrics (a mean colour from
+`lightness`, `chroma` and `hue`, plus `hue_spread`) and under a 6-colour k-means palette, judged
+by eye on a contact sheet.
+
+1. **A stored palette, not the existing metrics.** The palette's neighbours were clearly better
+   for 5 anchors and as good for the rest; the two agreed on 1.1 of 5 neighbours on average. A
+   mean colour hides structure: neon green on black matched a green forest, colourful cubes a
+   grey misty castle. Cost: k-means took 123 ms per thumbnail in plain numpy (measuring, 21 ms),
+   and a metrics version bump. A fixed OKLab histogram (deterministic without a seed) was not
+   taken: unreadable in an info file.
+2. **Distance to the primary, not clusters.** Distances form a continuum with no natural
+   clusters, so cluster boundaries would be arbitrary and move as pictures are added; ranking a
+   whole library against one picture costs milliseconds, so precomputing saves nothing. Each use
+   case is an order inside one distance bound: `nearest` (theming coherence), `least-shown`
+   (exploring the library), later ratings. The "sensible presets" clusters would have given are
+   saved sets instead (amo-0k6).
+3. **`amo list --like`, and a separate `amo group`.** Ranking by one picture belongs to
+   `amo list`; a set across monitors is a different output and gets its own command, not a
+   `--monitor` mode of `amo list` (MH: unintuitive). Not `amo set` (reads as setting the
+   wallpaper) or `amo create-set` (implies a stored set, which saved sets will be).
+4. **Monitors are arguments** (`--monitor NAME=W:H`, the first the primary); detecting them
+   stays in the desktop configuration.
+5. **Output tsv or json, and an optional setter hook**, not built-in setter formats: setter
+   command lines drift between versions, and the config command convention (`sh -c`, `AMO_*`)
+   already covers it, with examples in the config template.
+
 ## Testing
 
 - No network in tests: the HTTP layer is one small function, replaced by a stub that serves
@@ -1508,8 +1604,9 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
 
 1. v0.1 (released 2026-10-28): the CLI above, calibrated thresholds, tests, CI, a tagged
    release.
-2. Palette-aware grouping: features per image, clusters of compatible images, a coherent set
-   for several monitors, the palette taken from the primary monitor's image.
+2. Palette-aware grouping (epic `amo-6f0`, v0.7; designed in v0.6, "Grouping (v0.7)"): a
+   stored palette per file, `amo list --like`, and `amo group`, a coherent set for several
+   monitors, the theme taken from the primary monitor's picture.
 3. v0.2, the theme engine (epic `amo-aqp`; released 2026-11-03): palette files, generator
    adapters, per-app templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
    from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,
