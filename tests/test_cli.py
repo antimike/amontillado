@@ -4,8 +4,11 @@ import io
 import json
 import logging
 import os
+import random
 import shutil
 import sqlite3
+from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
@@ -18,6 +21,7 @@ from rich.console import Console
 from amontillado import __version__, cli, yamlio
 from amontillado import library as library_module
 from amontillado.cli import get_cli_arguments, main
+from amontillado.index import connect, record_shown
 from amontillado.wallhaven import Client
 
 
@@ -561,6 +565,42 @@ def test_list_random(indexed: dict[str, Path], capsys: pytest.CaptureFixture[str
     assert len(picked) == 2
     assert picked <= {"black", "white", "red", "noise"}
     assert len(_list(capsys, "--random", "99")) == 4
+
+
+def _shown_at(home: Path, image: Path, *days: int) -> None:
+    """Record showings of `image`'s record on those days of November 2026."""
+    with closing(connect(home / ".local/state/amontillado/index.sqlite")) as conn:
+        for day in days:
+            record_shown(conn, _id(image), datetime(2026, 11, day, tzinfo=UTC))
+
+
+def _listed(capsys: pytest.CaptureFixture[str], *args: str) -> list[str]:
+    capsys.readouterr()
+    main(["list", *args])
+    return [Path(line).stem for line in capsys.readouterr().out.splitlines()]
+
+
+def test_list_order_least_shown(
+    indexed: dict[str, Path], home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _shown_at(home, indexed["black"], 1, 2)
+    _shown_at(home, indexed["white"], 5)
+    _shown_at(home, indexed["red"], 3)
+    # noise never shown; then one showing each, the oldest first; then two.
+    assert _listed(capsys, "--order", "least-shown") == ["noise", "red", "white", "black"]
+    assert _listed(capsys, "--order", "least-shown", "--random", "2") == ["noise", "red"]
+    assert _listed(capsys, "--order", "least-shown", "--dark") == ["black"]
+    assert _listed(capsys) == ["black", "noise", "red", "white"]
+
+
+def test_list_order_least_shown_breaks_ties_at_random(
+    indexed: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    firsts = set()
+    for seed in range(20):
+        random.seed(seed)
+        firsts.add(_listed(capsys, "--order", "least-shown", "--random", "1")[0])
+    assert firsts == {"black", "white", "red", "noise"}
 
 
 def test_list_format_rofi(

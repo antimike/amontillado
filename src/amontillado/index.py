@@ -527,6 +527,12 @@ def _record_at(conn: sqlite3.Connection, path: Path) -> str:
     raise LookupFailed(f"{path}: not in the index; run `amo index`")
 
 
+def usage(conn: sqlite3.Connection) -> dict[str, tuple[int, str]]:
+    """Each shown record's `(shown_count, last_shown)`, by record id; none if never shown."""
+    rows = conn.execute("SELECT id, shown_count, last_shown FROM usage")
+    return {record_id: (count, last) for record_id, count, last in rows}
+
+
 def record_shown(conn: sqlite3.Connection, record_id: str, when: datetime | None = None) -> None:
     """Count one showing of the record with `record_id`, at `when` (default now, UTC)."""
     when = when or datetime.now(UTC)

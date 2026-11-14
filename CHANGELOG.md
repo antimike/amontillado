@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `amo list --order least-shown`: fewest showings first (as `amo shown` counts them), then the
+  longest since last shown, ties in random order; `--random N` then takes the first N, so
+  `amo list --order least-shown --random 1` rotates through the whole library.
+
 ## [0.5.0] - 2026-11-13
 
 The theme can follow the desktop: `theme.variant: system` reads the desktop's dark/light

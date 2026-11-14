@@ -80,6 +80,7 @@ from amontillado.index import (
     record_name,
     record_shown,
     unnamed,
+    usage,
 )
 from amontillado.index import (
     add as add_to_index,
@@ -301,7 +302,18 @@ def build_parser() -> argparse.ArgumentParser:
         "still decides what may be printed.",
     )
     list_.add_argument(
-        "--random", type=_positive, metavar="N", help="Print N matches chosen at random."
+        "--order",
+        choices=("path", "least-shown"),
+        default="path",
+        help="path: by file path. least-shown: fewest showings first (amo shown counts them), "
+        "then the longest since last shown, never-shown pictures first, ties in random order.",
+    )
+    list_.add_argument(
+        "--random",
+        type=_positive,
+        metavar="N",
+        help="Print N matches chosen at random; with --order least-shown, the first N in that "
+        "order.",
     )
     list_.add_argument(
         "--format",
@@ -1119,6 +1131,7 @@ def cmd_list(args: argparse.Namespace) -> None:
     try:
         with closing(connect(config.index_path)) as conn:
             wanted = matching_records(conn, search) if search else None
+            shown = usage(conn) if args.order == "least-shown" else {}
             by_record: dict[str, list[IndexedFile]] = {}
             for row in files(conn):
                 # Annexed content not on this machine cannot be shown.
@@ -1142,7 +1155,11 @@ def cmd_list(args: argparse.Namespace) -> None:
             _count(gone, "file"),
         )
     matches = present
-    if args.random is not None:
+    if args.order == "least-shown":
+        matches = _least_shown(matches, shown)
+        if args.random is not None:
+            matches = matches[: args.random]
+    elif args.random is not None:
         matches = random.sample(matches, min(args.random, len(matches)))
     if not matches:
         sys.exit("amontillado: no matching pictures")
@@ -1169,6 +1186,14 @@ def cmd_list(args: argparse.Namespace) -> None:
             print(f"{path}\0icon\x1f{row.thumbnail}")
         else:
             print(path)
+
+
+def _least_shown(rows: list[IndexedFile], shown: dict[str, tuple[int, str]]) -> list[IndexedFile]:
+    """Fewest showings first, then the longest since last shown; ties in random order."""
+    rows = random.sample(rows, len(rows))
+    # Never shown sorts first: count 0, and "" before any timestamp. The sort is stable, so the
+    # shuffle above breaks ties.
+    return sorted(rows, key=lambda row: shown.get(row.record_id, (0, "")))
 
 
 def _may_ask(args: argparse.Namespace) -> bool:

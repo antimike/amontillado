@@ -535,7 +535,8 @@ apply. It is the input for comparing palette generators. Decided 2026-10-28:
 ```text
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check] [--rehash]       heal records, rebuild the index; --check reports only
-amo list [FILTERS] [--aspect W:H] [--purity LIST] [--random N] [--format path|rofi]
+amo list [FILTERS] [--aspect W:H] [--purity LIST] [--order path|least-shown] [--random N]
+         [--format path|rofi]
          [--non-interactive] [--tag T]... [--site S] [--category C] [--license L] [--author A]
          [--where SQL]
                                      matching paths, one per line
@@ -602,6 +603,13 @@ on an older one the error says so and names `json_extract`. **Decision** (MH 202
 over the index rather than reading each `info.yaml` per query (slow: a pure-Python YAML loader)
 and no jq runtime dependency; `sqlite-jq` was rejected (a loadable C extension: Python builds
 without loadable-extension support exist, and pipx cannot ship per-platform binaries).
+
+**Order** (amo-50c.2): by file path, or with `--order least-shown` by the usage table:
+fewest showings (`amo shown`) first, then the longest since last shown, never-shown pictures
+first, ties in random order, so a rotation reaches every picture before repeating one and still
+varies. `--random N` then takes the first N in that order instead of N at random:
+`amo list --dark --order least-shown --random 1` is a wallpaper timer's next picture. Decided
+2026-11-13 (scope of v0.6), resolving the open question; `amo group` picks its primary this way.
 
 `--format rofi` follows each path with its record's thumbnail as the icon
 (`PATH\0icon\x1fTHUMBNAIL`, for `rofi -dmenu -show-icons`); a record without one, or whose
@@ -1640,6 +1648,5 @@ by eye on a contact sheet.
   of the calibration sample ("Calibration"). Raising it narrows `--hue` to images dominated by
   one hue: 0.45 leaves 77%, 0.50 73%, 0.55 67% (about the old coverage). Revisit if `--hue`
   results look too loose in use; it is a query-time threshold, so no metrics version is needed.
-- Whether `amo list` should prefer images shown least recently (it has the usage table).
 - Index staleness: `amo list` trusts the index; whether it should detect changes since the last
   `amo index` (a stat walk of the roots) and warn or refresh.

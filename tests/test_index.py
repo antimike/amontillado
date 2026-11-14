@@ -23,6 +23,7 @@ from amontillado.index import (
     matching_records,
     rebuild,
     record_shown,
+    usage,
 )
 from amontillado.library import heal_library
 from amontillado.metrics import Metrics
@@ -315,6 +316,14 @@ def test_record_shown_counts_and_keeps_the_latest(config: Config) -> None:
         ("aa", 2, "2026-10-28T09:30:00+00:00"),
         ("bb", 1, "2026-10-28T09:31:00+00:00"),
     ]
+
+
+def test_usage_by_record(config: Config) -> None:
+    conn = connect(config.index_path)
+    assert usage(conn) == {}
+    record_shown(conn, "aa", datetime(2026, 10, 27, 18, 0, tzinfo=UTC))
+    record_shown(conn, "aa", datetime(2026, 10, 28, 9, 30, tzinfo=UTC))
+    assert usage(conn) == {"aa": (2, "2026-10-28T09:30:00+00:00")}
 
 
 def test_record_shown_defaults_to_now(config: Config) -> None:
