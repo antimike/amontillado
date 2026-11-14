@@ -56,3 +56,7 @@ install-dev:
 # Remove the pipx install.
 uninstall:
     pipx uninstall amontillado
+
+# Contact sheets comparing grouping signatures on the calibration sample (tools/grouping_sheet.py).
+grouping-sheet *args:
+    uv run tools/grouping_sheet.py {{args}}
