@@ -61,6 +61,8 @@ def test_base24_is_derived_from_base16() -> None:
     for bright, base in (("base12", "base08"), ("base16", "base0D"), ("base17", "base0E")):
         assert _lightness(dark[bright]) == pytest.approx(_lightness(DARK[base]) + 0.08, abs=0.01)
         assert hue_distance(hex_to_oklch(dark[bright])[2], hex_to_oklch(DARK[base])[2]) < 3
+        # Away from the background: darker in a light variant (amo-50c.4).
+        assert _lightness(light[bright]) == pytest.approx(_lightness(LIGHT[base]) - 0.08, abs=0.01)
 
 
 def test_given_base24_keys_are_kept() -> None:

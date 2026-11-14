@@ -48,7 +48,8 @@ ACCENT_KEYS = ("base08", "base09", "base0A", "base0B", "base0C", "base0D", "base
 # base24's darker backgrounds: steps from base00 in OKLCH lightness (*initial*), darker for a
 # dark variant and lighter for a light one.
 BACKGROUND_STEPS = {"base10": 0.03, "base11": 0.06}
-# base24's bright colours, each its base16 colour lighter by BRIGHT_STEP (*initial*).
+# base24's bright colours: each its base16 colour BRIGHT_STEP away from the background, lighter
+# for a dark variant and darker for a light one (calibrated 2026-11-13, amo-50c.4).
 BRIGHT_KEYS = {
     "base12": "base08",
     "base13": "base0A",
@@ -112,7 +113,7 @@ def complete_variant(
     for key, source in BRIGHT_KEYS.items():
         if key not in colours:
             bright_l, bright_c, bright_h = hex_to_oklch(base24[source])
-            base24[key] = oklch_to_hex(bright_l + BRIGHT_STEP, bright_c, bright_h)
+            base24[key] = oklch_to_hex(bright_l - sign * BRIGHT_STEP, bright_c, bright_h)
         else:
             base24[key] = colours[key]
     base24 = {key: base24[key] for key in BASE24_KEYS}
