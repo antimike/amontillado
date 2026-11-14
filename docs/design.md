@@ -547,7 +547,8 @@ apply. It is the input for comparing palette generators. Decided 2026-10-28:
 ```text
 amo measure FILE...                  metrics and classes for any image, as YAML (no library needed)
 amo index [--check] [--rehash]       heal records, rebuild the index; --check reports only
-amo list [FILTERS] [--aspect W:H] [--purity LIST] [--order path|least-shown] [--random N]
+amo list [FILTERS] [--aspect W:H] [--purity LIST]
+         [--order path|least-shown] [--random N] | [--like PICTURE [--max-distance D]]
          [--format path|rofi]
          [--non-interactive] [--tag T]... [--site S] [--category C] [--license L] [--author A]
          [--where SQL]
@@ -1568,9 +1569,14 @@ A cheap stand-in for earth mover's distance, which would need a linear-programmi
 was 0.033, its 95th percentile 0.055, and the median between any two pictures 0.09).
 
 **`amo list --like PICTURE`** (amo-6f0.2) orders the matches by distance to PICTURE, nearest
-first, PICTURE itself left out; each record is compared through the file `amo list` would print
-(its default file, or the `--aspect` match: a crop measures differently). `--max-distance D`
-keeps only those within D. It is an order, so it excludes `--order` and `--random`.
+first (ties by path), PICTURE's record left out; each record is compared through the file `amo
+list` would print (its default file, or the `--aspect` match: a crop measures differently).
+PICTURE is any form under "Lookup"; a file path compares that file, anything else the file
+`amo list` would print for its record. `--max-distance D` keeps only those within D (it needs
+`--like`; there is no default bound here, unlike `amo group`). It is an order, so it excludes
+`--order` and `--random` (an error, not a silent choice). A PICTURE without a palette (indexed
+before metrics version 3, or absent and measured before it) is an error naming `amo index`
+(and `git annex get`); matches without one are left out with one warning.
 
 **`amo group`** (amo-6f0.3) picks one picture per monitor:
 

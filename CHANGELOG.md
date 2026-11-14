@@ -13,6 +13,9 @@ All notable changes to amontillado are documented here. The format follows
   writes the same palette. Metrics version 3: the next `amo index` measures every file again
   once; a file whose git-annex content is not here keeps its version 2 metrics and stays
   indexed. Index schema 9 (the palette as JSON).
+- `amo list --like PICTURE`: the matches ordered by how close their colours are to PICTURE's
+  (the distance between their palettes), nearest first; `--max-distance D` keeps those within
+  D. It excludes `--order` and `--random`.
 
 ### Fixed
 

@@ -603,6 +603,48 @@ def test_list_order_least_shown_breaks_ties_at_random(
     assert firsts == {"black", "white", "red", "noise"}
 
 
+def test_list_like_orders_by_palette_distance(
+    indexed: dict[str, Path], library: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _record(library / "maroon", (128, 0, 0), "maroon.png")
+    main(["index"])
+    red = str(indexed["red"])
+    # Nearest first; red itself left out, given by its file or its directory.
+    assert _listed(capsys, "--like", red) == ["maroon", "noise", "white", "black"]
+    assert _listed(capsys, "--like", str(library / "red")) == ["maroon", "noise", "white", "black"]
+    assert _listed(capsys, "--like", red, "--max-distance", "0.28") == ["maroon"]
+    assert _listed(capsys, "--like", red, "--dark") == ["black"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--like", "x", "--order", "path"],
+        ["--like", "x", "--random", "1"],
+        ["--max-distance", "0.1"],
+    ],
+)
+def test_list_like_refuses(indexed: dict[str, Path], args: list[str]) -> None:
+    with pytest.raises(SystemExit, match="--like"):
+        main(["list", *args])
+
+
+def test_list_like_without_palettes(
+    indexed: dict[str, Path],
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An index not rebuilt since metrics version 3 has no palettes."""
+    with sqlite3.connect(home / ".local/state/amontillado/index.sqlite") as conn:
+        conn.execute("UPDATE files SET palette = NULL WHERE path NOT LIKE '%/red.png'")
+    with pytest.raises(SystemExit, match="no matching pictures"):
+        main(["list", "--like", str(indexed["red"])])
+    assert "no palette yet: 3 pictures left out; run `amo index`" in caplog.text
+    with pytest.raises(SystemExit, match=r"black\.png has no palette yet; run `amo index`"):
+        main(["list", "--like", str(indexed["black"])])
+
+
 def _stale_warning(
     capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
 ) -> str | None:

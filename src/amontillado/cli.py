@@ -61,6 +61,7 @@ from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.gitcommit import HookError, annex_repository, git_commit
+from amontillado.grouping import palette_distance
 from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
@@ -308,9 +309,9 @@ def build_parser() -> argparse.ArgumentParser:
     list_.add_argument(
         "--order",
         choices=("path", "least-shown"),
-        default="path",
-        help="path: by file path. least-shown: fewest showings first (amo shown counts them), "
-        "then the longest since last shown, never-shown pictures first, ties in random order.",
+        help="path (the default): by file path. least-shown: fewest showings first (amo shown "
+        "counts them), then the longest since last shown, never-shown pictures first, ties in "
+        "random order.",
     )
     list_.add_argument(
         "--random",
@@ -318,6 +319,22 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Print N matches chosen at random; with --order least-shown, the first N in that "
         "order.",
+    )
+    list_.add_argument(
+        "--like",
+        metavar="PICTURE",
+        help="Order the matches by how close their colours are to PICTURE's (palette distance, "
+        'docs/design.md "Grouping"), nearest first, PICTURE\'s record left out. PICTURE is a '
+        "file or record directory, a record name, an id, or a unique prefix of one; a record "
+        "is compared through the file amo list would print (with --aspect, that ratio's). "
+        "Excludes --order and --random.",
+    )
+    list_.add_argument(
+        "--max-distance",
+        type=_distance,
+        metavar="D",
+        help="With --like: only the matches within D of PICTURE (0 is identical colours; two "
+        "pictures that go together are about 0.05 apart).",
     )
     list_.add_argument(
         "--format",
@@ -1053,6 +1070,13 @@ def _fraction(value: str) -> float:
     return number
 
 
+def _distance(value: str) -> float:
+    number = float(value)
+    if not number >= 0:  # NaN too
+        raise argparse.ArgumentTypeError("must be 0 or more")
+    return number
+
+
 def _positive(value: str) -> int:
     number = int(value)
     if number < 1:
@@ -1126,6 +1150,10 @@ def cmd_index(args: argparse.Namespace) -> None:
 
 
 def cmd_list(args: argparse.Namespace) -> None:
+    if args.like is not None and (args.order is not None or args.random is not None):
+        sys.exit("amontillado: --like is an order: it excludes --order and --random")
+    if args.max_distance is not None and args.like is None:
+        sys.exit("amontillado: --max-distance needs --like")
     config = _load_config()
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
@@ -1137,6 +1165,7 @@ def cmd_list(args: argparse.Namespace) -> None:
             wanted = matching_records(conn, search) if search else None
             shown = usage(conn) if args.order == "least-shown" else {}
             saved = saved_snapshot(conn) if config.check_stale_index else None
+            like = _like_file(conn, args.like, args.aspect) if args.like is not None else None
             by_record: dict[str, list[IndexedFile]] = {}
             for row in files(conn):
                 # Annexed content not on this machine cannot be shown.
@@ -1162,7 +1191,9 @@ def cmd_list(args: argparse.Namespace) -> None:
             _count(gone, "file"),
         )
     matches = present
-    if args.order == "least-shown":
+    if like is not None:
+        matches = _nearest(matches, like, args.max_distance)
+    elif args.order == "least-shown":
         matches = _least_shown(matches, shown)
         if args.random is not None:
             matches = matches[: args.random]
@@ -1209,6 +1240,45 @@ def _warn_if_stale(config: Config, saved: Snapshot) -> None:
             "the library has changed since the last `amo index` (%s); run `amo index`",
             ", ".join(parts),
         )
+
+
+def _like_file(conn: sqlite3.Connection, query: str, aspect: Aspect | None) -> IndexedFile:
+    """The file `amo list --like` compares with: the file `query` names, else the one amo list
+    would print for its record. Exits if it has no palette."""
+    try:
+        record_id = find_record(conn, query)
+    except LookupFailed as exc:
+        sys.exit(f"amontillado: {exc}")
+    group = files(conn, record_id)
+    given = Path(query).absolute()
+    chosen = next((row for row in group if row.path == given), None)
+    if chosen is None:
+        chosen = _pick(group, aspect.ratio if aspect is not None else None)
+    if not chosen.metrics.palette:
+        # Measured before metrics version 3: amo index measures it again if it is here.
+        get = "`git annex get` it, then " if chosen.absent else ""
+        sys.exit(f"amontillado: {chosen.path} has no palette yet; {get}run `amo index`")
+    return chosen
+
+
+def _nearest(
+    rows: list[IndexedFile], like: IndexedFile, max_distance: float | None
+) -> list[IndexedFile]:
+    """`rows` other than `like`'s record, nearest to it in colour first (ties by path), those
+    beyond `max_distance` left out. Rows without a palette are left out with a warning."""
+    others = [row for row in rows if row.record_id != like.record_id]
+    unmeasured = [row for row in others if not row.metrics.palette]
+    if unmeasured:
+        logger.warning(
+            "no palette yet: %s left out; run `amo index`",
+            _count(len(unmeasured), "picture"),
+        )
+    ranked = sorted(
+        (palette_distance(like.metrics.palette, row.metrics.palette), str(row.path), row)
+        for row in others
+        if row.metrics.palette
+    )
+    return [row for distance, _, row in ranked if max_distance is None or distance <= max_distance]
 
 
 def _least_shown(rows: list[IndexedFile], shown: dict[str, tuple[int, str]]) -> list[IndexedFile]:
