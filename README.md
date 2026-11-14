@@ -38,9 +38,10 @@ colours go together, so that several monitors show a coherent set. See
 Pre-alpha. v0.1.0 brought measuring, the library, the index, queries, the Wallhaven fetcher
 and test sets, with class thresholds calibrated on a Wallhaven sample; v0.2.0 adds the theme
 engine, interactive crops and search over the index; v0.3.0 a libadwaita template with a
-colour-scheme hook, record naming and hand-made derived files ([CHANGELOG.md](CHANGELOG.md)).
-Unreleased on main, for v0.4: a GTK4-only `libadwaita-vars` template that also sets
-libadwaita's CSS variables and GNOME's palette from the theme.
+colour-scheme hook, record naming and hand-made derived files; v0.4.0 optional version control
+(an `on_change` hook that can commit to git or git-annex, info files that keep their comments
+and merge by key), `amo edit`, and a GTK4 `libadwaita-vars` template
+([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
@@ -48,7 +49,7 @@ libadwaita's CSS variables and GNOME's palette from the theme.
 Pin a tag:
 
 ```sh
-pipx install git+https://github.com/antimike/amontillado@v0.3.0
+pipx install git+https://github.com/antimike/amontillado@v0.4.0
 ```
 
 From a checkout, for development: `just install-dev` (an editable pipx install), or

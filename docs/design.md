@@ -1510,17 +1510,21 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
    `amo config check` ("Per-app configuration").
 4. v0.3 (epic `amo-e0d`; released 2026-11-05): the `libadwaita` template, the `{variant}`
    reload placeholder for a colour-scheme hook, `amo name`, `amo add-derived`.
-5. v0.4 (epic `amo-j24`): `libadwaita-vars` (built 2026-11-06, amo-j24.2), `amo edit`
-   (built 2026-11-07, amo-2mf), and the git-annex libraries below.
-6. git-annex libraries (epic `amo-qnn`, part of v0.4): each root a git-annex repository, info files in git,
+5. v0.4 (epic `amo-j24`; released 2026-11-13): `libadwaita-vars` (amo-j24.2), `amo edit`
+   (amo-2mf), config commands under `sh -c` with AMO_* variables (amo-j24.3), ruamel.yaml
+   with info files updated in place (amo-j24.4), and the git-annex libraries below.
+6. git-annex libraries (epic `amo-qnn`, released in v0.4: absent content, `amo info
+   diff`/`merge`, the `on_change` hook and `amo hook git-commit`, docs/version-control.md):
+   each root a git-annex repository, info files in git,
    images annexed (SHA-256 keys, the same hash as each file's `sha256`); the index stays outside, in
    `$XDG_STATE_HOME`. The NSFW library is encrypted off-machine with git-remote-gcrypt and an
    encrypted annex remote, not git-crypt (spike amo-qnn.1, 2026-11-07: "git-annex libraries:
    decisions").
-   **This brings the first non-Python dependencies** (git-annex, written in Haskell;
-   git-remote-gcrypt and gnupg). They stay optional: amo never runs them itself, only the
-   opt-in `on_change` hook does ("git-annex libraries: decisions", 5), and `pipx install`
-   keeps working without them.
+   **This brings the first non-Python dependencies** (git, and for an annexed or encrypted
+   library git-annex, written in Haskell, git-remote-gcrypt and gnupg). They stay optional:
+   amo never runs them itself, only the opt-in `on_change` hook does (`amo hook git-commit`
+   runs git and git-annex; gcrypt and gnupg only through git's remotes), and `pipx install`
+   keeps working without them ("git-annex libraries: decisions", 5).
 
 ## Open questions
 
