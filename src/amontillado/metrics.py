@@ -236,13 +236,14 @@ def measure(rgb: np.ndarray) -> Metrics:
     )
 
 
-def palette(rgb: np.ndarray) -> Palette:
-    """The image's main colours and their shares of its pixels: k-means (PALETTE_COLOURS
-    centres, k-means++ from PALETTE_SEED, at most PALETTE_STEPS Lloyd steps) in OKLab over
-    every PALETTE_STEP-th pixel. Largest share first; shares rounded to 3 decimals, centres
-    that round to the same colour merged. Fewer colours for an image that has fewer."""
+def palette(rgb: np.ndarray, colours: int = PALETTE_COLOURS) -> Palette:
+    """The image's main colours and their shares of its pixels: k-means (`colours` centres:
+    PALETTE_COLOURS but when calibrating; k-means++ from PALETTE_SEED, at most PALETTE_STEPS
+    Lloyd steps) in OKLab over every PALETTE_STEP-th pixel. Largest share first; shares
+    rounded to 3 decimals, centres that round to the same colour merged. Fewer colours for an
+    image that has fewer."""
     lab = srgb_to_oklab(np.ascontiguousarray(rgb.reshape(-1, 3)[::PALETTE_STEP]))
-    centres = _kmeans_plus_plus(lab, PALETTE_COLOURS, np.random.default_rng(PALETTE_SEED))
+    centres = _kmeans_plus_plus(lab, colours, np.random.default_rng(PALETTE_SEED))
     labels = _nearest(lab, centres)
     for _ in range(PALETTE_STEPS):
         counts = np.bincount(labels, minlength=len(centres))
