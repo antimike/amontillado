@@ -7,7 +7,9 @@ rebuilt and is never dropped, except once when upgrading from schema 1, whose us
 keyed by content hash. Each file's size and mtime are kept beside its hash, so that the next
 `amo index` need not hash it again (`known_hashes`). Each record's info file is also kept whole,
 as JSON (`records.info`), and the `pictures` view flattens what `amo list --where` filters on
-(`matching_records`).
+(`matching_records`). The `directories` table is the snapshot of the record directories and
+their images that the index was built from (`library.snapshot`), kept current by `add` and
+`replace`, so that `amo list` can tell when the library has changed since (`saved_snapshot`).
 """
 
 from __future__ import annotations
@@ -20,13 +22,13 @@ from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
 
-from amontillado.library import Entry
+from amontillado.library import Entry, Snapshot, record_images
 from amontillado.metrics import Metrics
 from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 # `->` and `->>` came in SQLite 3.38; json_extract works before.
 JSON_ARROWS = (3, 38, 0)
 
@@ -80,6 +82,18 @@ CREATE TABLE files (
 )
 """
 _CREATE_FILES_SHA256 = "CREATE INDEX files_sha256 ON files (sha256)"
+# One row per record directory, indexed or not (record_id null): its images as a JSON array.
+_CREATE_DIRECTORIES = """
+CREATE TABLE directories (
+    path TEXT PRIMARY KEY,
+    record_id TEXT,
+    images TEXT NOT NULL
+)
+"""
+_UPSERT_DIRECTORY = """
+INSERT INTO directories VALUES (?, ?, ?)
+ON CONFLICT (path) DO UPDATE SET record_id = excluded.record_id, images = excluded.images
+"""
 _CREATE_USAGE = """
 CREATE TABLE IF NOT EXISTS usage (
     id TEXT PRIMARY KEY,
@@ -172,8 +186,11 @@ def connect(path: Path) -> sqlite3.Connection:
         if version in (2, 3, 4, 5, 6) and _has_table(conn, "files"):
             # Absent annex content was not indexed before schema 7.
             conn.execute("ALTER TABLE files ADD COLUMN absent INTEGER NOT NULL DEFAULT 0")
+        # Upgrading to schema 8 leaves `directories` out: what the index was built from is not
+        # known until the next `amo index`, so nothing is reported as changed before then.
         if not _has_table(conn, "records"):
             _create_tables(conn)
+            conn.execute(_CREATE_DIRECTORIES)
         conn.execute(_CREATE_USAGE)
         conn.execute(_CREATE_PICTURES)
         # PRAGMA takes no parameters; the value is a constant.
@@ -205,16 +222,26 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     conn.execute(_CREATE_FILES_SHA256)
 
 
-def rebuild(conn: sqlite3.Connection, entries: Iterable[Entry]) -> int:
-    """Replace the records and files tables with `entries`, in one transaction; returns the
-    record count."""
+def rebuild(
+    conn: sqlite3.Connection, entries: Iterable[Entry], snapshot: Snapshot | None = None
+) -> int:
+    """Replace the records and files tables with `entries`, and the directories table with
+    `snapshot` (left out when None: unknown), in one transaction; returns the record count."""
     entries = list(entries)
+    ids = {str(entry.directory): entry.id for entry in entries}
     conn.execute("BEGIN")
     try:
         conn.execute("DROP TABLE IF EXISTS files")
         conn.execute("DROP TABLE IF EXISTS records")
+        conn.execute("DROP TABLE IF EXISTS directories")
         _create_tables(conn)
         _insert(conn, entries)
+        if snapshot is not None:
+            conn.execute(_CREATE_DIRECTORIES)
+            conn.executemany(
+                "INSERT INTO directories VALUES (?, ?, ?)",
+                [(path, ids.get(path), json.dumps(images)) for path, images in snapshot.items()],
+            )
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
@@ -227,10 +254,30 @@ def add(conn: sqlite3.Connection, entry: Entry) -> None:
     conn.execute("BEGIN")
     try:
         _insert(conn, [entry])
+        _note_directory(conn, entry)
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
+
+
+def _note_directory(conn: sqlite3.Connection, entry: Entry) -> None:
+    """Bring the snapshot up to date with what was just done to one record's directory (it may
+    have moved: a rename)."""
+    if not _has_table(conn, "directories"):
+        return
+    conn.execute("DELETE FROM directories WHERE record_id = ?", (entry.id,))
+    images = json.dumps(record_images(entry.directory))
+    conn.execute(_UPSERT_DIRECTORY, (str(entry.directory), entry.id, images))
+
+
+def saved_snapshot(conn: sqlite3.Connection) -> Snapshot | None:
+    """The record directories and images the index was built from; None if not known (an
+    index upgraded from schema 7 or earlier, before its next `amo index`)."""
+    if not _has_table(conn, "directories"):
+        return None
+    rows = conn.execute("SELECT path, images FROM directories")
+    return {path: tuple(json.loads(images)) for path, images in rows}
 
 
 def _insert(conn: sqlite3.Connection, entries: list[Entry]) -> None:
@@ -389,6 +436,7 @@ def replace(conn: sqlite3.Connection, entry: Entry) -> None:
         conn.execute("DELETE FROM files WHERE record_id = ?", (entry.id,))
         conn.execute("DELETE FROM records WHERE id = ?", (entry.id,))
         _insert(conn, [entry])
+        _note_directory(conn, entry)
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
