@@ -52,14 +52,31 @@ apps on the settings portal switch too. Something else may already own it (darkm
 a timer), and setting it needs a D-Bus session. So amontillado only offers the variant to a
 command you write; with no such command, the scheme is never touched.
 
+## Following the scheme
+
+The other direction: when something else owns the scheme (a timer that switches it at dusk,
+darkman, a key), set `theme.variant: system` (or `--variant system`, or an app's own `variant`).
+amontillado then reads the scheme at every `amo theme apply`, from the settings portal through
+`gdbus`, else from `gsettings`, and renders that variant; a wallpaper change no longer lets the
+picture's lightness pick against the owner. `amo theme apply --variant dark` from the owner's
+own switch still works, but is no longer needed to keep later applies in step: a plain
+`amo theme apply` after the scheme changes re-renders in the new one. Without a session bus,
+without the GLib tools, or with no preference set (gsettings' `default`), it falls back to
+`auto` and warns.
+
+A hook that sets the scheme can stay under `system`: `AMO_VARIANT` is then the scheme amo just
+read, so the hook writes back the value already there (a `default` scheme becomes
+`prefer-light`, which looks the same). The owner stays the one that changes it.
+
 ## `AMO_VARIANT`
 
 Every reload command runs under `sh -c` with `AMO_VARIANT` in its environment, `dark` or
 `light` (besides `AMO_WALLPAPER`, `AMO_PROFILE` and `AMO_DIR`: design.md, "Config"):
 
 - in an app's `reload` (`theme.apps.<app>.reload`): the variant that app was rendered in, which
-  is `theme.apps.<app>.variant`, else `--variant`, else `theme.variant`, with `auto` resolved
-  (the picture's lightness, else the palette's dark variant) and a variant the palette lacks
+  is `theme.apps.<app>.variant`, else `--variant`, else `theme.variant`, with `system` resolved
+  (the desktop's scheme, else `auto`), `auto` resolved (the picture's lightness, else the
+  palette's dark variant) and a variant the palette lacks
   replaced by the one it has, as the render does;
 - in the wallpaper hook (`theme.wallpaper.reload`): the same for an app without its own variant.
 
