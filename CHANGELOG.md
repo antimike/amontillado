@@ -16,6 +16,12 @@ All notable changes to amontillado are documented here. The format follows
 - `amo list --like PICTURE`: the matches ordered by how close their colours are to PICTURE's
   (the distance between their palettes), nearest first; `--max-distance D` keeps those within
   D. It excludes `--order` and `--random`.
+- `amo group [PICTURE] --monitor NAME=W:H...`: one picture per monitor, the first monitor's
+  (the primary) PICTURE or the matching picture shown least, the others matching pictures whose
+  colours go with it, in least-shown or nearest order (`group.order`, `--order`), within
+  `group.max_distance` (`--max-distance`); each monitor gets its record's file of its ratio,
+  with `amo list --aspect`'s crop offer. Prints `NAME<TAB>PATH` per monitor, or JSON
+  (`--format json`). Monitors are given, not detected.
 
 ### Fixed
 
