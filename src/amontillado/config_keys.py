@@ -177,8 +177,10 @@ KEYS: tuple[Key, ...] = (
     Key(
         "theme.variant",
         "Which of the palette's variants is applied: auto (light when the picture's lightness "
-        "is above 0.65, else dark), dark or light. An app's own variant wins. A variant the "
-        "palette lacks warns and the app gets the one it has; nothing is inverted.",
+        "is above 0.65, else dark), dark, light, or system (the desktop's colour scheme, "
+        "read at apply time from the settings portal, else gsettings; auto with a warning when "
+        "neither has a preference). An app's own variant wins. A variant the palette lacks "
+        "warns and the app gets the one it has; nothing is inverted.",
         "auto",
         default="auto",
         choices=VARIANT_CHOICES,

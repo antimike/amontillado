@@ -265,6 +265,53 @@ def test_variant(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     assert [item.record["variant"] for item in built.rendered] == ["light", "dark"]
 
 
+@pytest.mark.parametrize("scheme", ["dark", "light"])
+def test_variant_system_follows_the_desktop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scheme: str
+) -> None:
+    reads: list[str] = []
+    monkeypatch.setattr("amontillado.theme.desktop_variant", lambda: reads.append(scheme) or scheme)
+    hook = 'gsettings set x color-scheme "prefer-$AMO_VARIANT"'
+    apps = {
+        "kitty": AppConfig(reload=hook),
+        "nvim": AppConfig(variant="system"),
+        "gtk": AppConfig(variant="dark"),
+    }
+    config = _config(tmp_path, **apps)
+    # A light picture: auto would say light whatever the desktop says.
+    both = _palette(variants=("dark", "light"), lightness=0.8)
+    built = plan(config, both, profile="default", variant="system", contrast="off")
+    assert [item.record["variant"] for item in built.rendered] == [scheme, scheme, "dark"]
+    assert built.variant == scheme
+    assert reads == [scheme]  # once per run, not per app
+    (kitty,) = reload_commands(config, built, tmp_path / "x")
+    assert kitty.env["AMO_VARIANT"] == scheme
+    # A per-app system under a global light reads the desktop for that app alone.
+    built = plan(config, both, profile="default", variant="light", contrast="off")
+    assert [item.record["variant"] for item in built.rendered] == ["light", scheme, "dark"]
+    assert built.variant == "light"
+
+
+def test_variant_system_without_a_scheme_is_auto(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("amontillado.theme.desktop_variant", lambda: "auto")
+    config = _config(tmp_path, kitty=AppConfig())
+    both = _palette(variants=("dark", "light"), lightness=0.8)
+    built = plan(config, both, profile="default", variant="system", contrast="off")
+    assert built.rendered[0].record["variant"] == "light"
+
+
+def test_variant_system_not_read_unless_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "amontillado.theme.desktop_variant", lambda: pytest.fail("read the desktop")
+    )
+    config = _config(tmp_path, kitty=AppConfig(variant="light"))
+    plan(config, _palette(), profile="default", variant="auto", contrast="off")
+
+
 def test_reload_commands(tmp_path: Path) -> None:
     apps = {
         "kitty": AppConfig(reload="pkill -USR1 kitty"),
@@ -376,3 +423,21 @@ def test_cli_dry_run_changes_nothing(home: Path, capsys: pytest.CaptureFixture[s
         'sh -c \'true "$AMO_PROFILE" "$AMO_VARIANT"\''
     )
     assert not (home / ".cache" / "theme").exists()
+
+
+@pytest.mark.parametrize("where", ["config", "flag"])
+def test_cli_variant_system(
+    home: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    monkeypatch.setattr("amontillado.theme.desktop_variant", lambda: "light")
+    _cli_setup(home)
+    config = home / ".config" / "amontillado" / "config.yaml"
+    data = yamlio.load(config.read_text())
+    if where == "config":
+        data["theme"]["variant"] = "system"
+    config.write_text(yamlio.dump(data))
+    palette = home / "p.yaml"
+    palette.write_text(dump_palette(_palette("cli", variants=("dark", "light"), lightness=0.2)))
+    flag = ["--variant", "system"] if where == "flag" else []
+    main(["theme", "apply", "--palette", str(palette), "--dry-run", *flag])
+    assert "AMO_VARIANT=light" in capsys.readouterr().out

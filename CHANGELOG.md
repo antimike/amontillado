@@ -6,6 +6,13 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `system` variant (`theme.variant`, `--variant`, `theme.apps.<app>.variant`): follows the
+  desktop's colour scheme, read at every `amo theme apply` from the xdg settings portal
+  (`gdbus`), else `gsettings`; `auto` with a warning when neither has a preference. A timer or
+  darkman can own dark/light and a wallpaper change keeps to it.
+
 ## [0.4.0] - 2026-11-13
 
 Version control without coupling: amo stays plain files and never runs git itself, but an

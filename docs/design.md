@@ -732,11 +732,18 @@ the file does not give them:
 `warning` is `base0A` (yellow) rather than base24's `base0F` ("warning elements", usually brown):
 status bars and notifications expect yellow; a palette file can set it.
 
-**Variant** chooses which of the palette's variants is applied: `auto`, `dark` or `light`. It is
-set globally (`theme.variant`, default `auto`), per run (`--variant`), and per app
+**Variant** chooses which of the palette's variants is applied: `auto`, `dark`, `light` or
+`system`. It is set globally (`theme.variant`, default `auto`), per run (`--variant`), and per app
 (`apps.<app>.variant`, which wins over both). `auto` is light when the picture's `lightness`
 metric is above the `--light` threshold (0.65), dark otherwise; for a palette without a picture,
-its dark variant if it has one. A variant the palette lacks (a one-variant preset) is a warning,
+its dark variant if it has one. `system` follows the desktop's colour scheme, read once per
+`amo theme apply` (and only when some variant in play is `system`): the xdg settings portal's
+`org.freedesktop.appearance color-scheme` through `gdbus` (1 dark, 2 light), else gsettings'
+`org.gnome.desktop.interface color-scheme` (`prefer-dark`, `prefer-light`). With no preference
+from either (portal 0, gsettings `default`) or neither readable (no session bus, no GLib tools),
+it is `auto` with a warning naming why. It lets something else own the dark/light choice (a
+timer, darkman) while every later apply, a wallpaper change included, keeps to it
+([colour-scheme-hooks.md](colour-scheme-hooks.md), "Following the scheme"). A variant the palette lacks (a one-variant preset) is a warning,
 and the app gets the variant the palette has: amontillado never makes a variant by inverting a
 palette (the chezmoi plan dropped inversion: it does not give good contrast). Formats that
 address both variants at once (the matugen view's `.dark` and `.light`) get both when the

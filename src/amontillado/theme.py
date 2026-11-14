@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
@@ -24,6 +24,7 @@ from amontillado import yamlio
 from amontillado.classes import LIGHT_MIN
 from amontillado.config import AppConfig, Config, ThemeConfig, shell_status, xdg_dir
 from amontillado.contrast import apply_contrast
+from amontillado.desktop import desktop_variant
 from amontillado.generators import GeneratorError, matugen_render
 from amontillado.matugen import MatugenError, material_view, render_matugen
 from amontillado.palette import Palette, dump_palette, load_palette
@@ -99,7 +100,8 @@ def applied_palette(theme: ThemeConfig, profile: str) -> Palette:
 
 
 def choose_variant(palette: Palette, wanted: str) -> str:
-    """`wanted` (auto, dark or light) as a variant `palette` has; a missing one warns."""
+    """`wanted` (auto, dark or light: plan resolves system) as a variant `palette` has; a
+    missing one warns."""
     if wanted == "auto":
         lightness = palette.source.get("lightness")
         if isinstance(lightness, (int, float)) and not isinstance(lightness, bool):
@@ -233,17 +235,18 @@ def plan(
     names = list(only) or list(theme.apps)
     if not names:
         logger.warning("no apps under theme.apps: only the palette is written")
+    variant, apps_config = _resolve_system(variant, {name: theme.apps[name] for name in names})
     # The picture the profile will hold: under --app the copy keeps the current one.
     picture = current_wallpaper if only else wallpaper
     # Every render_with: matugen app in one matugen run per variant, in config order.
-    by_matugen = {n: theme.apps[n] for n in names if theme.apps[n].render_with == "matugen"}
+    by_matugen = {n: app for n, app in apps_config.items() if app.render_with == "matugen"}
     from_matugen = {}
     if by_matugen:
         matugen_apps = render_with_matugen(by_matugen, palette, variant, picture)
         from_matugen = {item.app: item for item in matugen_apps}
     rendered = [
-        from_matugen.get(name) or render_app(name, theme.apps[name], palette, variant, picture)
-        for name in names
+        from_matugen.get(name) or render_app(name, app, palette, variant, picture)
+        for name, app in apps_config.items()
     ]
     apps = {} if not only else {k: v for k, v in old_apps.items() if k in theme.apps}
     apps.update({item.app: item.record for item in rendered})
@@ -255,6 +258,18 @@ def plan(
         wallpaper = None  # the copy keeps its link
     resolved = choose_variant(palette, variant)
     return Plan(profile, palette, rendered, apps, copy_from, wallpaper, resolved)
+
+
+def _resolve_system(variant: str, apps: dict[str, AppConfig]) -> tuple[str, dict[str, AppConfig]]:
+    """`variant` and `apps` with `system` replaced by the desktop's colour scheme, read once."""
+    if variant != "system" and all(app.variant != "system" for app in apps.values()):
+        return variant, apps
+    scheme = desktop_variant()
+    apps = {
+        name: replace(app, variant=scheme) if app.variant == "system" else app
+        for name, app in apps.items()
+    }
+    return scheme if variant == "system" else variant, apps
 
 
 def _applied_apps(directory: Path) -> dict[str, dict[str, str]]:
