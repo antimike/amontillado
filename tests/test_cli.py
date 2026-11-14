@@ -645,6 +645,93 @@ def test_list_like_without_palettes(
         main(["list", "--like", str(indexed["black"])])
 
 
+def _group(capsys: pytest.CaptureFixture[str], *args: str) -> list[tuple[str, str]]:
+    capsys.readouterr()
+    main(["group", *args, "--non-interactive"])
+    lines = capsys.readouterr().out.splitlines()
+    return [(name, Path(path).stem) for name, path in (line.split("\t") for line in lines)]
+
+
+@pytest.fixture
+def grouped(indexed: dict[str, Path], library: Path) -> dict[str, Path]:
+    """`indexed` and a maroon record, 0.27 from red (black 0.68, white 0.45, noise 0.31)."""
+    indexed["maroon"] = _record(library / "maroon", (128, 0, 0), "maroon.png")
+    main(["index"])
+    return indexed
+
+
+def test_group_picks_compatible_companions(
+    grouped: dict[str, Path], capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    red = str(grouped["red"])
+    monitors = ["--monitor", "DP-1=16:9", "--monitor", "HDMI-1=16:9"]
+    assert _group(capsys, red, *monitors, "--max-distance", "0.28") == [
+        ("DP-1", "red"),
+        ("HDMI-1", "maroon"),
+    ]
+    assert "too few" not in caplog.text
+    # Nothing within 0.05: the nearest beyond fill in, with a warning.
+    three = [*monitors, "--monitor", "DP-2=16:9"]
+    assert _group(capsys, red, *three, "--order", "nearest") == [
+        ("DP-1", "red"),
+        ("HDMI-1", "maroon"),
+        ("DP-2", "noise"),
+    ]
+    assert "the nearest beyond for HDMI-1, DP-2" in caplog.text
+
+
+def test_group_json(grouped: dict[str, Path], capsys: pytest.CaptureFixture[str]) -> None:
+    capsys.readouterr()
+    main(["group", str(grouped["red"]), "--monitor", "A=16:9", "--monitor", "B=16:9",
+          "--order", "nearest", "--format", "json"])  # fmt: skip
+    data = json.loads(capsys.readouterr().out)
+    assert data["primary"] == "A"
+    first, second = data["monitors"]
+    assert first == {"name": "A", "aspect": "16:9", "path": str(grouped["red"]),
+                     "record": _id(grouped["red"]), "distance": 0.0}  # fmt: skip
+    assert (second["name"], second["path"]) == ("B", str(grouped["maroon"]))
+    assert second["distance"] == pytest.approx(0.27, abs=0.01)
+
+
+def test_group_primary_is_the_least_shown_match(
+    grouped: dict[str, Path], home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for name in ("black", "white", "noise", "maroon"):
+        _shown_at(home, grouped[name], 1)
+    monitors = ["--monitor", "A=16:9", "--monitor", "B=16:9", "--order", "nearest"]
+    assert _group(capsys, *monitors) == [("A", "red"), ("B", "maroon")]
+    # Filters apply to every monitor's picture: only black is dark (private is NSFW).
+    with pytest.raises(SystemExit, match="none left for monitor B"):
+        _group(capsys, *monitors, "--dark")
+
+
+def test_group_falls_back_to_the_default_file(
+    grouped: dict[str, Path], capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    red = str(grouped["red"])
+    assert _group(capsys, red, "--monitor", "UW=21:9")[0] == ("UW", "red")
+    assert f"UW: no 21:9 file for {red}; using the default file" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("args", "error"),
+    [
+        (["--monitor", "A=16:9", "--monitor", "A=21:9"], "each monitor once"),
+        (["--monitor", "A=16:9", "/nowhere"], "no such file"),
+    ],
+)
+def test_group_refuses(grouped: dict[str, Path], args: list[str], error: str) -> None:
+    with pytest.raises(SystemExit, match=error):
+        main(["group", *args])
+
+
+@pytest.mark.parametrize("monitor", ["16:9", "=16:9", "A=wide"])
+def test_group_monitor_syntax(grouped: dict[str, Path], monitor: str) -> None:
+    with pytest.raises(SystemExit) as raised:
+        main(["group", "--monitor", monitor])
+    assert raised.value.code == 2
+
+
 def _stale_warning(
     capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
 ) -> str | None:

@@ -555,6 +555,9 @@ amo list [FILTERS] [--aspect W:H] [--purity LIST]
                                      matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
+amo group [PICTURE] --monitor NAME=W:H... [FILTERS] [--purity LIST] [--order least-shown|nearest]
+          [--max-distance D] [--format tsv|json] [--non-interactive] [--dry-run]
+                                     one picture per monitor, colours going together ("Grouping")
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
 amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
@@ -1586,18 +1589,27 @@ amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--puri
           [--non-interactive] [--apply] [--dry-run]
 ```
 
-- **Monitors** are given in order, at least one; the first is the primary. Each monitor's file
-  is chosen for its W:H as `--aspect` does, with the same crop offer and fallback ("Records").
-- **The primary** is PICTURE if given, else the first record matching the filters in `amo list
-  --order least-shown` order (never shown first, ties at random).
-- **Companions** are the other records matching the same filters (and purity) and compatible
-  with the primary, distinct, taken in `--order`: `least-shown` (default, `group.order`) explores
-  the library, `nearest` gives the most coherent set. Compatibility is to the primary only: the
-  theme comes from it. Too few compatible records: the nearest beyond the bound fill the rest,
-  with a warning; fewer records than monitors is an error.
+- **Monitors** are given in order, at least one, each name once; the first is the primary. Each
+  monitor's file is chosen for its W:H as `--aspect` does, with the same crop offer (one
+  question for all the monitors lacking a file of their ratio) and fallback ("Records");
+  `--dry-run` never crops, taking the fallback.
+- **The primary** is PICTURE if given (any form under "Lookup"; a file path is that file; it
+  need not match the filters, and must be here and have a palette), else the first record
+  matching the filters in `amo list --order least-shown` order (never shown first, ties at
+  random).
+- **Companions** are the other records matching the same filters (and purity), through their
+  file for their monitor's ratio, and compatible with the primary, distinct, taken in
+  `--order`: `least-shown` (default, `group.order`) explores the library, `nearest` gives the
+  most coherent set. Monitors are filled in the order given, each with the first such record
+  left. Compatibility is to the primary only: the theme comes from it. Too few compatible
+  records: the nearest beyond the bound (`--max-distance`, default `group.max_distance`) fill
+  the rest, with a warning naming the monitors; a monitor with no matching record left is an
+  error. Records without a palette yet are left out with one warning.
 - **Output**: `--format tsv` (default) prints `NAME<TAB>PATH` per monitor in the order given, so
   the first line is the primary and `amo theme apply` takes its path; `--format json` prints
-  `{"primary": NAME, "monitors": [{"name", "aspect", "path", "record", "distance"}, ...]}`.
+  `{"primary": NAME, "monitors": [{"name", "aspect", "path", "record", "distance"}, ...]}`, the
+  record by name or else id, the distance to the primary's palette to 3 decimals (0 for the
+  primary).
 - **Setting the wallpapers** (amo-6f0.6): `group.setter`, a config command run once per monitor
   under `sh -c` with `AMO_MONITOR` and `AMO_WALLPAPER` ("Config"), only with `--apply`, which
   also records each picture as shown (as `amo shown`). The config template carries commented

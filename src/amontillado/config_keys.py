@@ -14,8 +14,10 @@ from dataclasses import dataclass
 from amontillado import yamlio
 from amontillado.config import (
     CONTRAST_CHOICES,
+    DEFAULT_MAX_DISTANCE,
     FORMATS,
     GENERATORS,
+    GROUP_ORDERS,
     HUES_CHOICES,
     PREVIEWS,
     RENDERERS,
@@ -134,6 +136,29 @@ KEYS: tuple[Key, ...] = (
     Key(
         f"edit.tools.{TOOL}.description",
         "One line on what the tool is for, shown by amo edit --list-tools.",
+    ),
+    Key(
+        "group",
+        "amo group: one picture per monitor, the others going with the first (docs/design.md, "
+        '"Grouping (v0.7)").',
+    ),
+    Key(
+        "group.max_distance",
+        "How close (palette distance) a picture must be to the primary monitor's to go with it: "
+        "0 is identical colours, about 0.03 the typical nearest neighbour, 0.09 two pictures "
+        "picked at random. Lower gives more coherent sets from fewer pictures. Too few within "
+        "it: the nearest beyond fill in, with a warning. --max-distance overrides it.",
+        str(DEFAULT_MAX_DISTANCE),
+        default=str(DEFAULT_MAX_DISTANCE),
+    ),
+    Key(
+        "group.order",
+        "The order amo group takes compatible pictures in: least-shown (fewest showings first, "
+        "so successive groups explore the library) or nearest (the closest colours first, the "
+        "most coherent set). --order overrides it.",
+        "least-shown",
+        default="least-shown",
+        choices=GROUP_ORDERS,
     ),
     Key(
         "on_change",

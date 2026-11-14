@@ -41,6 +41,7 @@ from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
     API_KEY_VARIABLE,
     GENERATORS,
+    GROUP_ORDERS,
     HUES_CHOICES,
     VARIANT_CHOICES,
     Config,
@@ -61,7 +62,7 @@ from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.gitcommit import HookError, annex_repository, git_commit
-from amontillado.grouping import palette_distance
+from amontillado.grouping import Choice, GroupError, Monitor, companions, palette_distance
 from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
@@ -344,6 +345,83 @@ def build_parser() -> argparse.ArgumentParser:
         "by its record's thumbnail as the icon (\\0icon\\x1f<thumbnail>), if it has one.",
     )
     list_.set_defaults(func=cmd_list)
+
+    group = commands.add_parser(
+        "group",
+        help="Pick one picture per monitor, colours going together.",
+        description="Pick a picture for each monitor: the first monitor's (the primary, whose "
+        "picture themes the desktop: amo theme apply) is PICTURE, or the matching picture "
+        "shown least; each other monitor's is a matching picture whose colours go with it "
+        "(palette distance within group.max_distance), each record once. Prints NAME<TAB>PATH "
+        "per monitor, in the order given. Monitors are not detected: give them.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(group, argparse.SUPPRESS)
+    group.add_argument(
+        "picture",
+        nargs="?",
+        metavar="PICTURE",
+        help="The primary monitor's picture: a file or record directory, a record name, an id, "
+        "or a unique prefix of one. Default: the matching picture shown least (as amo list "
+        "--order least-shown).",
+    )
+    group.add_argument(
+        "--monitor",
+        action="append",
+        required=True,
+        type=_monitor,
+        dest="monitors",
+        metavar="NAME=W:H",
+        help="A monitor and its aspect ratio, e.g. DP-1=21:9; repeat for each, the primary "
+        "first. Each gets its record's file of that ratio, as amo list --aspect picks it.",
+    )
+    _add_look(group)
+    group.add_argument(
+        "--purity",
+        type=_purities,
+        metavar="LIST",
+        help="Comma-separated purities to include (sfw, sketchy, nsfw), as for amo list. "
+        "Default: sfw only, NSFW root excluded.",
+    )
+    group.add_argument(
+        "--order",
+        choices=GROUP_ORDERS,
+        help=flag_help(
+            "group.order",
+            "The order compatible pictures are taken in: least-shown (explores the library) or "
+            "nearest (the most coherent set)",
+        ),
+    )
+    group.add_argument(
+        "--max-distance",
+        type=_distance,
+        metavar="D",
+        help=flag_help(
+            "group.max_distance",
+            "How close a picture's colours must be to the primary's (palette distance); too "
+            "few that close: the nearest beyond fill in, with a warning",
+        ),
+    )
+    group.add_argument(
+        "--format",
+        choices=("tsv", "json"),
+        default="tsv",
+        help='tsv: NAME<TAB>PATH per monitor. json: {"primary": NAME, "monitors": [{"name", '
+        '"aspect", "path", "record", "distance"}, ...]}, for a setter that sets every monitor '
+        "in one call.",
+    )
+    group.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Never ask (as when stdin or stderr is not a terminal): a picture without a file "
+        "of its monitor's ratio gets its default file.",
+    )
+    group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Crop nothing: a picture without a file of its monitor's ratio gets its default file.",
+    )
+    group.set_defaults(func=cmd_group)
 
     shown = commands.add_parser(
         "shown",
@@ -1070,6 +1148,14 @@ def _fraction(value: str) -> float:
     return number
 
 
+def _monitor(value: str) -> Monitor:
+    name, separator, ratio = value.partition("=")
+    if not separator or not name.strip():
+        raise argparse.ArgumentTypeError("must be NAME=W:H, for example DP-1=21:9")
+    aspect = _aspect(ratio)
+    return Monitor(name.strip(), aspect.ratio, aspect.label.replace("x", ":"))
+
+
 def _distance(value: str) -> float:
     number = float(value)
     if not number >= 0:  # NaN too
@@ -1224,6 +1310,148 @@ def cmd_list(args: argparse.Namespace) -> None:
             print(f"{path}\0icon\x1f{row.thumbnail}")
         else:
             print(path)
+
+
+def cmd_group(args: argparse.Namespace) -> None:
+    names = [monitor.name for monitor in args.monitors]
+    if len(set(names)) < len(names):
+        sys.exit("amontillado: --monitor: each monitor once")
+    config = _load_config()
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    max_distance = config.group.max_distance if args.max_distance is None else args.max_distance
+    nearest = (args.order or config.group.order) == "nearest"
+    primary_monitor, *others = args.monitors
+    try:
+        with closing(connect(config.index_path)) as conn:
+            shown = usage(conn)
+            saved = saved_snapshot(conn) if config.check_stale_index else None
+            given = _group_primary(conn, args.picture, primary_monitor) if args.picture else None
+            by_record: dict[str, list[IndexedFile]] = {}
+            for row in files(conn):
+                if not row.absent:
+                    by_record.setdefault(row.record_id, []).append(row)
+            record_names = {record_id: record_name(conn, record_id) for record_id in by_record}
+    except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+        _index_error(config, exc)
+    if saved is not None:
+        _warn_if_stale(config, saved)
+    look = _look(args)
+
+    def accept(row: IndexedFile) -> bool:
+        return (
+            _matches(row, args, look, config) and row.path.is_file() and not annex_absent(row.path)
+        )
+
+    def file_for(record_id: str, ratio: float) -> IndexedFile:
+        return _pick(by_record[record_id], ratio)
+
+    # Least shown first: the primary's order, and the companions' unless --order nearest.
+    order = [row.record_id for row in _least_shown([g[0] for g in by_record.values()], shown)]
+    unmeasured = [r for r in order if not file_for(r, primary_monitor.ratio).metrics.palette]
+    if unmeasured:
+        logger.warning(
+            "no palette yet: %s left out; run `amo index`", _count(len(unmeasured), "picture")
+        )
+    primary = given or next(
+        (
+            file
+            for record_id in order
+            if (file := file_for(record_id, primary_monitor.ratio)).metrics.palette and accept(file)
+        ),
+        None,
+    )
+    if primary is None:
+        sys.exit("amontillado: no matching pictures")
+    try:
+        chosen = [
+            Choice(primary_monitor, primary, 0.0),
+            *companions(
+                primary, others, order, file_for, accept, max_distance=max_distance, nearest=nearest
+            ),
+        ]
+    except GroupError as exc:
+        sys.exit(f"amontillado: {exc}")
+    beyond = [choice.monitor.name for choice in chosen if choice.beyond]
+    if beyond:
+        logger.warning(
+            "too few pictures within %s of the primary's colours: the nearest beyond for %s",
+            max_distance,
+            ", ".join(beyond),
+        )
+    paths = _group_crops(config, args, chosen)
+    _print_group(args.format, chosen, paths, record_names)
+
+
+def _group_primary(conn: sqlite3.Connection, query: str, monitor: Monitor) -> IndexedFile:
+    """The primary picture `amo group PICTURE` names: the file given, else its record's file
+    for the monitor's ratio. Exits if it is not here or has no palette."""
+    try:
+        record_id = find_record(conn, query)
+    except LookupFailed as exc:
+        sys.exit(f"amontillado: {exc}")
+    group = [row for row in files(conn, record_id) if not row.absent]
+    given = Path(query).absolute()
+    chosen = next((row for row in group if row.path == given), None)
+    if chosen is None and group:
+        chosen = _pick(group, monitor.ratio)
+    if chosen is None or annex_absent(chosen.path):
+        sys.exit(f"amontillado: {query}: its content is not here; `git annex get` it")
+    if not chosen.path.is_file():
+        sys.exit(f"amontillado: {chosen.path} is missing; run `amo index`")
+    if not chosen.metrics.palette:
+        sys.exit(f"amontillado: {chosen.path} has no palette yet; run `amo index`")
+    return chosen
+
+
+def _group_crops(
+    config: Config, args: argparse.Namespace, chosen: list[Choice]
+) -> dict[Path, Path]:
+    """Each chosen file's path, or a crop of its record to its monitor's ratio where it has no
+    file of that ratio and the user takes the offer (as for amo list --aspect)."""
+    paths = {choice.file.path: choice.file.path for choice in chosen}
+    fallbacks = [c for c in chosen if not has_aspect(c.file.width, c.file.height, c.monitor.ratio)]
+    if not fallbacks:
+        return paths
+    answer = "no"
+    if not args.dry_run and _may_ask(args):
+        answer = _ask_crop(
+            f"no file of its monitor's ratio for {_count(len(fallbacks), 'picture')}; crop"
+        )
+    if answer != "no":
+        for monitor in dict.fromkeys(c.monitor for c in fallbacks):
+            rows = [c.file for c in fallbacks if c.monitor == monitor]
+            aspect = Aspect(monitor.ratio, monitor.aspect.replace(":", "x"))
+            paths.update(_crop_all(config, rows, aspect, answer == "interactive"))
+    for choice in fallbacks:
+        if paths[choice.file.path] == choice.file.path:
+            logger.warning(
+                "%s: no %s file for %s; using the default file",
+                choice.monitor.name,
+                choice.monitor.aspect,
+                choice.file.path,
+            )
+    return paths
+
+
+def _print_group(
+    format_: str, chosen: list[Choice], paths: dict[Path, Path], names: dict[str, str | None]
+) -> None:
+    if format_ == "tsv":
+        for choice in chosen:
+            print(f"{choice.monitor.name}\t{paths[choice.file.path]}")
+        return
+    monitors = [
+        {
+            "name": choice.monitor.name,
+            "aspect": choice.monitor.aspect,
+            "path": str(paths[choice.file.path]),
+            "record": names.get(choice.file.record_id) or choice.file.record_id,
+            "distance": round(choice.distance, 3),
+        }
+        for choice in chosen
+    ]
+    print(json.dumps({"primary": chosen[0].monitor.name, "monitors": monitors}, indent=2))
 
 
 def _warn_if_stale(config: Config, saved: Snapshot) -> None:
