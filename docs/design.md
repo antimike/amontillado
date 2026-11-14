@@ -1510,7 +1510,7 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
    `amo config check` ("Per-app configuration").
 4. v0.3 (epic `amo-e0d`; released 2026-11-05): the `libadwaita` template, the `{variant}`
    reload placeholder for a colour-scheme hook, `amo name`, `amo add-derived`.
-5. v0.4 (epic `amo-j24`; released 2026-11-10): `libadwaita-vars` (amo-j24.2), `amo edit`
+5. v0.4 (epic `amo-j24`; released 2026-11-13): `libadwaita-vars` (amo-j24.2), `amo edit`
    (amo-2mf), config commands under `sh -c` with AMO_* variables (amo-j24.3), ruamel.yaml
    with info files updated in place (amo-j24.4), and the git-annex libraries below.
 6. git-annex libraries (epic `amo-qnn`, released in v0.4: absent content, `amo info

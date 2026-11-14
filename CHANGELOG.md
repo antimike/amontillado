@@ -6,7 +6,7 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-11-10
+## [0.4.0] - 2026-11-13
 
 Version control without coupling: amo stays plain files and never runs git itself, but an
 opt-in `on_change` hook (and the shipped `amo hook git-commit`) commits what each command
