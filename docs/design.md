@@ -1573,7 +1573,7 @@ groups with mostly black pictures. To look at in calibration (amo-6f0.4).
 Agreed with MH 2026-11-13 (spike amo-50c.1). The experiment: 8 random anchors from the 400
 calibration thumbnails, the 5 nearest of each under the existing metrics (a mean colour from
 `lightness`, `chroma` and `hue`, plus `hue_spread`) and under a 6-colour k-means palette, judged
-by eye on a contact sheet.
+by eye on a contact sheet (`just grouping-sheet`, tools/grouping_sheet.py, reproduces it).
 
 1. **A stored palette, not the existing metrics.** The palette's neighbours were clearly better
    for 5 anchors and as good for the rest; the two agreed on 1.1 of 5 neighbours on average. A
