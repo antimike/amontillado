@@ -23,8 +23,11 @@ from amontillado.index import (
     matching_records,
     rebuild,
     record_shown,
+    saved_snapshot,
     usage,
 )
+from amontillado.index import add as add_to_index
+from amontillado.index import replace as replace_in_index
 from amontillado.library import heal_library
 from amontillado.metrics import Metrics
 
@@ -111,6 +114,59 @@ def test_source_fields(config: Config, save_image: SaveImage) -> None:
     assert row[3:] == ("wallhaven", "123456")
 
 
+def test_rebuild_saves_the_snapshot(config: Config, save_image: SaveImage) -> None:
+    red, grey = _two_records(config, save_image)
+    both = mark_record(config.library_roots[0] / "both").parent
+    (both / "info.yml").write_text("")
+    report = heal_library(config)
+    conn = connect(config.index_path)
+    assert saved_snapshot(conn) == {}
+    rebuild(conn, report.entries)
+    assert saved_snapshot(conn) is None  # not given: unknown
+    rebuild(conn, report.entries, report.snapshot)
+    assert saved_snapshot(conn) == {
+        str(red): ("big.png", "small.png"),
+        str(grey): ("a.png",),
+        str(both): (),
+    }
+    ids = dict(conn.execute("SELECT path, record_id FROM directories").fetchall())
+    assert ids[str(both)] is None
+    assert ids[str(red)] == next(e.id for e in report.entries if e.directory == red)
+
+
+def test_add_and_replace_keep_the_snapshot(config: Config, save_image: SaveImage) -> None:
+    red, _ = _two_records(config, save_image)
+    report = heal_library(config)
+    conn = connect(config.index_path)
+    entry = next(e for e in report.entries if e.directory == red)
+    rebuild(conn, [e for e in report.entries if e is not entry], report.snapshot)
+    save_image(red / "edit.png", (255, 0, 0))
+    add_to_index(conn, entry)
+    assert saved_snapshot(conn)[str(red)] == ("big.png", "edit.png", "small.png")
+    # A rename: the record's row moves with it.
+    moved = red.with_name("crimson")
+    red.rename(moved)
+    replace_in_index(conn, replace(entry, directory=moved))
+    snapshot = saved_snapshot(conn)
+    assert str(red) not in snapshot
+    assert snapshot[str(moved)] == ("big.png", "edit.png", "small.png")
+
+
+def test_upgrading_leaves_the_snapshot_unknown(config: Config, save_image: SaveImage) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    report = heal_library(config)
+    conn = connect(config.index_path)
+    rebuild(conn, report.entries, report.snapshot)
+    _as_schema(conn, 7)
+    conn.close()
+    conn = connect(config.index_path)
+    assert saved_snapshot(conn) is None
+    replace_in_index(conn, report.entries[0])
+    assert saved_snapshot(conn) is None
+    rebuild(conn, report.entries, report.snapshot)
+    assert saved_snapshot(conn) == report.snapshot
+
+
 def test_failed_rebuild_keeps_the_old_rows(config: Config, save_image: SaveImage) -> None:
     save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
     entries = heal_library(config).entries
@@ -132,6 +188,8 @@ def test_metric_columns_follow_the_dataclass(config: Config) -> None:
 def _as_schema(conn: sqlite3.Connection, version: int) -> None:
     """Make the index look as schema `version` left it: no view, fewer columns."""
     conn.execute("DROP VIEW pictures")
+    if version <= 7:
+        conn.execute("DROP TABLE IF EXISTS directories")
     dropped: dict[str, list[str]] = {"records": [], "files": []}
     if version <= 6:
         dropped["files"].append("absent")

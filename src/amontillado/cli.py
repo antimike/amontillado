@@ -79,6 +79,7 @@ from amontillado.index import (
     record_location,
     record_name,
     record_shown,
+    saved_snapshot,
     unnamed,
     usage,
 )
@@ -96,6 +97,7 @@ from amontillado.library import (
     CropError,
     NamingError,
     Report,
+    Snapshot,
     add_derived,
     add_picture,
     additions_from_json,
@@ -105,6 +107,8 @@ from amontillado.library import (
     heal_library,
     name_record,
     place,
+    snapshot,
+    snapshot_changes,
 )
 from amontillado.metrics import HUE_NAMES, Metrics, measure_file
 from amontillado.palette import (
@@ -1112,7 +1116,7 @@ def cmd_index(args: argparse.Namespace) -> None:
     else:
         try:
             with closing(connect(config.index_path)) as conn:
-                count = rebuild(conn, report.entries)
+                count = rebuild(conn, report.entries, report.snapshot)
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             _index_error(config, exc)
         logger.info("%s", _summary(f"indexed {_count(count, 'record')}", report, False))
@@ -1132,6 +1136,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         with closing(connect(config.index_path)) as conn:
             wanted = matching_records(conn, search) if search else None
             shown = usage(conn) if args.order == "least-shown" else {}
+            saved = saved_snapshot(conn) if config.check_stale_index else None
             by_record: dict[str, list[IndexedFile]] = {}
             for row in files(conn):
                 # Annexed content not on this machine cannot be shown.
@@ -1143,6 +1148,8 @@ def cmd_list(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: {exc}")
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
+    if saved is not None:
+        _warn_if_stale(config, saved)
     ratio = args.aspect.ratio if args.aspect is not None else None
     rows = [_pick(group, ratio) for group in by_record.values()]
     look = _look(args)
@@ -1186,6 +1193,22 @@ def cmd_list(args: argparse.Namespace) -> None:
             print(f"{path}\0icon\x1f{row.thumbnail}")
         else:
             print(path)
+
+
+def _warn_if_stale(config: Config, saved: Snapshot) -> None:
+    """Warn when record directories or their images were added or removed since the index was
+    built: what `amo list` prints may then be incomplete or gone."""
+    added, removed, changed = snapshot_changes(saved, snapshot(config))
+    parts = [
+        f"{_count(number, 'record')} {what}"
+        for number, what in ((added, "added"), (removed, "removed"), (changed, "changed"))
+        if number
+    ]
+    if parts:
+        logger.warning(
+            "the library has changed since the last `amo index` (%s); run `amo index`",
+            ", ".join(parts),
+        )
 
 
 def _least_shown(rows: list[IndexedFile], shown: dict[str, tuple[int, str]]) -> list[IndexedFile]:

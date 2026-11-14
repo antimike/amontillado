@@ -304,12 +304,18 @@ cannot be rebuilt):
   cache; only when it was measured).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (7); a newer one than the
+  table. The database's `PRAGMA user_version` is its schema version (8); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
   thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
   schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`),
   schemas 2 to 6 the `absent` column of `files`; upgrading adds them empty, for the next `amo index` to fill. The `pictures` view (columns
   under "CLI") is recreated on every open, so changing it needs no migration.
+- `directories` (schema 8, amo-50c.3): the snapshot the index was built from, one row per
+  record directory `amo index` found (indexable or not: a conflict is a record directory too)
+  with its record's id and the images directly in it. `amo index` rewrites it; commands that
+  update the index themselves (`amo add`, `crop`, `add-derived`, `edit`, `name`, `fetch`) update
+  their record's row, a rename moving it. Upgrading from schema 7 or earlier leaves it out
+  until the next `amo index`, so nothing is reported as changed before then.
 - `usage`: `id` (the record's), `shown_count`, `last_shown` (ISO 8601, UTC); later perhaps a
   rating. Keyed by record, so it follows a picture through renames and moves. Kept across
   rebuilds. The only mutable data; never written to info files, which keeps them stable under
@@ -610,6 +616,18 @@ first, ties in random order, so a rotation reaches every picture before repeatin
 varies. `--random N` then takes the first N in that order instead of N at random:
 `amo list --dark --order least-shown --random 1` is a wallpaper timer's next picture. Decided
 2026-11-13 (scope of v0.6), resolving the open question; `amo group` picks its primary this way.
+
+**Stale index** (amo-50c.3): `amo list` walks the roots as `amo index` does, reading no info
+file and hashing nothing, and compares the record directories and the image names in each with
+the `directories` snapshot; any difference is one warning (`the library has changed since the
+last amo index (1 record added, 1 record changed); run amo index`). It never re-indexes.
+`check_stale_index: false` in the config turns it off. Not seen: an image whose content changed
+under the same name (the hash cache's case, "Healing"). Cost: about 0.3 s warm for 10,000
+records (a synthetic annexed-style library; about 30 ms per 1,000). **Decision** (MH
+2026-11-13): names, not directory mtimes against the time of the last `amo index`, which was the
+first proposal: amo's own incremental commands change mtimes (so they would warn right after
+`amo add`), and so does the git-annex hook's `git annex add` (files replaced by symlinks)
+after amo has finished.
 
 `--format rofi` follows each path with its record's thumbnail as the icon
 (`PATH\0icon\x1fTHUMBNAIL`, for `rofi -dmenu -show-icons`); a record without one, or whose
@@ -1527,7 +1545,7 @@ share of the pixels, largest first, as `[hex, share]` pairs (shares to 3 decimal
 The k-means is deterministic (k-means++ from a fixed seed, at most 20 Lloyd steps), so
 measuring a file again writes the same palette and an info file under version control does not
 churn. Metrics version 3: `amo index` measures every file again once (the other metrics are
-unchanged). The index stores the palette as JSON in `files` (index schema 8). A file measured
+unchanged). The index stores the palette as JSON in `files` (index schema 9). A file measured
 before version 3 that is absent (annexed content not here) has no palette until its content is
 got; grouping skips it.
 
@@ -1656,5 +1674,3 @@ by eye on a contact sheet (`just grouping-sheet` reproduces it).
   of the calibration sample ("Calibration"). Raising it narrows `--hue` to images dominated by
   one hue: 0.45 leaves 77%, 0.50 73%, 0.55 67% (about the old coverage). Revisit if `--hue`
   results look too loose in use; it is a query-time threshold, so no metrics version is needed.
-- Index staleness: `amo list` trusts the index; whether it should detect changes since the last
-  `amo index` (a stat walk of the roots) and warn or refresh.

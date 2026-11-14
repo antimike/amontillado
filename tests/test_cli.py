@@ -603,6 +603,56 @@ def test_list_order_least_shown_breaks_ties_at_random(
     assert firsts == {"black", "white", "red", "noise"}
 
 
+def _stale_warning(
+    capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> str | None:
+    caplog.clear()
+    _list(capsys)
+    lines = [r.getMessage() for r in caplog.records if "changed since the last" in r.getMessage()]
+    return lines[0] if lines else None
+
+
+def test_list_warns_when_the_library_changed_since_amo_index(
+    indexed: dict[str, Path],
+    library: Path,
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    assert _stale_warning(capsys, caplog) is None
+    # What amo does itself keeps the index current: no warning.
+    loose = _save(np.full((36, 64, 3), (0, 0, 255), dtype=np.uint8), library / "blue.png")
+    main(["add", str(loose)])
+    main(["crop", str(library / "red"), "1:1"])
+    main(["name", str(library / "white"), "snow"])
+    assert _stale_warning(capsys, caplog) is None
+    # Done by hand, it is reported, never re-indexed.
+    _record(library / "green", (0, 255, 0))
+    shutil.rmtree(indexed["black"].parent)
+    _save(np.full((36, 64, 3), (9, 9, 9), dtype=np.uint8), library / "noise" / "more.png")
+    assert _stale_warning(capsys, caplog) == (
+        "the library has changed since the last `amo index` (1 record added, 1 record removed, "
+        "1 record changed); run `amo index`"
+    )
+    main(["index"])
+    assert _stale_warning(capsys, caplog) is None
+
+
+def test_list_stale_check_can_be_turned_off(
+    indexed: dict[str, Path],
+    library: Path,
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _record(library / "green", (0, 255, 0))
+    assert _stale_warning(capsys, caplog) is not None
+    config = home / ".config/amontillado/config.yaml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("check_stale_index: false\n")
+    assert _stale_warning(capsys, caplog) is None
+
+
 def test_list_format_rofi(
     indexed: dict[str, Path], library: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

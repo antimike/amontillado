@@ -73,6 +73,15 @@ KEYS: tuple[Key, ...] = (
         "key is never logged or written anywhere.",
         "pass show wallhaven/api-key",
     ),
+    Key(
+        "check_stale_index",
+        "Whether amo list warns when record directories or their images have been added or "
+        "removed since the last amo index (a walk of the roots, reading no info file). The "
+        "warning never re-indexes: run amo index.",
+        "true",
+        default="true",
+        choices=("true", "false"),
+    ),
     Key("crop", "amo crop --interactive: how it shows the picture and the box being placed."),
     Key(
         "crop.preview",
