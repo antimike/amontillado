@@ -35,7 +35,16 @@ logger = getLogger(__name__)
 
 APP = "amontillado"
 _KNOWN_KEYS = frozenset(
-    {"library_roots", "nsfw_root", "api_key_command", "crop", "edit", "on_change", "theme"}
+    {
+        "library_roots",
+        "nsfw_root",
+        "api_key_command",
+        "check_stale_index",
+        "crop",
+        "edit",
+        "on_change",
+        "theme",
+    }
 )
 API_KEY_VARIABLE = "WALLHAVEN_API_KEY"
 
@@ -166,6 +175,8 @@ class Config:
     edit: EditConfig = field(default_factory=EditConfig)
     # Run under sh -c once per root a command wrote to, the changes on stdin (amontillado.hook).
     on_change: str | None = None
+    # Whether amo list warns when the library has changed since the last amo index.
+    check_stale_index: bool = True
 
 
 def xdg_dir(variable: str, fallback: str) -> Path:
@@ -203,6 +214,9 @@ def load_config(path: Path | None = None) -> Config:
     command = settings.get("api_key_command")
     if command is not None and not (isinstance(command, str) and command.strip()):
         raise ConfigError("api_key_command must be a command line")
+    check_stale = settings.get("check_stale_index", True)
+    if not isinstance(check_stale, bool):
+        raise ConfigError("check_stale_index must be true or false")
 
     return Config(
         library_roots=tuple(roots),
@@ -213,6 +227,7 @@ def load_config(path: Path | None = None) -> Config:
         crop=_crop(settings.get("crop")),
         edit=_edit(settings.get("edit")),
         on_change=shell_command("on_change", settings.get("on_change")),
+        check_stale_index=check_stale,
     )
 
 

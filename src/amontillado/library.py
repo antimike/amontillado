@@ -246,23 +246,32 @@ def _walk(config: Config) -> Iterator[tuple[Path, Path, list[str], tuple[str, ..
     """Each directory under every root as `(directory, root, info files, images)`. Hidden
     directories are skipped, a record directory (info files, not the root) is not descended
     into, and a directory under two overlapping roots is visited under the first."""
-    seen: set[Path] = set()
+    seen: set[str] = set()
     for root in (*config.library_roots, config.nsfw_root):
         if not root.is_dir():
             logger.debug("%s: no such directory", root)
             continue
-        # os.walk does not follow directory symlinks, so a symlink cannot pull in another tree.
+        # os.walk does not follow directory symlinks, so a symlink cannot pull in another tree,
+        # and each directory's real path is the root's plus the rest: one resolve per root.
+        # Strings, not Paths, in this loop: `amo list` walks every root, and resolving or
+        # building a Path per directory and file made a 10,000-record walk 0.5-1 s, not 0.1.
+        root_text, real_root = str(root), str(root.resolve())
         for dirpath, dirnames, filenames in os.walk(root):
-            directory = Path(dirpath)
             # Hidden directories hold no records: .git (whose annex/objects hold images), .amo.
             dirnames[:] = sorted(name for name in dirnames if not name.startswith("."))
-            if directory.resolve() in seen:
+            real = real_root + dirpath[len(root_text) :]
+            if real in seen:
                 dirnames.clear()
                 continue
-            seen.add(directory.resolve())
+            seen.add(real)
+            directory = Path(dirpath)
             info = [name for name in INFO_NAMES if name in filenames]
             images = tuple(
-                sorted(name for name in filenames if Path(name).suffix.lower() in IMAGE_SUFFIXES)
+                sorted(
+                    name
+                    for name in filenames
+                    if os.path.splitext(name)[1].lower() in IMAGE_SUFFIXES
+                )
             )
             if info and directory != root:
                 # A record's files are directly inside it: records do not nest.
@@ -301,6 +310,15 @@ def snapshot(config: Config) -> Snapshot:
         for directory, root, info, images in _walk(config)
         if info and directory != root
     }
+
+
+def snapshot_changes(saved: Snapshot, now: Snapshot) -> tuple[int, int, int]:
+    """How many record directories were added, removed, and changed (an image added, removed
+    or renamed) from `saved` to `now`."""
+    added = len(now.keys() - saved.keys())
+    removed = len(saved.keys() - now.keys())
+    changed = sum(1 for path in now.keys() & saved.keys() if now[path] != saved[path])
+    return added, removed, changed
 
 
 def record_images(directory: Path) -> tuple[str, ...]:

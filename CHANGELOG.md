@@ -11,6 +11,9 @@ All notable changes to amontillado are documented here. The format follows
 - `amo list --order least-shown`: fewest showings first (as `amo shown` counts them), then the
   longest since last shown, ties in random order; `--random N` then takes the first N, so
   `amo list --order least-shown --random 1` rotates through the whole library.
+- `amo list` warns when record directories or their images were added or removed since the last
+  `amo index` (it never re-indexes); `check_stale_index: false` turns it off. Index schema 8
+  (upgrading stays quiet until the next `amo index`).
 
 ### Changed
 
