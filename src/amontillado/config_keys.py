@@ -54,6 +54,26 @@ def _or(choices: tuple[str, ...]) -> str:
     return ", ".join(choices[:-1]) + f" or {choices[-1]}"
 
 
+# Commented examples under group.setter, one monitor per call: (what for, the command).
+SETTER_EXAMPLES = (
+    ("hyprpaper >= 0.8", "'hyprctl hyprpaper wallpaper \"$AMO_MONITOR,$AMO_WALLPAPER,cover\"'"),
+    ("awww (swww before 0.12)", '\'awww img -o "$AMO_MONITOR" "$AMO_WALLPAPER"\''),
+    ("sway", '\'swaymsg output "$AMO_MONITOR" bg "$AMO_WALLPAPER" fill\''),
+    ("wpaperd", '\'wpaperctl set "$AMO_WALLPAPER" "$AMO_MONITOR"\''),
+    (
+        "xwallpaper (X11; if a call clears the other monitors, use one call as for feh)",
+        '\'xwallpaper --output "$AMO_MONITOR" --zoom "$AMO_WALLPAPER"\'',
+    ),
+)
+# Setters that take every monitor in one call, run from a script instead of group.setter.
+SETTER_NOTES = (
+    "swaybg sets every output from one process (-o NAME -i FILE -m fill for each): restart it",
+    "from a script that reads amo group's output, rather than through a setter.",
+    "feh (X11) assigns pictures by screen order in one call (give --monitor in that order):",
+    "  amo group --monitor ... | cut -f2 | xargs -d '\\n' feh --no-fehbg --bg-fill",
+)
+
+
 KEYS: tuple[Key, ...] = (
     Key(
         "library_roots",
@@ -159,6 +179,17 @@ KEYS: tuple[Key, ...] = (
         "least-shown",
         default="least-shown",
         choices=GROUP_ORDERS,
+    ),
+    Key(
+        "group.setter",
+        "The command amo group --apply runs once per monitor, by sh -c, to set its wallpaper: "
+        "AMO_MONITOR is the monitor's name as given to --monitor, AMO_WALLPAPER the picture; "
+        'quote them ("$AMO_WALLPAPER"). Its output goes to stderr; a failure fails amo group '
+        "(the pictures it did set are still counted as shown). amo knows no setter's syntax: "
+        "the example is hyprpaper's (>= 0.8); those below it were checked against each tool's "
+        "documentation in November 2026. Unset: --apply is refused; amo group only prints its "
+        "choice.",
+        SETTER_EXAMPLES[0][1],
     ),
     Key(
         "on_change",
@@ -461,6 +492,8 @@ def template() -> str:
             )
         if entry.path == "edit.tools":
             lines.extend(tool_example_lines(indent + "  "))
+        if entry.path == "group.setter":
+            lines.extend(setter_example_lines(indent))
     return "\n".join(lines) + "\n"
 
 
@@ -475,6 +508,16 @@ def _entry_keys(section: str, indent: str) -> list[str]:
     for entry in KEYS:
         if entry.path.startswith(prefix):
             lines.extend(_comment(f"{entry.name}: {_described(entry)}", indent, "  ", "      "))
+    return lines
+
+
+def setter_example_lines(indent: str = "  ") -> list[str]:
+    """The commented examples under group.setter, as the template has them."""
+    lines = [f"{indent}# Others, for your setter:"]
+    for what, command in SETTER_EXAMPLES[1:]:
+        lines.append(f"{indent}#   {what}:")
+        lines.append(f"{indent}#     setter: {command}")
+    lines.extend(f"{indent}# {note}" for note in SETTER_NOTES)
     return lines
 
 

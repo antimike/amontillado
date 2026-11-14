@@ -21,7 +21,7 @@ from rich.console import Console
 from amontillado import __version__, cli, yamlio
 from amontillado import library as library_module
 from amontillado.cli import get_cli_arguments, main
-from amontillado.index import connect, record_shown
+from amontillado.index import connect, record_shown, usage
 from amontillado.wallhaven import Client
 
 
@@ -723,6 +723,47 @@ def test_group_falls_back_to_the_default_file(
 def test_group_refuses(grouped: dict[str, Path], args: list[str], error: str) -> None:
     with pytest.raises(SystemExit, match=error):
         main(["group", *args])
+
+
+def _setter(home: Path, command: str) -> None:
+    config = home / ".config/amontillado/config.yaml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(yamlio.dump({"group": {"setter": command}}))
+
+
+def _shown_counts(home: Path) -> dict[str, int]:
+    with closing(connect(home / ".local/state/amontillado/index.sqlite")) as conn:
+        return {record_id: count for record_id, (count, _) in usage(conn).items()}
+
+
+def test_group_apply_runs_the_setter_per_monitor(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = tmp_path / "set.log"
+    _setter(home, f'echo noise; printf "%s %s\\n" "$AMO_MONITOR" "$AMO_WALLPAPER" >> {log}')
+    red = str(grouped["red"])
+    args = [red, "--monitor", "A=16:9", "--monitor", "B=16:9", "--order", "nearest"]
+    capsys.readouterr()
+    main(["group", *args, "--apply", "--dry-run", "--non-interactive"])
+    assert not log.exists() and _shown_counts(home) == {}
+    main(["group", *args, "--apply", "--non-interactive"])
+    out = capsys.readouterr().out
+    assert "noise" not in out  # the setter's output goes to stderr
+    assert log.read_text() == f"A {red}\nB {grouped['maroon']}\n"
+    assert _shown_counts(home) == {_id(grouped["red"]): 1, _id(grouped["maroon"]): 1}
+
+
+def test_group_apply_fails_after_trying_every_monitor(grouped: dict[str, Path], home: Path) -> None:
+    _setter(home, 'test "$AMO_MONITOR" = A && : "$AMO_WALLPAPER"')
+    args = ["group", str(grouped["red"]), "--monitor", "A=16:9", "--monitor", "B=16:9"]
+    with pytest.raises(SystemExit, match=r"group\.setter failed for B: exit status 1"):
+        main([*args, "--apply", "--non-interactive"])
+    assert _shown_counts(home) == {_id(grouped["red"]): 1}
+
+
+def test_group_apply_needs_a_setter(grouped: dict[str, Path]) -> None:
+    with pytest.raises(SystemExit, match=r"--apply needs group\.setter"):
+        main(["group", "--monitor", "A=16:9", "--apply"])
 
 
 @pytest.mark.parametrize("monitor", ["16:9", "=16:9", "A=wide"])

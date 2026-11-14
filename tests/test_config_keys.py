@@ -10,10 +10,11 @@ import pytest
 
 from amontillado import config as config_module
 from amontillado.cli import main
-from amontillado.config import load_config
+from amontillado.config import load_config, syntax_error
 from amontillado.config_keys import (
     APP,
     KEYS,
+    SETTER_EXAMPLES,
     TOOL,
     TOOL_EXAMPLES,
     WIDTH,
@@ -87,6 +88,16 @@ def test_every_commented_value_is_valid(home: Path, caplog: pytest.LogCaptureFix
     assert {name: tool.cmd for name, tool in config.edit.tools.items()} == {
         example.name: example.cmd for example in TOOL_EXAMPLES
     }
+
+
+@pytest.mark.parametrize(("what", "command"), SETTER_EXAMPLES)
+def test_setter_examples_load_and_parse(home: Path, what: str, command: str) -> None:
+    (home / CONFIG).parent.mkdir(parents=True)
+    (home / CONFIG).write_text(f"group:\n  setter: {command}\n")
+    setter = load_config().group.setter
+    assert setter is not None and "$AMO_MONITOR" in setter and "$AMO_WALLPAPER" in setter
+    assert syntax_error(setter) is None
+    assert f"setter: {command}" in template()
 
 
 def test_flag_help_names_the_key_and_its_default() -> None:

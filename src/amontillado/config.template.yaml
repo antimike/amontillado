@@ -114,6 +114,27 @@ group:
   # set). --order overrides it. Default: least-shown.
   # order: least-shown
 
+  # The command amo group --apply runs once per monitor, by sh -c, to set its wallpaper: AMO_MONITOR
+  # is the monitor's name as given to --monitor, AMO_WALLPAPER the picture; quote them
+  # ("$AMO_WALLPAPER"). Its output goes to stderr; a failure fails amo group (the pictures it did
+  # set are still counted as shown). amo knows no setter's syntax: the example is hyprpaper's (>=
+  # 0.8); those below it were checked against each tool's documentation in November 2026. Unset:
+  # --apply is refused; amo group only prints its choice.
+  # setter: 'hyprctl hyprpaper wallpaper "$AMO_MONITOR,$AMO_WALLPAPER,cover"'
+  # Others, for your setter:
+  #   awww (swww before 0.12):
+  #     setter: 'awww img -o "$AMO_MONITOR" "$AMO_WALLPAPER"'
+  #   sway:
+  #     setter: 'swaymsg output "$AMO_MONITOR" bg "$AMO_WALLPAPER" fill'
+  #   wpaperd:
+  #     setter: 'wpaperctl set "$AMO_WALLPAPER" "$AMO_MONITOR"'
+  #   xwallpaper (X11; if a call clears the other monitors, use one call as for feh):
+  #     setter: 'xwallpaper --output "$AMO_MONITOR" --zoom "$AMO_WALLPAPER"'
+  # swaybg sets every output from one process (-o NAME -i FILE -m fill for each): restart it
+  # from a script that reads amo group's output, rather than through a setter.
+  # feh (X11) assigns pictures by screen order in one call (give --monitor in that order):
+  #   amo group --monitor ... | cut -f2 | xargs -d '\n' feh --no-fehbg --bg-fill
+
 # A command run by sh -c after a command writes under a library root (amo index, fetch, add, crop,
 # add-derived, edit, name), once per root it wrote to, with a JSON list of the changes on stdin:
 # each info file's text before and after, new files, renames (docs/design.md, "git-annex libraries:

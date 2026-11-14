@@ -556,7 +556,7 @@ amo list [FILTERS] [--aspect W:H] [--purity LIST]
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
 amo group [PICTURE] --monitor NAME=W:H... [FILTERS] [--purity LIST] [--order least-shown|nearest]
-          [--max-distance D] [--format tsv|json] [--non-interactive] [--dry-run]
+          [--max-distance D] [--format tsv|json] [--non-interactive] [--apply] [--dry-run]
                                      one picture per monitor, colours going together ("Grouping")
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
@@ -1611,11 +1611,17 @@ amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--puri
   record by name or else id, the distance to the primary's palette to 3 decimals (0 for the
   primary).
 - **Setting the wallpapers** (amo-6f0.6): `group.setter`, a config command run once per monitor
-  under `sh -c` with `AMO_MONITOR` and `AMO_WALLPAPER` ("Config"), only with `--apply`, which
-  also records each picture as shown (as `amo shown`). The config template carries commented
-  examples for hyprpaper, swww, `swaymsg output`, swaybg, wpaperd, feh and xwallpaper; amo
-  holds no setter's syntax in code. A setter that needs every monitor in one call (feh assigns
-  by screen order) reads `--format json` instead.
+  under `sh -c` with `AMO_MONITOR` and `AMO_WALLPAPER` ("Config"; it must name
+  `$AMO_WALLPAPER`), only with `--apply`, after the choice is printed. Its standard output goes
+  to standard error. Each picture it set is recorded as shown (as `amo shown`); a setter that
+  fails for a monitor (non-zero exit, or 30 s) is tried for every other monitor first, then
+  fails `amo group`. `--apply` without a setter is refused; `--apply --dry-run` logs each
+  command and records nothing. The config template carries commented examples, checked against
+  each tool's documentation (November 2026): hyprpaper >= 0.8 (`hyprctl hyprpaper wallpaper`),
+  awww (swww, renamed in its 0.12), `swaymsg output ... bg`, wpaperd (`wpaperctl set`) and
+  xwallpaper; amo holds no setter's syntax in code. swaybg and feh get notes instead of setter
+  examples: swaybg sets every output from one process, and feh assigns pictures by screen order
+  in one call, so both are run from a script reading `amo group`'s output (tsv or json).
 
 **Known limitation** (from the spike): a letterboxed picture's bars dominate its palette, so it
 groups with mostly black pictures. To look at in calibration (amo-6f0.4).

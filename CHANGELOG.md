@@ -22,6 +22,9 @@ All notable changes to amontillado are documented here. The format follows
   `group.max_distance` (`--max-distance`); each monitor gets its record's file of its ratio,
   with `amo list --aspect`'s crop offer. Prints `NAME<TAB>PATH` per monitor, or JSON
   (`--format json`). Monitors are given, not detected.
+- `amo group --apply` sets each monitor's wallpaper with `group.setter`, a config command run
+  once per monitor with `AMO_MONITOR` and `AMO_WALLPAPER`, and counts each picture as shown.
+  `amo config init` has examples for hyprpaper, awww (swww), sway, wpaperd and xwallpaper.
 
 ### Fixed
 
