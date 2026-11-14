@@ -25,7 +25,7 @@ import os
 import shutil
 import uuid
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from logging import getLogger
@@ -66,6 +66,9 @@ _ANNEX_OBJECTS = "annex/objects/"
 _POINTER_PREFIX = b"/annex/objects/"
 # A pointer is one line naming a key; a file larger than this is content.
 _POINTER_MAX = 1024
+# Each record directory under the roots and the images directly in it, as the scan sees them:
+# what the index last saw, against what is there now, tells whether it is out of date.
+Snapshot = dict[str, tuple[str, ...]]
 
 
 def annex_absent(path: Path) -> bool:
@@ -131,6 +134,8 @@ class Report:
     failed: list[tuple[Path, str]] = field(default_factory=list)
     # Files whose annex content is not here: normal in a git-annex library, not a problem.
     absent: list[Path] = field(default_factory=list)
+    # Every record directory found, indexable or not, with its images.
+    snapshot: Snapshot = field(default_factory=dict)
 
     @property
     def clean(self) -> bool:
@@ -237,11 +242,10 @@ def heal_library(
     return report
 
 
-def _scan(config: Config, report: Report) -> list[_Found]:
-    """The record directories under every root; loose images and info files directly in a
-    root go to `report`. Overlapping roots would find a directory twice; it is kept under the
-    first root."""
-    found: list[_Found] = []
+def _walk(config: Config) -> Iterator[tuple[Path, Path, list[str], tuple[str, ...]]]:
+    """Each directory under every root as `(directory, root, info files, images)`. Hidden
+    directories are skipped, a record directory (info files, not the root) is not descended
+    into, and a directory under two overlapping roots is visited under the first."""
     seen: set[Path] = set()
     for root in (*config.library_roots, config.nsfw_root):
         if not root.is_dir():
@@ -263,20 +267,53 @@ def _scan(config: Config, report: Report) -> list[_Found]:
             if info and directory != root:
                 # A record's files are directly inside it: records do not nest.
                 dirnames.clear()
-                if len(info) > 1:
-                    paths = [directory / name for name in info]
-                    report.conflicts.append(paths)
-                    logger.error("%s: both %s; remove one", directory, " and ".join(info))
-                else:
-                    found.append(_Found(directory, root, directory / info[0], images))
-                continue
-            for name in info:
-                logger.warning("%s: an info file directly in a root is ignored", directory / name)
-            for name in images:
-                if (directory / name).is_file():
-                    report.loose.append(directory / name)
-                    logger.warning("%s: not in a record; `amo add` it", directory / name)
+            yield directory, root, info, images
+
+
+def _scan(config: Config, report: Report) -> list[_Found]:
+    """The record directories under every root; loose images, info files directly in a root
+    and the snapshot go to `report`."""
+    found: list[_Found] = []
+    for directory, root, info, images in _walk(config):
+        if info and directory != root:
+            report.snapshot[str(directory)] = images
+            if len(info) > 1:
+                paths = [directory / name for name in info]
+                report.conflicts.append(paths)
+                logger.error("%s: both %s; remove one", directory, " and ".join(info))
+            else:
+                found.append(_Found(directory, root, directory / info[0], images))
+            continue
+        for name in info:
+            logger.warning("%s: an info file directly in a root is ignored", directory / name)
+        for name in images:
+            if (directory / name).is_file():
+                report.loose.append(directory / name)
+                logger.warning("%s: not in a record; `amo add` it", directory / name)
     return found
+
+
+def snapshot(config: Config) -> Snapshot:
+    """Every record directory under the roots, with its images, as `amo index` would find
+    them: no info file is read and nothing is hashed."""
+    return {
+        str(directory): images
+        for directory, root, info, images in _walk(config)
+        if info and directory != root
+    }
+
+
+def record_images(directory: Path) -> tuple[str, ...]:
+    """The images directly in a record directory, named as the scan finds them."""
+    with os.scandir(directory) as entries:
+        # As os.walk does: a symlink to a directory is a directory, a dangling one a file.
+        return tuple(
+            sorted(
+                entry.name
+                for entry in entries
+                if not entry.is_dir() and Path(entry.name).suffix.lower() in IMAGE_SUFFIXES
+            )
+        )
 
 
 def _heal_record(

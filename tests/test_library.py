@@ -26,6 +26,8 @@ from amontillado.library import (
     hand_source,
     heal_library,
     place,
+    record_images,
+    snapshot,
 )
 from amontillado.metrics import METRICS_VERSION
 from amontillado.record import ID_PATTERN, read_record, sha256_file
@@ -39,6 +41,32 @@ def _edit(path: Path, **changes: object) -> None:
 
 def _no_measuring(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(library, "measure_file", lambda path: pytest.fail(f"measured {path}"))
+
+
+def test_snapshot_lists_record_directories_and_their_images(
+    config: Config, save_image: SaveImage
+) -> None:
+    root, nsfw = config.library_roots[0], config.nsfw_root
+    save_image(root / "loose.png", (0, 0, 0))
+    mark_record(root / "a" / "sunset")
+    save_image(root / "a" / "sunset" / "s.png", (255, 0, 0))
+    save_image(root / "a" / "sunset" / "s-21x9.jpg", (255, 0, 0))
+    save_image(root / "a" / "sunset" / ".amo" / "thumbnail.jpg", (255, 0, 0))
+    # Both info files: not indexable, but a record directory all the same.
+    both = mark_record(root / "both")
+    (both.parent / "info.yml").write_text("")
+    mark_record(root / ".git" / "hidden")
+    mark_record(nsfw / "private")
+    os.symlink("../.git/annex/objects/xx/p.jpg", nsfw / "private" / "p.jpg")
+    (nsfw / "private" / "dir.png").mkdir()
+    expected = {
+        str(root / "a" / "sunset"): ("s-21x9.jpg", "s.png"),
+        str(root / "both"): (),
+        str(nsfw / "private"): ("p.jpg",),
+    }
+    assert snapshot(config) == expected
+    assert heal_library(config, check=True).snapshot == expected
+    assert record_images(nsfw / "private") == ("p.jpg",)
 
 
 def test_empty_info_file_is_filled_in(config: Config, save_image: SaveImage) -> None:
