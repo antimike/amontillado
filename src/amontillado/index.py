@@ -28,7 +28,7 @@ from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 # `->` and `->>` came in SQLite 3.38; json_extract works before.
 JSON_ARROWS = (3, 38, 0)
 
@@ -78,7 +78,8 @@ CREATE TABLE files (
     busy REAL NOT NULL,
     bytes INTEGER,
     mtime_ns INTEGER,
-    absent INTEGER NOT NULL DEFAULT 0
+    absent INTEGER NOT NULL DEFAULT 0,
+    palette TEXT
 )
 """
 _CREATE_FILES_SHA256 = "CREATE INDEX files_sha256 ON files (sha256)"
@@ -115,14 +116,15 @@ _INSERT_FILE = """
 INSERT INTO files VALUES (
     :path, :record_id, :sha256, :is_default, :width, :height, :lightness, :chroma,
     :colourful_share, :hue, :hue_name, :hue_share, :hue_spread, :warmth, :busy, :bytes,
-    :mtime_ns, :absent
+    :mtime_ns, :absent, :palette
 )
 """
-# The metric columns in Metrics field order, so that a row unpacks into Metrics.
+# The metric columns in Metrics field order, so that a row unpacks into Metrics; the palette
+# (JSON) last. Columns added by an upgrade go last in the tables too: inserts are positional.
 _SELECT_FILES = """
 SELECT f.path, f.record_id, r.purity, r.nsfw_root, f.is_default, f.width, f.height,
     r.thumbnail, f.absent, f.lightness, f.chroma, f.colourful_share, f.hue, f.hue_name, f.hue_share,
-    f.hue_spread, f.warmth, f.busy
+    f.hue_spread, f.warmth, f.busy, f.palette
 FROM files f JOIN records r ON r.id = f.record_id
 {where}ORDER BY f.path
 """
@@ -186,6 +188,9 @@ def connect(path: Path) -> sqlite3.Connection:
         if version in (2, 3, 4, 5, 6) and _has_table(conn, "files"):
             # Absent annex content was not indexed before schema 7.
             conn.execute("ALTER TABLE files ADD COLUMN absent INTEGER NOT NULL DEFAULT 0")
+        if version in (2, 3, 4, 5, 6, 7, 8) and _has_table(conn, "files"):
+            # No palettes before schema 9; the next `amo index` measures them (metrics v3).
+            conn.execute("ALTER TABLE files ADD COLUMN palette TEXT")
         # Upgrading to schema 8 leaves `directories` out: what the index was built from is not
         # known until the next `amo index`, so nothing is reported as changed before then.
         if not _has_table(conn, "records"):
@@ -330,7 +335,13 @@ def _file_rows(entry: Entry) -> list[dict[str, object]]:
                 "is_default": name == entry.default,
                 "width": file.width,
                 "height": file.height,
-                **{key: getattr(file.metrics, key) for key in Metrics.__dataclass_fields__},
+                **{
+                    key: getattr(file.metrics, key)
+                    for key in Metrics.__dataclass_fields__
+                    if key != "palette"
+                },
+                # Version 2's metrics (an absent file measured before the palette) have none.
+                "palette": json.dumps(file.metrics.palette) if file.metrics.palette else None,
                 "bytes": size,
                 "mtime_ns": mtime_ns,
                 "absent": name in entry.absent,
@@ -362,7 +373,7 @@ def files(conn: sqlite3.Connection, record_id: str | None = None) -> list[Indexe
             width=width,
             height=height,
             thumbnail=Path(thumbnail) if thumbnail is not None else None,
-            metrics=Metrics(*metrics),
+            metrics=Metrics(*metrics, palette=_palette(palette)),
             absent=bool(absent),
         )
         for (
@@ -376,8 +387,16 @@ def files(conn: sqlite3.Connection, record_id: str | None = None) -> list[Indexe
             thumbnail,
             absent,
             *metrics,
+            palette,
         ) in rows
     ]
+
+
+def _palette(column: str | None) -> tuple[tuple[str, float], ...]:
+    """A palette column: JSON pairs, or null for a file measured before metrics version 3."""
+    if column is None:
+        return ()
+    return tuple((colour, share) for colour, share in json.loads(column))
 
 
 def record_name(conn: sqlite3.Connection, record_id: str) -> str | None:

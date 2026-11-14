@@ -52,6 +52,12 @@ class FileEntry:
     @property
     def complete(self) -> bool:
         """Whether every derived field is present and current."""
+        return self.measured and self.metrics is not None and self.metrics.current
+
+    @property
+    def measured(self) -> bool:
+        """Whether every derived field is present, the metrics perhaps of version 2 (no
+        palette): enough to index a file whose annex content is not here to measure again."""
         return None not in (self.sha256, self.width, self.height, self.metrics)
 
     @property
@@ -252,10 +258,12 @@ def _parse_file(file_name: str, raw: object) -> FileEntry:
 
 
 def _parse_metrics(block: object) -> Metrics | None:
-    if not isinstance(block, dict) or block.get("version") != METRICS_VERSION:
+    # Version 2's metrics differ only in having no palette: kept, for a file whose content is
+    # not here to measure again; `FileEntry.complete` sends any other to be measured.
+    if not isinstance(block, dict) or block.get("version") not in (2, METRICS_VERSION):
         return None
     try:
-        return Metrics.from_dict(block)
+        return Metrics.from_dict(block, version=block["version"])
     except ValueError:
         return None
 

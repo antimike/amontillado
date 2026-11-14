@@ -181,8 +181,10 @@ def test_metric_columns_follow_the_dataclass(config: Config) -> None:
     conn = connect(config.index_path)
     columns = [row[1] for row in conn.execute("PRAGMA table_info(files)")]
     start = columns.index("lightness")
-    metric_columns = columns[start : start + len(Metrics.__dataclass_fields__)]
-    assert metric_columns == list(Metrics.__dataclass_fields__)
+    fields = [name for name in Metrics.__dataclass_fields__ if name != "palette"]
+    assert columns[start : start + len(fields)] == fields
+    # Added by schema 9, so last: an upgrade appends it, and inserts are positional.
+    assert columns[-1] == "palette"
 
 
 def _as_schema(conn: sqlite3.Connection, version: int) -> None:
@@ -191,6 +193,8 @@ def _as_schema(conn: sqlite3.Connection, version: int) -> None:
     if version <= 7:
         conn.execute("DROP TABLE IF EXISTS directories")
     dropped: dict[str, list[str]] = {"records": [], "files": []}
+    if version <= 8:
+        dropped["files"].append("palette")
     if version <= 6:
         dropped["files"].append("absent")
     if version <= 5:
@@ -282,6 +286,21 @@ def test_schema_6_gains_the_absent_flag(config: Config, save_image: SaveImage) -
     assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     [row] = files(conn)
     assert not row.absent
+
+
+def test_schema_8_gains_palettes(config: Config, save_image: SaveImage) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png", (255, 0, 0))
+    entries = heal_library(config).entries
+    conn = connect(config.index_path)
+    rebuild(conn, entries)
+    _as_schema(conn, 8)
+    conn.close()
+    conn = connect(config.index_path)
+    [row] = files(conn)
+    assert row.metrics.palette == ()  # until the next rebuild fills it in
+    rebuild(conn, entries)
+    [row] = files(conn)
+    assert row.metrics.palette == (("#ff0000", 1.0),)
 
 
 def test_known_hashes_are_what_was_indexed(config: Config, save_image: SaveImage) -> None:

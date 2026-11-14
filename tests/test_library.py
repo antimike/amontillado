@@ -932,3 +932,25 @@ def test_add_derived_refusals(config: Config, tmp_path: Path) -> None:
     with pytest.raises(AddError, match=r"taken\.png exists"):
         add_derived(config, info.parent, root, edit, name="taken.png")
     assert edit.exists() and set(read_record(info).files) == {"pic.png"}
+
+
+def test_an_absent_file_measured_before_the_palette_stays_indexed(
+    config: Config, save_image: SaveImage
+) -> None:
+    """Metrics version 3 added the palette; an absent file cannot be measured again, so its
+    version 2 metrics are indexed as they are and its info file is left alone."""
+    directory = config.library_roots[0] / "r"
+    image = save_image(mark_record(directory).parent / "a.png", (255, 0, 0))
+    heal_library(config)
+    info = directory / "info.yaml"
+    data = yamlio.load(info.read_text())
+    metrics = data["files"]["a.png"]["metrics"]
+    del metrics["palette"]
+    metrics["version"] = 2
+    info.write_text(yamlio.dump(data))
+    before = info.read_text()
+    image.write_bytes(b"/annex/objects/SHA256E-s1--" + b"0" * 64 + b".png\n")  # a pointer
+    [entry] = heal_library(config).entries
+    assert entry.absent == ("a.png",)
+    assert entry.record.files["a.png"].metrics.palette == ()
+    assert info.read_text() == before

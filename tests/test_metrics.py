@@ -250,3 +250,42 @@ def test_image_size_follows_exif_orientation(tmp_path: Path) -> None:
     exif[0x0112] = 6
     image.save(tmp_path / "rotated.jpg", exif=exif)
     assert image_size(tmp_path / "rotated.jpg") == (40, 80)
+
+
+def test_palette_of_a_solid_colour_is_that_colour() -> None:
+    assert measure(solid((255, 0, 0))).palette == (("#ff0000", 1.0),)
+
+
+def test_palette_finds_the_colours_and_their_shares() -> None:
+    rgb = solid((0, 0, 0), size=(400, 100))
+    rgb[:, 300:] = (255, 255, 255)
+    rgb[:, 200:300] = (0, 0, 255)
+    assert measure(rgb).palette == (("#000000", 0.5), ("#0000ff", 0.25), ("#ffffff", 0.25))
+
+
+def test_palette_is_deterministic_and_largest_first() -> None:
+    rgb = hue_wheel()
+    first = measure(rgb).palette
+    assert first == measure(rgb.copy()).palette
+    assert len(first) == 6
+    assert [share for _, share in first] == sorted((s for _, s in first), reverse=True)
+    assert sum(share for _, share in first) == pytest.approx(1.0, abs=0.005)
+
+
+def test_palette_is_written_on_one_line() -> None:
+    from amontillado import yamlio
+
+    text = yamlio.dump({"metrics": measure(solid((255, 0, 0))).to_dict()})
+    assert "  palette: [['#ff0000', 1.0]]\n" in text
+    assert yamlio.load(text)["metrics"]["palette"] == [["#ff0000", 1.0]]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, [], [["#ff0000"]], [["red", 1.0]], [["#ff0000", 1.5]], [["#ff0000", True]], "x"],
+)
+def test_from_dict_rejects_a_bad_palette(value: object) -> None:
+    d = measure(solid((255, 0, 0))).to_dict()
+    d["palette"] = value
+    with pytest.raises(ValueError, match=r"metrics\.palette"):
+        Metrics.from_dict(d)

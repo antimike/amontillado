@@ -27,7 +27,7 @@ import re
 from collections.abc import Mapping
 
 from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.nodes import ScalarNode
@@ -38,6 +38,7 @@ __all__ = [
     "YAMLError",
     "dump",
     "dump_scalar",
+    "flow",
     "load",
     "load_styled",
     "same",
@@ -113,6 +114,14 @@ def dump(data: object) -> str:
     stream = io.StringIO()
     _round_trip().dump(data, stream)
     return stream.getvalue()
+
+
+def flow(items: list[object]) -> list[object]:
+    """`items` as a list that `dump` and `update_text` write in flow style, on one line
+    (`[[a, 1], [b, 2]]`); still a list to everything else."""
+    seq = CommentedSeq(items)
+    seq.fa.set_flow_style()
+    return seq
 
 
 def dump_scalar(value: str) -> str:

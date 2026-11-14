@@ -84,7 +84,7 @@ files:
     width: 3840
     height: 2160
     metrics:                        # per file: a crop measures differently
-      version: 2                    # bump when a metric's definition changes: forces recomputation
+      version: 3                    # bump when a metric's definition changes: forces recomputation
       lightness: 0.31
       chroma: 0.042
       colourful_share: 0.38
@@ -94,6 +94,7 @@ files:
       hue_spread: 0.18
       warmth: 0.12
       busy: 0.06
+      palette: [['#1b2330', 0.412], ['#3d4a5e', 0.233], ['#c9a46b', 0.118], ...]
   night-city-21x9.png:
     sha256: <hex>
     width: 3840
@@ -306,11 +307,13 @@ cannot be rebuilt):
   cache; only when it was measured).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (8); a newer one than the
+  table. The database's `PRAGMA user_version` is its schema version (9); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
   thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
   schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`),
-  schemas 2 to 6 the `absent` column of `files`; upgrading adds them empty, for the next `amo index` to fill. The `pictures` view (columns
+  schemas 2 to 6 the `absent` column of `files`, schemas 2 to 8 its `palette` column (JSON,
+  "Grouping (v0.7)"; last in the table, since an upgrade appends it); upgrading adds them empty,
+  for the next `amo index` to fill. The `pictures` view (columns
   under "CLI") is recreated on every open, so changing it needs no migration.
 - `directories` (schema 8, amo-50c.3): the snapshot the index was built from, one row per
   record directory `amo index` found (indexable or not: a conflict is a record directory too)
@@ -390,6 +393,7 @@ only, each weighted by its chroma, so a few vivid pixels count more than many ne
 | `hue_spread` | circular variance of the chroma-weighted hues, 1 − R (0 = one hue, 1 = all hues evenly) | monochrome vs multi-hued: does the generator find distinct accents when the image offers one hue? |
 | `warmth` | (warm weight − cool weight) / total chromatic weight, in −1..1 | warm vs cool; warm sectors are red, orange, yellow, pink |
 | `busy` | edge density: share of interior pixels whose Sobel gradient magnitude on L exceeds 0.08 (*initial*) | legibility of text over translucent, blurred windows |
+| `palette` | up to 6 (*initial*) `[hex, share]` pairs: k-means in OKLab over every 4th pixel, largest share first ("Grouping (v0.7)") | which pictures go together: `amo list --like`, `amo group` |
 
 The Sobel kernels are divided by 8, so the gradient magnitude is the change in L per pixel: a
 hard black-to-white edge scores 0.5 on the pixels either side of it. The one-pixel border is
@@ -406,7 +410,7 @@ heaviest sector).
 A greyscale image has no chromatic pixels: `hue`, `hue_name` are null, `hue_share`,
 `hue_spread` and `warmth` are 0. It is muted, never monochrome.
 
-Values are rounded when written: `hue` to 0.1°, the others to 3 decimals.
+Values are rounded when written: `hue` to 0.1°, the others (palette shares too) to 3 decimals.
 
 ### Classes (query-time, calibrated thresholds)
 
@@ -1541,15 +1545,20 @@ from k-means in OKLab over the measured image (432 px wide, every 4th pixel), ea
 share of the pixels, largest first, as `[hex, share]` pairs (shares to 3 decimals):
 
 ```yaml
-      palette: [["#1b2330", 0.412], ["#3d4a5e", 0.233], ["#c9a46b", 0.118], ...]
+      palette: [['#1b2330', 0.412], ['#3d4a5e', 0.233], ['#c9a46b', 0.118], ...]
 ```
 
-The k-means is deterministic (k-means++ from a fixed seed, at most 20 Lloyd steps), so
-measuring a file again writes the same palette and an info file under version control does not
-churn. Metrics version 3: `amo index` measures every file again once (the other metrics are
+The k-means is deterministic (k-means++ from a fixed seed, at most 20 Lloyd steps, stopping
+early when no pixel changes centre), so measuring a file again writes the same palette and an
+info file under version control does not churn. Centres that round to the same hex colour are
+merged, so an image with fewer distinct colours has a shorter palette (a solid colour has one).
+It is written on one line (flow style), and `amo info merge` keeps it so. The k-means costs
+about 60 ms per picture on noise, the worst case (the spike's 123 ms was a slower loop).
+Metrics version 3: `amo index` measures every file again once (the other metrics are
 unchanged). The index stores the palette as JSON in `files` (index schema 9). A file measured
-before version 3 that is absent (annexed content not here) has no palette until its content is
-got; grouping skips it.
+before version 3 that is absent (annexed content not here) keeps its version 2 metrics, which
+are still read and written back unchanged, and stays indexed without a palette until its
+content is got; grouping skips it.
 
 **Distance** between two palettes: each colour's OKLab distance to the nearest colour of the
 other palette, weighted by its share, averaged over both directions (0 for identical palettes).

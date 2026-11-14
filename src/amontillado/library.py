@@ -446,7 +446,7 @@ def _heal_record(
             "would heal: " if check else "healed: ",
             "; ".join(reasons),
         )
-    indexable = {name for name in absent if name in files and files[name].complete}
+    indexable = {name for name in absent if name in files and files[name].measured}
     if check:
         report.measured += len(to_measure)
         return dataclasses.replace(record, files=files), hashes, stats, indexable
@@ -963,12 +963,12 @@ def present_files(directory: Path, record: Record) -> set[str]:
 
 
 def absent_files(directory: Path, record: Record) -> set[str]:
-    """The files `record` lists whose annex content is not here and whose entries are complete:
-    they are indexed, flagged absent."""
+    """The files `record` lists whose annex content is not here and that were measured (perhaps
+    before the palette): they are indexed, flagged absent."""
     return {
         name
         for name, entry in record.files.items()
-        if entry.complete and annex_absent(directory / name)
+        if entry.measured and annex_absent(directory / name)
     }
 
 
