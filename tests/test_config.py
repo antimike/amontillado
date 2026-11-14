@@ -16,6 +16,7 @@ from amontillado.config import (
     GroupConfig,
     ThemeConfig,
     api_key,
+    commands,
     load_config,
 )
 
@@ -299,6 +300,10 @@ def test_group_block(home: Path) -> None:
     assert load_config().group == GroupConfig(0.05, "least-shown")
     write_config(home, "group: {max_distance: 0, order: nearest}\n")
     assert load_config().group == GroupConfig(0.0, "nearest")
+    write_config(home, """group: {setter: 'awww img -o "$AMO_MONITOR" "$AMO_WALLPAPER"'}\n""")
+    config = load_config()
+    assert config.group.setter == 'awww img -o "$AMO_MONITOR" "$AMO_WALLPAPER"'
+    assert ("group.setter", config.group.setter) in commands(config)
 
 
 @pytest.mark.parametrize(
@@ -309,6 +314,11 @@ def test_group_block(home: Path) -> None:
         ("group: {max_distance: .nan}\n", "group.max_distance: nan is not a distance"),
         ("group: {order: random}\n", "group.order: 'random' is not one of least-shown, nearest"),
         ("group: []\n", "group must be a mapping"),
+        (
+            "group: {setter: 'hyprctl hyprpaper wallpaper x'}\n",
+            "group.setter: names no $AMO_WALLPAPER",
+        ),
+        ("group: {setter: 'feh {wallpaper}'}\n", "group.setter: {wallpaper} is gone"),
     ],
 )
 def test_group_block_errors(home: Path, text: str, error: str) -> None:
