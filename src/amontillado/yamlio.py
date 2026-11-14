@@ -6,7 +6,8 @@ registry, and every info file `amo index` reads) goes through `load`, ruamel's s
 plain dicts, lists and scalars. Writing an info file amo read before goes through
 `update_text`: the old text is loaded round-trip, only the keys whose values changed are set,
 and the document is dumped again, so hand-written comments, key order and formatting survive.
-New files and generated output go through `dump`.
+New files and generated output go through `dump`. `amo info merge` reads with `load_styled`, so
+the values it carries from one file into another keep their style.
 
 Documents are YAML 1.2, where `yes`, `on` and `no` are strings. Output stays readable by YAML
 1.1 parsers (PyYAML, which earlier versions used) too: a string either version would take for
@@ -26,14 +27,23 @@ import re
 from collections.abc import Mapping
 
 from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.nodes import ScalarNode
 from ruamel.yaml.representer import RoundTripRepresenter
 from ruamel.yaml.resolver import VersionedResolver
 
-__all__ = ["YAMLError", "dump", "dump_scalar", "load", "same", "update_text"]
+__all__ = [
+    "YAMLError",
+    "dump",
+    "dump_scalar",
+    "flow",
+    "load",
+    "load_styled",
+    "same",
+    "update_text",
+]
 
 _WIDTH = 1_000_000  # no folding
 
@@ -79,6 +89,17 @@ def load(text: str) -> object:
         raise _duplicate(exc) from None
 
 
+def load_styled(text: str) -> object:
+    """The data of a YAML document as ruamel's round-trip types (dict, list and scalar
+    subclasses that remember their style), for values to be written into another document
+    as they were written here (a flow-style list stays on one line); None if it is empty.
+    Raises YAMLError (a duplicate key is one)."""
+    try:
+        return _round_trip().load(text)
+    except DuplicateKeyError as exc:
+        raise _duplicate(exc) from None
+
+
 def _duplicate(exc: DuplicateKeyError) -> YAMLError:
     """A short message for a duplicate key (ruamel's quotes both values and adds a URL)."""
     match = re.search(r'found duplicate key "(.*?)" with value', exc.problem or "")
@@ -93,6 +114,14 @@ def dump(data: object) -> str:
     stream = io.StringIO()
     _round_trip().dump(data, stream)
     return stream.getvalue()
+
+
+def flow(items: list[object]) -> list[object]:
+    """`items` as a list that `dump` and `update_text` write in flow style, on one line
+    (`[[a, 1], [b, 2]]`); still a list to everything else."""
+    seq = CommentedSeq(items)
+    seq.fa.set_flow_style()
+    return seq
 
 
 def dump_scalar(value: str) -> str:

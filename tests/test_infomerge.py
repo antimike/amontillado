@@ -285,3 +285,10 @@ def test_as_a_git_merge_driver(tmp_path: Path) -> None:
     conflicted = git("merge", "-q", "--no-edit", "third")
     assert conflicted.returncode != 0
     assert "r/info.yaml: conflict: name: changed on both sides" in conflicted.stderr
+
+
+def test_theirs_flow_style_survives() -> None:
+    ours = BASE.replace("name: harbour", "name: harbour  # kept by hand")
+    theirs = BASE + "rating: [5, 4]   # flow, as typed\n"
+    result = merge(BASE, ours, theirs)
+    assert "\nrating: [5, 4]" in result.text

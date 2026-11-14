@@ -6,6 +6,19 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Each file's metrics gain a `palette`: up to 6 colours from k-means in OKLab, with their
+  shares of the picture, largest first, written on one line. Deterministic, so measuring again
+  writes the same palette. Metrics version 3: the next `amo index` measures every file again
+  once; a file whose git-annex content is not here keeps its version 2 metrics and stays
+  indexed. Index schema 9 (the palette as JSON).
+
+### Fixed
+
+- `amo info merge` (and so the git-commit hook) wrote a flow-style list it took from THEIRS,
+  such as `tags: [a, b]`, in block style; it keeps THEIRS' style now.
+
 ## [0.6.0] - 2026-11-13
 
 Rotation and housekeeping before grouping: `amo list` can prefer the pictures shown least and

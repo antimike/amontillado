@@ -16,10 +16,12 @@ from typing import IO
 import numpy as np
 from PIL import Image, ImageOps
 
-from amontillado.colour import srgb_to_oklch
+from amontillado import yamlio
+from amontillado.colour import HEX_PATTERN, oklch_to_hex, srgb_to_oklab, srgb_to_oklch
 
 # Bump when a metric's definition changes: sidecars with an older version are recomputed.
-METRICS_VERSION = 2
+# Version 3 added the palette.
+METRICS_VERSION = 3
 
 MEASURE_WIDTH = 432
 
@@ -33,6 +35,15 @@ HUE_NAMES = ("red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink
 # Width of the arc whose weight is hue_share, in degrees (one per histogram bin).
 HUE_ARC = 60
 WARM_HUES = frozenset({"red", "orange", "yellow", "pink"})
+
+# The palette: k-means in OKLab over every PALETTE_STEP-th pixel of the measured image, from a
+# fixed seed so that measuring a file again writes the same palette (*initial* k).
+PALETTE_COLOURS = 6
+PALETTE_STEP = 4
+PALETTE_SEED = 0
+PALETTE_STEPS = 20
+
+Palette = tuple[tuple[str, float], ...]
 
 _ALPHA_MODES = frozenset({"RGBA", "RGBa", "LA", "La", "PA"})
 # EXIF orientations that swap width and height for display.
@@ -52,25 +63,43 @@ class Metrics:
     hue_spread: float
     warmth: float
     busy: float
+    # Up to PALETTE_COLOURS (`#rrggbb`, share of the pixels) pairs, largest share first.
+    palette: Palette = ()
 
     def to_dict(self) -> dict[str, object]:
-        """The sidecar `metrics` block: version first, values rounded for readability."""
-        values: dict[str, object] = {"version": METRICS_VERSION}
+        """The sidecar `metrics` block: version first, values rounded for readability, the
+        palette on one line."""
+        # Without a palette these are version 2's metrics (an absent file measured before
+        # version 3, "Absent content"), written back as they were.
+        values: dict[str, object] = {"version": METRICS_VERSION if self.palette else 2}
         for name, value in asdict(self).items():
-            if isinstance(value, float):
+            if name == "palette":
+                if not value:
+                    continue
+                value = yamlio.flow([[colour, round(share, 3)] for colour, share in value])
+            elif isinstance(value, float):
                 value = round(value, 1 if name == "hue" else 3)
             values[name] = value
         return values
 
+    @property
+    def current(self) -> bool:
+        """Whether these are this version's metrics: version 2's have no palette."""
+        return bool(self.palette)
+
     @classmethod
-    def from_dict(cls, values: Mapping[str, object]) -> Metrics:
-        """Metrics from a sidecar `metrics` block; the version is the caller's to check.
+    def from_dict(cls, values: Mapping[str, object], *, version: int = METRICS_VERSION) -> Metrics:
+        """Metrics from a sidecar `metrics` block of `version` (METRICS_VERSION, or 2, which
+        had no palette); the block's own version is the caller's to check.
 
         Raises ValueError naming the first field that is missing or of the wrong type.
         """
         fields: dict[str, object] = {}
         for name in cls.__dataclass_fields__:
             value = values.get(name)
+            if name == "palette":
+                fields[name] = _parse_palette(value) if version >= 3 else ()
+                continue
             if name == "hue_name":
                 ok = value is None or value in HUE_NAMES
             else:
@@ -83,6 +112,21 @@ class Metrics:
                 raise ValueError(f"metrics.{name} is missing or invalid")
             fields[name] = value
         return cls(**fields)
+
+
+def _parse_palette(value: object) -> Palette:
+    if not isinstance(value, list) or not value:
+        raise ValueError("metrics.palette is missing or invalid")
+    pairs = []
+    for pair in value:
+        ok = isinstance(pair, list) and len(pair) == 2
+        colour, share = pair if ok else (None, None)
+        ok = ok and isinstance(colour, str) and HEX_PATTERN.fullmatch(colour) is not None
+        ok = ok and isinstance(share, (int, float)) and not isinstance(share, bool)
+        if not ok or not 0 <= share <= 1:
+            raise ValueError("metrics.palette is missing or invalid")
+        pairs.append((colour, float(share)))
+    return tuple(pairs)
 
 
 def image_size(path: Path) -> tuple[int, int]:
@@ -187,8 +231,55 @@ def measure(rgb: np.ndarray) -> Metrics:
         chroma=float(chroma.mean()),
         colourful_share=float(chromatic.mean()),
         busy=_edge_density(lightness),
+        palette=palette(rgb),
         **hue_stats,
     )
+
+
+def palette(rgb: np.ndarray) -> Palette:
+    """The image's main colours and their shares of its pixels: k-means (PALETTE_COLOURS
+    centres, k-means++ from PALETTE_SEED, at most PALETTE_STEPS Lloyd steps) in OKLab over
+    every PALETTE_STEP-th pixel. Largest share first; shares rounded to 3 decimals, centres
+    that round to the same colour merged. Fewer colours for an image that has fewer."""
+    lab = srgb_to_oklab(np.ascontiguousarray(rgb.reshape(-1, 3)[::PALETTE_STEP]))
+    centres = _kmeans_plus_plus(lab, PALETTE_COLOURS, np.random.default_rng(PALETTE_SEED))
+    labels = _nearest(lab, centres)
+    for _ in range(PALETTE_STEPS):
+        counts = np.bincount(labels, minlength=len(centres))
+        sums = np.stack([np.bincount(labels, lab[:, i], len(centres)) for i in range(3)], 1)
+        filled = counts > 0
+        centres[filled] = sums[filled] / counts[filled, None]
+        new = _nearest(lab, centres)
+        if np.array_equal(new, labels):
+            break
+        labels = new
+    counts = np.bincount(labels, minlength=len(centres))
+    shares: dict[str, float] = {}
+    for (lightness, a, b), count in zip(centres, counts, strict=True):
+        if count:
+            colour = oklch_to_hex(lightness, math.hypot(a, b), math.degrees(math.atan2(b, a)))
+            shares[colour] = shares.get(colour, 0.0) + float(count) / len(lab)
+    ordered = sorted(shares.items(), key=lambda pair: (-pair[1], pair[0]))
+    return tuple((colour, round(share, 3)) for colour, share in ordered)
+
+
+def _kmeans_plus_plus(lab: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
+    """Up to k starting centres, each drawn with probability proportional to its squared
+    distance from the nearest already chosen; fewer when every point is already a centre."""
+    centres = [lab[rng.integers(len(lab))]]
+    nearest = ((lab - centres[0]) ** 2).sum(1)
+    while len(centres) < k:
+        total = nearest.sum()
+        if total <= 0:
+            break
+        centres.append(lab[rng.choice(len(lab), p=nearest / total)])
+        nearest = np.minimum(nearest, ((lab - centres[-1]) ** 2).sum(1))
+    return np.array(centres)
+
+
+def _nearest(lab: np.ndarray, centres: np.ndarray) -> np.ndarray:
+    # |x - c|² less |x|², which is the same for every centre: one small matrix product.
+    return ((centres**2).sum(1) - 2 * lab @ centres.T).argmin(1)
 
 
 def measure_file(path: Path | IO[bytes]) -> Metrics:

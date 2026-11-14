@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from amontillado import yamlio
-from amontillado.metrics import METRICS_VERSION, Metrics
+from amontillado.metrics import Metrics
 from amontillado.record import (
     FileEntry,
     Record,
@@ -21,7 +21,9 @@ from amontillado.record import (
     write_record,
 )
 
-METRICS = Metrics(0.31, 0.042, 0.38, 262.0, "blue", 0.71, 0.18, 0.12, 0.06)
+METRICS = Metrics(
+    0.31, 0.042, 0.38, 262.0, "blue", 0.71, 0.18, 0.12, 0.06, (("#1b2330", 0.6), ("#c9a46b", 0.4))
+)
 SHA = "ab" * 32
 RECORD_ID = "3f2a9c1e0b7d4e8f9a6b5c4d3e2f1a0b"
 
@@ -102,7 +104,10 @@ def test_write_changes_only_changed_keys(tmp_path: Path) -> None:
     )
     assert "  tags: [harbour, morning]   # flow style, as typed\nfetched: null\nrating: 5\n" in text
     assert "    height: 2160\n    metrics:\n      version:" in text
-    assert text.endswith("      busy: 0.06\n    note: the original    # by hand\n")
+    assert text.endswith(
+        "      busy: 0.06\n      palette: [['#1b2330', 0.6], ['#c9a46b', 0.4]]\n"
+        "    note: the original    # by hand\n"
+    )
     assert read_record(path).files["a.png"].metrics == METRICS
 
 
@@ -217,12 +222,29 @@ def test_invalid_derived_fields_are_left_for_recomputation() -> None:
                     "sha256": "sha256:" + SHA,
                     "width": True,
                     "height": -1,
-                    "metrics": {**METRICS.to_dict(), "version": METRICS_VERSION - 1},
+                    "metrics": {**METRICS.to_dict(), "version": 1},
                 }
             }
         }
     )
     assert record.files["a.png"] == FileEntry()
+
+
+def test_version_2_metrics_are_kept_but_not_complete() -> None:
+    old = {key: value for key, value in METRICS.to_dict().items() if key != "palette"}
+    old["version"] = 2
+    entry = parse({"files": {"a.png": {"sha256": SHA, "width": 4, "height": 2, "metrics": old}}})
+    file = entry.files["a.png"]
+    assert file.metrics is not None and file.metrics.palette == ()
+    assert file.measured and not file.complete
+    # Written back as they were: an absent file's entry is not turned into version 3's.
+    assert file.metrics.to_dict() == old
+
+
+def test_version_3_metrics_without_a_palette_are_left_for_recomputation() -> None:
+    block = {key: value for key, value in METRICS.to_dict().items() if key != "palette"}
+    entry = parse({"files": {"a.png": {"sha256": SHA, "metrics": block}}})
+    assert entry.files["a.png"].metrics is None
 
 
 def test_default_file() -> None:
