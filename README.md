@@ -66,6 +66,7 @@ amo index                                  # heal records and rebuild the index
 amo crop forest 21:9                       # a 21:9 crop of a record, for an ultrawide
 amo list --dark --muted --random 1         # a path, for a wallpaper setter
 amo shown "$(amo list --dark --random 1)"  # count a showing in the usage history
+amo list --dark --order least-shown --random 1   # the dark picture shown least, for a timer
 amo list --dark --format rofi | rofi -dmenu -show-icons   # pick one, with thumbnails
 amo measure some.png                       # metrics and classes of any image, as YAML
 amo list --tag night --where "shown_count = 0"   # search provenance and the whole record
