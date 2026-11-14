@@ -71,9 +71,10 @@ class Merge:
 
 
 def load(text: str) -> dict[str, object]:
-    """An info file's mapping (empty for an empty file). Raises InfoError."""
+    """An info file's mapping (empty for an empty file), its values keeping their YAML style,
+    so that a merge writes THEIRS' values as THEIRS wrote them. Raises InfoError."""
     try:
-        data = yamlio.load(text)
+        data = yamlio.load_styled(text)
     except yamlio.YAMLError as exc:
         raise InfoError(f"not valid YAML: {exc}") from exc
     if data is None:

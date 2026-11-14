@@ -6,7 +6,8 @@ registry, and every info file `amo index` reads) goes through `load`, ruamel's s
 plain dicts, lists and scalars. Writing an info file amo read before goes through
 `update_text`: the old text is loaded round-trip, only the keys whose values changed are set,
 and the document is dumped again, so hand-written comments, key order and formatting survive.
-New files and generated output go through `dump`.
+New files and generated output go through `dump`. `amo info merge` reads with `load_styled`, so
+the values it carries from one file into another keep their style.
 
 Documents are YAML 1.2, where `yes`, `on` and `no` are strings. Output stays readable by YAML
 1.1 parsers (PyYAML, which earlier versions used) too: a string either version would take for
@@ -33,7 +34,15 @@ from ruamel.yaml.nodes import ScalarNode
 from ruamel.yaml.representer import RoundTripRepresenter
 from ruamel.yaml.resolver import VersionedResolver
 
-__all__ = ["YAMLError", "dump", "dump_scalar", "load", "same", "update_text"]
+__all__ = [
+    "YAMLError",
+    "dump",
+    "dump_scalar",
+    "load",
+    "load_styled",
+    "same",
+    "update_text",
+]
 
 _WIDTH = 1_000_000  # no folding
 
@@ -75,6 +84,17 @@ def load(text: str) -> object:
     try:
         # ruamel.yaml.clib's C parser when installed: several times faster for `amo index`.
         return YAML(typ="safe").load(text)
+    except DuplicateKeyError as exc:
+        raise _duplicate(exc) from None
+
+
+def load_styled(text: str) -> object:
+    """The data of a YAML document as ruamel's round-trip types (dict, list and scalar
+    subclasses that remember their style), for values to be written into another document
+    as they were written here (a flow-style list stays on one line); None if it is empty.
+    Raises YAMLError (a duplicate key is one)."""
+    try:
+        return _round_trip().load(text)
     except DuplicateKeyError as exc:
         raise _duplicate(exc) from None
 

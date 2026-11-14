@@ -6,6 +6,11 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `amo info merge` (and so the git-commit hook) wrote a flow-style list it took from THEIRS,
+  such as `tags: [a, b]`, in block style; it keeps THEIRS' style now.
+
 ## [0.6.0] - 2026-11-13
 
 Rotation and housekeeping before grouping: `amo list` can prefer the pictures shown least and
