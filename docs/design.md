@@ -724,8 +724,9 @@ variants:
 green, cyan, blue, magenta, brown), `base10`-`base11` darker backgrounds, `base12`-`base17` the
 bright red, yellow, green, cyan, blue and magenta. A base16-only input gets the base24 keys
 derived in OKLCH: `base10`, `base11` step `base00` darker (L −0.03, −0.06, *initial*; lighter for a
-light variant), `base12`-`base17` are `base08`, `base0A`, `base0B`, `base0C`, `base0D`, `base0E` with
-L +0.08 (*initial*), clipped to the sRGB gamut by lowering chroma.
+light variant), `base12`-`base17` are `base08`, `base0A`, `base0B`, `base0C`, `base0D`, `base0E` 0.08 L away
+from the background (lighter for dark, darker for light; calibrated 2026-11-13, below), clipped
+to the sRGB gamut by lowering chroma.
 
 **Roles** fill the gap the research found: base16 has no accent. Derived when the generator or
 the file does not give them:
@@ -820,8 +821,15 @@ middle lightness, which neither black nor white reaches) stays as it is, with a 
 (`dark: base03 on base00: 2.52, needs 3`) on stdout and exits non-zero if there are any; it
 never adjusts. (A first run on gruvbox,
 2026-10-30: dark needed five moves, light twelve, mostly its accents on `base01`; the light
-variant's brightened `base12`-`base17` come back down to about their base colours, so a light
-variant's bright step may want to be darker instead: to calibrate.)
+variant's brightened `base12`-`base17` came back down to about their base colours.)
+**Bright step, calibrated** (amo-50c.4, MH 2026-11-13): over the 13 pictures of MH's library
+(`amontillado` hues), a light variant whose brights were L +0.08 had 76 colours adjusted, all
+of them brights, which ended a mean 0.041 L above their base colours and 3 of 6 within 0.04
+OKLab of them (0.005 at the closest: the same colour), at a lower contrast on `base00` than the
+normal colours (4.85 against 4.96-6.76). At L −0.08 nothing is adjusted, every bright is 0.08
+OKLab from its base colour, and contrast rises to 7.0-9.5; MH preferred it in kitty side by
+side. So the step goes away from the background, as `base10`-`base11` do (and as
+gruvbox-light's brights, which are darker).
 
 ### Accent metrics
 
@@ -951,9 +959,9 @@ colours 1-6 and 9-14:
   The dark variant matches or beats the baseline on every picture with no colour adjusted.
   The light variant's two failures are fast-syntax-highlighting styles on 256-colour cube
   entries (`bg=18`, `fg=113`), which no 16-colour palette sets and which assume a dark
-  terminal; its 5-6 adjusted colours are all the bright `base12`-`base17` (L +0.08 from their
-  base colour), so the bright step for a light variant may want to be darker (open, under
-  "Contrast checks").
+  terminal; its 5-6 adjusted colours were all the bright `base12`-`base17`, then L +0.08 from
+  their base colour: the light variant's brights are darker since (amo-50c.4, "Contrast
+  checks").
 - `generator`: the generator's own sixteen colours (matugen's `base16` block; wallust's ANSI
   settings above), then the contrast check, which fixes contrast but not a wrong or collapsed
   hue. For comparison, or for a user who prefers them.
@@ -1573,7 +1581,7 @@ groups with mostly black pictures. To look at in calibration (amo-6f0.4).
 Agreed with MH 2026-11-13 (spike amo-50c.1). The experiment: 8 random anchors from the 400
 calibration thumbnails, the 5 nearest of each under the existing metrics (a mean colour from
 `lightness`, `chroma` and `hue`, plus `hue_spread`) and under a 6-colour k-means palette, judged
-by eye on a contact sheet (`just grouping-sheet`, tools/grouping_sheet.py, reproduces it).
+by eye on a contact sheet (`just grouping-sheet` reproduces it).
 
 1. **A stored palette, not the existing metrics.** The palette's neighbours were clearly better
    for 5 anchors and as good for the rest; the two agreed on 1.1 of 5 neighbours on average. A

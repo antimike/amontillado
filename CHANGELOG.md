@@ -12,6 +12,12 @@ All notable changes to amontillado are documented here. The format follows
   longest since last shown, ties in random order; `--random N` then takes the first N, so
   `amo list --order least-shown --random 1` rotates through the whole library.
 
+### Changed
+
+- A light variant's bright colours (`base12`-`base17`, ANSI 9-14) derived from base16 are now
+  darker than their base colours instead of lighter: the contrast check had been pulling the
+  lighter ones back until some matched their base colour.
+
 ## [0.5.0] - 2026-11-13
 
 The theme can follow the desktop: `theme.variant: system` reads the desktop's dark/light
