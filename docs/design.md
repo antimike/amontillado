@@ -15,7 +15,9 @@ GTK4-only `libadwaita-vars` template ("Template sources") with GNOME's palette r
 and captures without keyboard focus, optionally off screen; `amo edit` with named editor tools
 ("Editing", 2026-11-07); every config command under `sh -c` with `AMO_*` variables
 instead of `{placeholder}`s ("Config", 2026-11-08). v0.5 (2026-11-13): the `system` variant,
-which follows the desktop's colour scheme ("Variant").
+which follows the desktop's colour scheme ("Variant"). v0.6 (2026-11-13): `amo list --order
+least-shown`, the stale-index warning ("CLI"), the light variant's bright step calibrated
+("Contrast checks"), and the grouping design for v0.7 ("Grouping (v0.7)").
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -1667,6 +1669,9 @@ by eye on a contact sheet (`just grouping-sheet` reproduces it).
    keeps working without them ("git-annex libraries: decisions", 5).
 7. v0.5 (released 2026-11-13): the `system` variant, following the desktop's colour scheme
    (amo-8zi, from chezmoi D78's clock-driven variant; "Variant").
+8. v0.6 (epic `amo-50c`; released 2026-11-13): `amo list --order least-shown` (amo-50c.2), the
+   stale-index warning (amo-50c.3), the light variant's darker bright colours (amo-50c.4), and
+   the grouping spike (amo-50c.1) that designs item 2 for v0.7.
 
 ## Open questions
 

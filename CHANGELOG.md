@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
+Rotation and housekeeping before grouping: `amo list` can prefer the pictures shown least and
+warns when the index is out of date, and a light theme's bright terminal colours are distinct
+again. The palette-aware grouping of v0.7 is designed (docs/design.md, "Grouping (v0.7)").
+
 ### Added
 
 - `amo list --order least-shown`: fewest showings first (as `amo shown` counts them), then the
