@@ -15,10 +15,12 @@ import argparse
 import json
 import logging
 import math
+import os
 import random
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from collections.abc import Callable, Iterable
@@ -51,6 +53,7 @@ from amontillado.config import (
     commands,
     config_path,
     load_config,
+    shell_status,
     shellcheck,
     syntax_error,
 )
@@ -129,6 +132,8 @@ from amontillado.sources import check_apps
 from amontillado.sources import needed as sources_needed
 from amontillado.sources import sync as sources_sync
 from amontillado.theme import (
+    RELOAD_TIMEOUT,
+    Reload,
     ThemeError,
     current_profile,
     find_palette,
@@ -417,9 +422,16 @@ def build_parser() -> argparse.ArgumentParser:
         "of its monitor's ratio gets its default file.",
     )
     group.add_argument(
+        "--apply",
+        action="store_true",
+        help="Set each monitor's wallpaper with group.setter (run once per monitor, with "
+        "AMO_MONITOR and AMO_WALLPAPER) and count each picture set as shown (as amo shown).",
+    )
+    group.add_argument(
         "--dry-run",
         action="store_true",
-        help="Crop nothing: a picture without a file of its monitor's ratio gets its default file.",
+        help="Crop nothing (a picture without a file of its monitor's ratio gets its default "
+        "file); with --apply, log the setter commands instead of running them.",
     )
     group.set_defaults(func=cmd_group)
 
@@ -1319,6 +1331,10 @@ def cmd_group(args: argparse.Namespace) -> None:
     config = _load_config()
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    if args.apply and config.group.setter is None:
+        sys.exit(
+            "amontillado: --apply needs group.setter in the config (amo config init has examples)"
+        )
     max_distance = config.group.max_distance if args.max_distance is None else args.max_distance
     nearest = (args.order or config.group.order) == "nearest"
     primary_monitor, *others = args.monitors
@@ -1381,6 +1397,55 @@ def cmd_group(args: argparse.Namespace) -> None:
         )
     paths = _group_crops(config, args, chosen)
     _print_group(args.format, chosen, paths, record_names)
+    if args.apply:
+        _apply_group(config, chosen, paths, dry_run=args.dry_run)
+
+
+def _apply_group(
+    config: Config, chosen: list[Choice], paths: dict[Path, Path], *, dry_run: bool
+) -> None:
+    """Run group.setter for each monitor, then count each picture it set as shown. Exits
+    non-zero, after trying every monitor, if the setter failed for one."""
+    setter = config.group.setter
+    assert setter is not None
+    # AMO_* from amo's own environment would be stale: only this run's are set.
+    base = {k: v for k, v in os.environ.items() if not k.startswith("AMO_")}
+    done, failed = [], []
+    for choice in chosen:
+        variables = {
+            "AMO_MONITOR": choice.monitor.name,
+            "AMO_WALLPAPER": str(paths[choice.file.path]),
+        }
+        if dry_run:
+            logger.info("would run %s", Reload(setter, variables))
+            continue
+        try:
+            result = subprocess.run(
+                ["sh", "-c", setter],
+                env=base | variables,
+                stdout=subprocess.PIPE,
+                check=False,
+                text=True,
+                timeout=RELOAD_TIMEOUT,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            failed.append(f"{choice.monitor.name}: {exc}")
+            continue
+        # Its output is not data: stdout carries amo group's.
+        sys.stderr.write(result.stdout)
+        if result.returncode != 0:
+            failed.append(f"{choice.monitor.name}: {shell_status(result.returncode)}")
+        else:
+            done.append(choice.file.record_id)
+    if done:
+        try:
+            with closing(connect(config.index_path)) as conn:
+                for record_id in done:
+                    record_shown(conn, record_id)
+        except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+            _index_error(config, exc)
+    if failed:
+        sys.exit(f"amontillado: group.setter failed for {'; '.join(failed)}")
 
 
 def _group_primary(conn: sqlite3.Connection, query: str, monitor: Monitor) -> IndexedFile:

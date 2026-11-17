@@ -58,7 +58,7 @@ HUES_CHOICES = ("amontillado", "generator")
 RENDERERS = ("amontillado", "matugen")
 PREVIEWS = ("auto", "kitty", "viewer")
 GROUP_ORDERS = ("least-shown", "nearest")
-_GROUP_KEYS = frozenset({"max_distance", "order"})
+_GROUP_KEYS = frozenset({"max_distance", "order", "setter"})
 # Two pictures within this palette distance go together (docs/design.md, "Grouping"; *initial*).
 DEFAULT_MAX_DISTANCE = 0.05
 _CROP_KEYS = frozenset({"preview", "viewer"})
@@ -175,6 +175,8 @@ class GroupConfig:
     max_distance: float = DEFAULT_MAX_DISTANCE
     # The order companions are taken in: least-shown or nearest.
     order: str = "least-shown"
+    # Run under sh -c once per monitor by amo group --apply, with AMO_MONITOR and AMO_WALLPAPER.
+    setter: str | None = None
 
 
 @dataclass(frozen=True)
@@ -266,6 +268,8 @@ def commands(config: Config) -> list[tuple[str, str]]:
     found.append(("crop.viewer", config.crop.viewer))
     for name, tool in config.edit.tools.items():
         found.append((f"edit.tools.{name}.cmd", tool.cmd))
+    if config.group.setter is not None:
+        found.append(("group.setter", config.group.setter))
     if config.on_change is not None:
         found.append(("on_change", config.on_change))
     if config.theme.wallpaper_reload is not None:
@@ -428,7 +432,10 @@ def _group(value: object) -> GroupConfig:
     if isinstance(bound, bool) or not isinstance(bound, (int, float)) or not bound >= 0:
         raise ConfigError(f"group.max_distance: {bound!r} is not a distance (0 or more)")
     order = _choice("group.order", group.get("order", "least-shown"), GROUP_ORDERS)
-    return GroupConfig(float(bound), order or "least-shown")
+    setter = shell_command("group.setter", group.get("setter"))
+    if setter is not None and "AMO_WALLPAPER" not in setter:
+        raise ConfigError("group.setter: names no $AMO_WALLPAPER")
+    return GroupConfig(float(bound), order or "least-shown", setter)
 
 
 def _edit(value: object) -> EditConfig:
