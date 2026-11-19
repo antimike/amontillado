@@ -725,6 +725,30 @@ def test_group_refuses(grouped: dict[str, Path], args: list[str], error: str) ->
         main(["group", *args])
 
 
+def _categorise(pictures: dict[str, Path], **by_name: str) -> None:
+    for name, category in by_name.items():
+        info = pictures[name].parent / "info.yaml"
+        data = yamlio.load(info.read_text())
+        data["source"] = {"site": "wallhaven", "category": category}
+        info.write_text(yamlio.dump(data))
+    main(["index"])
+
+
+def test_group_keep_category(grouped: dict[str, Path], capsys: pytest.CaptureFixture[str]) -> None:
+    # maroon is red's nearest, but a drawing: the photo noise is the nearest photo.
+    _categorise(grouped, red="general", maroon="anime", noise="general", white="anime")
+    red = str(grouped["red"])
+    args = [red, "--monitor", "A=16:9", "--monitor", "B=16:9", "--order", "nearest"]
+    assert _group(capsys, *args)[1] == ("B", "maroon")
+    assert _group(capsys, *args, "--keep-category") == [("A", "red"), ("B", "noise")]
+    # A filter, not a preference: no third general picture.
+    with pytest.raises(SystemExit, match=r"none left for monitor C.*general pictures only"):
+        _group(capsys, *args, "--monitor", "C=16:9", "--keep-category")
+    # black has no category: refused as the primary, never a companion.
+    with pytest.raises(SystemExit, match="has no category; --keep-category needs one"):
+        _group(capsys, str(grouped["black"]), "--monitor", "A=16:9", "--keep-category")
+
+
 def _setter(home: Path, command: str) -> None:
     config = home / ".config/amontillado/config.yaml"
     config.parent.mkdir(parents=True, exist_ok=True)

@@ -73,6 +73,7 @@ from amontillado.index import (
     LookupFailed,
     QueryError,
     RecordFilter,
+    categories,
     connect,
     files,
     files_with_hash,
@@ -406,6 +407,13 @@ def build_parser() -> argparse.ArgumentParser:
             "How close a picture's colours must be to the primary's (palette distance); too "
             "few that close: the nearest beyond fill in, with a warning",
         ),
+    )
+    group.add_argument(
+        "--keep-category",
+        action="store_true",
+        help="Only companions of the primary's category (source.category: general, anime or "
+        "people for Wallhaven pictures), so a photo is not set beside a drawing. A filter: too "
+        "few such pictures is an error. A primary without a category is refused.",
     )
     group.add_argument(
         "--format",
@@ -1348,15 +1356,21 @@ def cmd_group(args: argparse.Namespace) -> None:
                 if not row.absent:
                     by_record.setdefault(row.record_id, []).append(row)
             record_names = {record_id: record_name(conn, record_id) for record_id in by_record}
+            category = categories(conn) if args.keep_category else {}
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
     if saved is not None:
         _warn_if_stale(config, saved)
     look = _look(args)
+    if given is not None and args.keep_category and category.get(given.record_id) is None:
+        sys.exit(f"amontillado: {args.picture} has no category; --keep-category needs one")
 
     def accept(row: IndexedFile) -> bool:
         return (
-            _matches(row, args, look, config) and row.path.is_file() and not annex_absent(row.path)
+            _matches(row, args, look, config)
+            and (not args.keep_category or category.get(row.record_id) is not None)
+            and row.path.is_file()
+            and not annex_absent(row.path)
         )
 
     def file_for(record_id: str, ratio: float) -> IndexedFile:
@@ -1379,15 +1393,27 @@ def cmd_group(args: argparse.Namespace) -> None:
     )
     if primary is None:
         sys.exit("amontillado: no matching pictures")
+    kept = category.get(primary.record_id)
+
+    def accept_companion(row: IndexedFile) -> bool:
+        return accept(row) and (kept is None or category.get(row.record_id) == kept)
+
     try:
         chosen = [
             Choice(primary_monitor, primary, 0.0),
             *companions(
-                primary, others, order, file_for, accept, max_distance=max_distance, nearest=nearest
+                primary,
+                others,
+                order,
+                file_for,
+                accept_companion,
+                max_distance=max_distance,
+                nearest=nearest,
             ),
         ]
     except GroupError as exc:
-        sys.exit(f"amontillado: {exc}")
+        hint = f" (--keep-category: {kept} pictures only)" if kept is not None else ""
+        sys.exit(f"amontillado: {exc}{hint}")
     beyond = [choice.monitor.name for choice in chosen if choice.beyond]
     if beyond:
         logger.warning(
