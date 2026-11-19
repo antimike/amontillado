@@ -6,6 +6,18 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `amo group --predicate NAME`: only companions a command of yours accepts, named under the
+  new `group.predicates` config key (`{cmd, description}`, as `edit.tools`); repeatable, all
+  must accept; `--predicate-cmd CMD` runs a one-off command line, and `--list-predicates` lists
+  them. A predicate runs under `sh -c` with `AMO_PRIMARY` and `AMO_CANDIDATE` (JSON files: the
+  record as `amo list --where` sees it, the file chosen with its metrics and palette, the
+  monitor, the distance to the primary) and `AMO_MONITOR`; exit 0 accepts, 1 rejects, anything
+  else stops `amo group`. It is asked about candidates in the order `amo group` takes them, until
+  one is accepted, including the nearest beyond the bound. The config template has `jq`
+  examples.
+
 ## [0.7.0] - 2026-11-18
 
 Palette-aware grouping: every picture now has a palette, `amo list --like` finds pictures

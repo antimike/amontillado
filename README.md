@@ -75,6 +75,7 @@ amo list --tag night --where "shown_count = 0"   # search provenance and the who
 amo list --like forest --max-distance 0.09   # pictures whose colours go with forest's
 amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9   # a picture per monitor, colours together
 amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9 --apply   # ... and set them (group.setter)
+amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9 --predicate same-site   # your own test
 amo crop forest 21:9 --interactive         # place the crop by hand
 amo edit forest                            # retouch a copy in your editor, keep the result
 

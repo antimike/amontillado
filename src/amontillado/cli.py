@@ -65,7 +65,16 @@ from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.gitcommit import HookError, annex_repository, git_commit
-from amontillado.grouping import Choice, GroupError, Monitor, Pool, companions, distance, fills
+from amontillado.grouping import (
+    Accept,
+    Choice,
+    GroupError,
+    Monitor,
+    Pool,
+    companions,
+    distance,
+    fills,
+)
 from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
@@ -81,6 +90,7 @@ from amontillado.index import (
     known_hashes,
     matching_records,
     names,
+    pictures,
     rebuild,
     record_location,
     record_name,
@@ -124,6 +134,7 @@ from amontillado.palette import (
     load_palette,
     palette_from_schemes,
 )
+from amontillado.predicates import Judge, Predicate, PredicateError
 from amontillado.record import RecordError, sha256_file, write_text_atomic
 from amontillado.registry import RegistryError, registry
 from amontillado.registry import text as registry_text
@@ -374,7 +385,6 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument(
         "--monitor",
         action="append",
-        required=True,
         type=_monitor,
         dest="monitors",
         metavar="NAME=W:H",
@@ -414,6 +424,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only companions of the primary's category (source.category: general, anime or "
         "people for Wallhaven pictures), so a photo is not set beside a drawing. A filter: too "
         "few such pictures is an error. A primary without a category is refused.",
+    )
+    group.add_argument(
+        "--predicate",
+        action="append",
+        default=[],
+        dest="predicates",
+        metavar="NAME",
+        help="Only companions a command accepts: a predicate's name under group.predicates "
+        "(run by sh -c with AMO_PRIMARY, AMO_CANDIDATE and AMO_MONITOR; exit 0 accepts, 1 "
+        "rejects, anything else stops amo group). Repeat for several: all must accept. Asked "
+        "about candidates in the order they are taken, until one is accepted. A filter: none "
+        "accepted is an error.",
+    )
+    group.add_argument(
+        "--predicate-cmd",
+        metavar="CMD",
+        help="A command line to run as one more predicate, as a predicate's cmd is.",
+    )
+    group.add_argument(
+        "--list-predicates",
+        action="store_true",
+        help="List the predicates under group.predicates with their descriptions.",
     )
     group.add_argument(
         "--format",
@@ -1333,10 +1365,16 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def cmd_group(args: argparse.Namespace) -> None:
+    config = _load_config()
+    if args.list_predicates:
+        _list_predicates(config)
+        return
+    if not args.monitors:
+        sys.exit("amontillado: group needs at least one --monitor NAME=W:H")
     names = [monitor.name for monitor in args.monitors]
     if len(set(names)) < len(names):
         sys.exit("amontillado: --monitor: each monitor once")
-    config = _load_config()
+    predicates = _group_predicates(config, args)
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
     if args.apply and config.group.setter is None:
@@ -1357,6 +1395,7 @@ def cmd_group(args: argparse.Namespace) -> None:
                     by_record.setdefault(row.record_id, []).append(row)
             record_names = {record_id: record_name(conn, record_id) for record_id in by_record}
             category = categories(conn) if args.keep_category else {}
+            rows = pictures(conn) if predicates else {}
     except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
         _index_error(config, exc)
     if saved is not None:
@@ -1394,22 +1433,45 @@ def cmd_group(args: argparse.Namespace) -> None:
         )
         for ratio in {monitor.ratio for monitor in args.monitors}
     }
-    primary = given or _auto_primary(
-        pools[primary_monitor.ratio].files, others, pools, max_distance, category
-    )
-    if primary is None:
-        sys.exit("amontillado: no matching pictures")
-    kept = category.get(primary.record_id)
-    try:
-        chosen = [
-            Choice(primary_monitor, primary, 0.0),
-            *companions(
-                primary, others, pools, max_distance=max_distance, nearest=nearest, category=kept
-            ),
-        ]
-    except GroupError as exc:
-        hint = f" (--keep-category: {kept} pictures only)" if kept is not None else ""
-        sys.exit(f"amontillado: {exc}{hint}")
+    with tempfile.TemporaryDirectory(prefix="amo-group-") as work:
+        judge = Judge(predicates, Path(work), rows.__getitem__) if predicates else None
+
+        def accept(primary: IndexedFile) -> Accept | None:
+            if judge is None:
+                return None
+            chosen = Choice(primary_monitor, primary, 0.0)
+            return lambda monitor, file, apart: judge.accepts(chosen, Choice(monitor, file, apart))
+
+        try:
+            primary = given or _auto_primary(
+                pools[primary_monitor.ratio].files,
+                others,
+                pools,
+                max_distance,
+                category,
+                accept,
+                nearest,
+            )
+            if primary is None:
+                sys.exit("amontillado: no matching pictures")
+            kept = category.get(primary.record_id)
+            chosen = [
+                Choice(primary_monitor, primary, 0.0),
+                *companions(
+                    primary,
+                    others,
+                    pools,
+                    max_distance=max_distance,
+                    nearest=nearest,
+                    category=kept,
+                    accept=accept(primary),
+                ),
+            ]
+        except PredicateError as exc:
+            sys.exit(f"amontillado: {exc}")
+        except GroupError as exc:
+            hint = f" (--keep-category: {kept} pictures only)" if kept is not None else ""
+            sys.exit(f"amontillado: {exc}{hint}")
     beyond = [choice.monitor.name for choice in chosen if choice.beyond]
     if beyond:
         logger.warning(
@@ -1476,13 +1538,24 @@ def _auto_primary(
     pools: dict[float, Pool],
     max_distance: float,
     category: dict[str, str | None],
+    accept: Callable[[IndexedFile], Accept | None],
+    nearest: bool,
 ) -> IndexedFile | None:
     """The primary amo group picks itself: the first of `candidates` (least shown first) that
-    gets a compatible companion for every other monitor, passing over those that cannot (they
-    would need the fallback beyond the bound). If none can, the first, with a warning."""
+    gets a compatible companion (accepted by `accept(candidate)`, the predicates) for every
+    other monitor, passing over those that cannot (they would need the fallback beyond the
+    bound). If none can, the first, with a warning."""
     for candidate in candidates:
         kept = category.get(candidate.record_id)
-        if fills(candidate, others, pools, max_distance=max_distance, category=kept):
+        if fills(
+            candidate,
+            others,
+            pools,
+            max_distance=max_distance,
+            category=kept,
+            accept=accept(candidate),
+            nearest=nearest,
+        ):
             return candidate
     if candidates and others:
         logger.warning(
@@ -2276,6 +2349,34 @@ def _edit_command(config: Config, args: argparse.Namespace) -> str:
         known = ", ".join(config.edit.tools) or "none"
         sys.exit(f"amontillado: no tool {name!r} under edit.tools (tools: {known})")
     return tool.cmd
+
+
+def _group_predicates(config: Config, args: argparse.Namespace) -> list[Predicate]:
+    """The predicates --predicate names, then --predicate-cmd's. Exits naming an unknown one."""
+    found = []
+    for name in args.predicates:
+        predicate = config.group.predicates.get(name)
+        if predicate is None:
+            known = ", ".join(config.group.predicates) or "none"
+            sys.exit(
+                f"amontillado: no predicate {name!r} under group.predicates (predicates: {known})"
+            )
+        found.append(Predicate(name, predicate.cmd))
+    if args.predicate_cmd is not None:
+        if not args.predicate_cmd.strip():
+            sys.exit("amontillado: --predicate-cmd is empty")
+        found.append(Predicate("--predicate-cmd", args.predicate_cmd))
+    return found
+
+
+def _list_predicates(config: Config) -> None:
+    predicates = config.group.predicates
+    if not predicates:
+        logger.info("no predicates under group.predicates (amo config init writes examples)")
+        return
+    width = max(len(name) for name in predicates)
+    for name, predicate in predicates.items():
+        print(f"{name:<{width}}  {predicate.description or ''}".rstrip())
 
 
 def _list_tools(config: Config) -> None:
