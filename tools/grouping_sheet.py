@@ -102,6 +102,18 @@ def get_cli_arguments() -> argparse.Namespace:
         "--max-distance", type=float, default=0.05, help="the compatibility bound under test"
     )
     parser.add_argument(
+        "--variants",
+        type=lambda v: v.split(","),
+        default=["V0", "V1", "V2", "V3"],
+        help="comma-separated distance variants to show (variants mode; see VARIANTS)",
+    )
+    parser.add_argument(
+        "--variant",
+        choices=sorted(VARIANTS),
+        help="the distance variant the threshold, k and sets modes use (default: the shipped "
+        "distance)",
+    )
+    parser.add_argument(
         "--bounds",
         type=lambda v: [float(b) for b in v.split(",")],
         default=[0.03, 0.04, 0.05, 0.06, 0.08],
@@ -209,6 +221,10 @@ VARIANTS = {
     "V1": (2.5, 1.0, 0.0, False),
     "V2": (2.5, 0.25, 0.0, False),
     "V3": (2.5, 0.25, 0.5, True),
+    # Round 2 (MH 2026-11-17: V2 best, keep some contrast): contrast weight and gate apart.
+    "C.25": (2.5, 0.25, 0.25, False),
+    "C.5": (2.5, 0.25, 0.5, False),
+    "C.25+G": (2.5, 0.25, 0.25, True),
 }
 EXTREME = (0.2, 0.95)  # lightness below / above which a colour is near-black / near-white
 
@@ -259,12 +275,13 @@ def variants_sheet(args: argparse.Namespace, ids: list[str], thumbs: dict[str, P
         data[picture] = (lab, share, measure(rgb).warmth)
     rows: list[Row] = []
     for anchor in anchors:
-        for name, variant in VARIANTS.items():
+        for name in args.variants:
+            variant = VARIANTS[name]
             ranked = sorted(
                 (variant_distance(data[anchor], data[p], variant), p) for p in ids if p != anchor
             )[: args.neighbours]
             rows.append((name, anchor, [p for _, p in ranked], [d for d, _ in ranked]))
-    write_sheet(args.sheet, thumbs, rows, len(VARIANTS))
+    write_sheet(args.sheet, thumbs, rows, len(args.variants))
     logger.info("sheet: %s (variants, k=%d)", args.sheet, args.k[0])
 
 
@@ -275,12 +292,22 @@ def calibrate(args: argparse.Namespace, ids: list[str], thumbs: dict[str, Path])
     palettes = {
         k: {picture: shipped_palette(rgb, k) for picture, rgb in rgbs.items()} for k in args.k
     }
+    warmth = {picture: measure(rgb).warmth for picture, rgb in rgbs.items()}
     distances = {}
     for k, by_picture in palettes.items():
-        d = np.array([[shipped_distance(by_picture[a], by_picture[b]) for b in ids] for a in ids])
+        if args.variant is None:
+            d = np.array(
+                [[shipped_distance(by_picture[a], by_picture[b]) for b in ids] for a in ids]
+            )
+        else:
+            data = {p: (*oklab_palette(by_picture[p]), warmth[p]) for p in ids}
+            variant = VARIANTS[args.variant]
+            d = np.array([[variant_distance(data[a], data[b], variant) for b in ids] for a in ids])
         np.fill_diagonal(d, np.inf)
         distances[k] = d
+        # The warmth gate makes some pairs incompatible (inf): left out of the percentiles.
         pairs = d[np.triu_indices(len(ids), 1)]
+        pairs = pairs[np.isfinite(pairs)]
         nearest = d.min(1)
         print(
             f"k={k}: any two (p5/25/50/75/95)", np.percentile(pairs, [5, 25, 50, 75, 95]).round(3)
