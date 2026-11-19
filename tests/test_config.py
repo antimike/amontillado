@@ -12,8 +12,8 @@ from amontillado.config import (
     ConfigError,
     CropConfig,
     EditConfig,
-    EditTool,
     GroupConfig,
+    NamedCommand,
     ThemeConfig,
     api_key,
     commands,
@@ -304,6 +304,20 @@ def test_group_block(home: Path) -> None:
     config = load_config()
     assert config.group.setter == 'awww img -o "$AMO_MONITOR" "$AMO_WALLPAPER"'
     assert ("group.setter", config.group.setter) in commands(config)
+    write_config(
+        home,
+        "group:\n"
+        "  predicates:\n"
+        '    calm: {cmd: \'jq -e ".file.metrics.busy < 0.05" "$AMO_CANDIDATE"\', '
+        "description: calm}\n"
+        "    same: {cmd: 'test -n \"$AMO_PRIMARY\"'}\n",
+    )
+    config = load_config()
+    assert config.group.predicates == {
+        "calm": NamedCommand('jq -e ".file.metrics.busy < 0.05" "$AMO_CANDIDATE"', "calm"),
+        "same": NamedCommand('test -n "$AMO_PRIMARY"'),
+    }
+    assert ("group.predicates.same.cmd", 'test -n "$AMO_PRIMARY"') in commands(config)
 
 
 @pytest.mark.parametrize(
@@ -319,6 +333,9 @@ def test_group_block(home: Path) -> None:
             "group.setter: names no $AMO_WALLPAPER",
         ),
         ("group: {setter: 'feh {wallpaper}'}\n", "group.setter: {wallpaper} is gone"),
+        ("group: {predicates: []}\n", "group.predicates must be a mapping"),
+        ("group: {predicates: {a: {}}}\n", "group.predicates.a.cmd must be a command line"),
+        ("group: {predicates: {-a: {cmd: x}}}\n", "group.predicates: '-a' is not a name"),
     ],
 )
 def test_group_block_errors(home: Path, text: str, error: str) -> None:
@@ -357,8 +374,8 @@ def test_edit_block(home: Path) -> None:
     assert load_config().edit == EditConfig(
         "gimp",
         {
-            "gimp": EditTool('gimp -n "$AMO_INPUT"', "GIMP"),
-            "magick-modulate": EditTool('magick "$AMO_INPUT" -modulate 100,80 "$AMO_OUTPUT"'),
+            "gimp": NamedCommand('gimp -n "$AMO_INPUT"', "GIMP"),
+            "magick-modulate": NamedCommand('magick "$AMO_INPUT" -modulate 100,80 "$AMO_OUTPUT"'),
         },
     )
 
@@ -376,8 +393,8 @@ def test_edit_block_without_tools(home: Path) -> None:
         ("edit: {tools: {gimp: {}}}\n", "edit.tools.gimp.cmd must be a command line"),
         ("edit: {tools: {gimp: {cmd: '  '}}}\n", "edit.tools.gimp.cmd must be a command line"),
         ("edit: {tools: {gimp: gimp}}\n", "edit.tools.gimp must be a mapping"),
-        ("edit: {tools: {-x: {cmd: x}}}\n", "edit.tools: '-x' is not a tool name"),
-        ("edit: {tools: {a b: {cmd: x}}}\n", "edit.tools: 'a b' is not a tool name"),
+        ("edit: {tools: {-x: {cmd: x}}}\n", "edit.tools: '-x' is not a name"),
+        ("edit: {tools: {a b: {cmd: x}}}\n", "edit.tools: 'a b' is not a name"),
         (
             "edit: {tools: {gimp: {cmd: x, description: 3}}}\n",
             "edit.tools.gimp.description must be text",
