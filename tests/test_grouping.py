@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -13,8 +14,10 @@ from amontillado.grouping import (
     EXTREME_WEIGHT,
     GroupError,
     Monitor,
+    Pool,
     companions,
     distance,
+    fills,
 )
 from amontillado.index import IndexedFile
 from amontillado.metrics import Metrics, Palette
@@ -103,11 +106,10 @@ MONITORS = [Monitor("DP-2", 16 / 9, "16:9"), Monitor("HDMI-1", 16 / 9, "16:9")]
 
 
 def _companions(order: list[str], **kwargs: object) -> list[tuple[str, bool]]:
-    options = {"max_distance": 0.25, "nearest": False, "accept": lambda f: True, **kwargs}
-    accept = options.pop("accept")
-    chosen = companions(
-        PRIMARY, MONITORS, order, lambda r, _: _file(r, GREYS[r]), accept, **options
-    )
+    """Companions for PRIMARY from the greys in `order` (least shown first)."""
+    options: dict = {"max_distance": 0.25, "nearest": False, **kwargs}
+    pool = Pool([_file(r, GREYS[r]) for r in order], options.pop("categories", None))
+    chosen = companions(PRIMARY, MONITORS, {16 / 9: pool}, **options)
     return [(choice.file.record_id, choice.beyond) for choice in chosen]
 
 
@@ -122,16 +124,46 @@ def test_too_few_compatible_fill_with_the_nearest_beyond() -> None:
     assert _companions(["g90", "g30", "g10"], max_distance=0.25) == [("g10", False), ("g30", True)]
 
 
-def test_companions_skip_the_primary_and_rejected_records() -> None:
-    order = ["g00", "g10", "g20", "g30"]
+def test_companions_skip_the_primary_record() -> None:
     GREYS["g00"] = "#000000"
     try:
-        chosen = _companions(order, accept=lambda f: f.record_id != "g10")
+        chosen = _companions(["g00", "g20", "g30"])
     finally:
         del GREYS["g00"]
+    assert chosen == [("g20", True), ("g30", True)]
+
+
+def test_companions_of_a_category() -> None:
+    categories = {"g10": "anime", "g20": "general", "g30": "general"}
+    chosen = _companions(["g10", "g20", "g30"], categories=categories, category="general")
     assert chosen == [("g20", True), ("g30", True)]
 
 
 def test_too_few_pictures() -> None:
     with pytest.raises(GroupError, match="none left for monitor HDMI-1"):
         _companions(["g10"])
+
+
+def test_fills() -> None:
+    pool = Pool([_file(r, GREYS[r]) for r in ("g10", "g20", "g90")])
+    assert fills(PRIMARY, MONITORS, {16 / 9: pool}, max_distance=0.35)
+    assert not fills(PRIMARY, MONITORS, {16 / 9: pool}, max_distance=0.25)  # g20 is beyond
+    assert fills(PRIMARY, [], {16 / 9: pool}, max_distance=0.0)  # one monitor: nothing to fill
+
+
+def test_pool_distances_are_distance() -> None:
+    palettes = [
+        (("#1b2330", 0.6), ("#c9a46b", 0.4)),
+        (("#000000", 0.9), ("#d02020", 0.1)),
+        (("#ff0000", 1.0),),
+        (("#f0e0d0", 0.5), ("#203040", 0.3), ("#80a040", 0.2)),
+    ]
+    files = [_file(f"r{n}", "#000000") for n in range(len(palettes))]
+    files = [
+        replace(file, metrics=replace(file.metrics, palette=palette, warmth=w))
+        for file, palette, w in zip(files, palettes, (0.9, -0.9, 0.2, -0.3), strict=True)
+    ]
+    pool = Pool(files)
+    for first in files:
+        expected = [distance(first.metrics, other.metrics) for other in files]
+        assert pool.distances(first.metrics) == pytest.approx(expected)
