@@ -151,6 +151,42 @@ def test_fills() -> None:
     assert fills(PRIMARY, [], {16 / 9: pool}, max_distance=0.0)  # one monitor: nothing to fill
 
 
+def _rejecting(rejected: set[str], asked: list[tuple[str, str]]) -> object:
+    def accept(monitor: Monitor, file: IndexedFile, distance: float) -> bool:
+        asked.append((monitor.name, file.record_id))
+        return file.record_id not in rejected
+
+    return accept
+
+
+def test_accept_is_asked_lazily_in_order() -> None:
+    asked: list[tuple[str, str]] = []
+    order = ["g20", "g10", "g90", "g30"]
+    accept = _rejecting({"g20"}, asked)
+    chosen = _companions(order, max_distance=0.35, accept=accept)
+    assert chosen == [("g10", False), ("g30", True)]
+    # g20 rejected, g10 taken; then g20 again (another monitor), the nearest beyond: g30.
+    assert asked == [("DP-2", "g20"), ("DP-2", "g10"), ("HDMI-1", "g20"), ("HDMI-1", "g30")]
+    asked.clear()
+    chosen = _companions(order, max_distance=0.35, nearest=True, accept=accept)
+    assert chosen == [("g10", False), ("g30", True)]
+    assert asked[:2] == [("DP-2", "g10"), ("HDMI-1", "g20")]
+
+
+def test_accept_rejecting_everything() -> None:
+    with pytest.raises(GroupError, match="no picture accepted by the predicates for monitor DP-2"):
+        _companions(["g10", "g20", "g30"], accept=_rejecting({"g10", "g20", "g30"}, []))
+
+
+def test_fills_asks_accept_and_never_goes_beyond() -> None:
+    pool = Pool([_file(r, GREYS[r]) for r in ("g10", "g20", "g90")])
+    asked: list[tuple[str, str]] = []
+    accept = _rejecting({"g20"}, asked)
+    assert not fills(PRIMARY, MONITORS, {16 / 9: pool}, max_distance=0.35, accept=accept)
+    assert ("HDMI-1", "g90") not in asked  # beyond the bound: never asked
+    assert fills(PRIMARY, MONITORS[:1], {16 / 9: pool}, max_distance=0.35, accept=accept)
+
+
 def test_pool_distances_are_distance() -> None:
     palettes = [
         (("#1b2330", 0.6), ("#c9a46b", 0.4)),

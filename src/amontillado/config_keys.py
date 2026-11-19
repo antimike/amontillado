@@ -30,6 +30,8 @@ WIDTH = 100
 APP = "<app>"
 # The placeholder under edit.tools for a tool's own keys.
 TOOL = "<tool>"
+# The placeholder under group.predicates for a predicate's own keys.
+PREDICATE = "<predicate>"
 
 
 @dataclass(frozen=True)
@@ -191,6 +193,26 @@ KEYS: tuple[Key, ...] = (
         "documentation in November 2026. Unset: --apply is refused; amo group only prints its "
         "choice.",
         SETTER_EXAMPLES[0][1],
+    ),
+    Key(
+        "group.predicates",
+        "Commands that judge a companion, by name: amo group --predicate NAME (repeatable: all "
+        "must accept). A predicate's cmd runs with sh -c, with AMO_PRIMARY and AMO_CANDIDATE "
+        "(JSON files amo writes in a temporary directory: the record as amo list --where sees "
+        "it, the file chosen, its metrics and palette, the monitor, the distance to the "
+        "primary) and AMO_MONITOR (the candidate's monitor) added to your environment. Exit 0 "
+        "accepts the candidate, 1 rejects it; anything else (127: command not found) stops "
+        "amo group. It is asked about candidates in the order amo group takes them, until one "
+        "is accepted, so it runs a few times per monitor, not once per picture. Its output "
+        "goes to stderr. jq -e exits 0 for true and 1 for false.",
+    ),
+    Key(
+        f"group.predicates.{PREDICATE}.cmd",
+        "The command line, run by sh -c.",
+    ),
+    Key(
+        f"group.predicates.{PREDICATE}.description",
+        "One line on what the predicate is for, shown by amo group --list-predicates.",
     ),
     Key(
         "on_change",
@@ -424,6 +446,25 @@ TOOL_EXAMPLES = (
     ),
 )
 
+# Commented examples under group.predicates; tests/test_config_keys.py loads them uncommented.
+PREDICATE_EXAMPLES = (
+    ToolExample(
+        "same-site",
+        'jq -es \'.[0].record.site == .[1].record.site\' "$AMO_PRIMARY" "$AMO_CANDIDATE"',
+        "companions from the primary's site (jq -s reads both files into one list)",
+    ),
+    ToolExample(
+        "no-lighter",
+        'jq -es \'map(.file.metrics.lightness) | .[1] <= .[0]\' "$AMO_PRIMARY" "$AMO_CANDIDATE"',
+        "companions no lighter than the primary",
+    ),
+    ToolExample(
+        "calm-hdmi",
+        'test "$AMO_MONITOR" != HDMI-1 || jq -e \'.file.metrics.busy < 0.05\' "$AMO_CANDIDATE"',
+        "an uncluttered picture on HDMI-1, anything elsewhere",
+    ),
+)
+
 _BY_PATH = {key.path: key for key in KEYS}
 
 
@@ -495,12 +536,18 @@ def template() -> str:
             lines.extend(tool_example_lines(indent + "  "))
         if entry.path == "group.setter":
             lines.extend(setter_example_lines(indent))
+        if entry.path == "group.predicates":
+            lines.extend(predicate_example_lines(indent + "  "))
     return "\n".join(lines) + "\n"
 
 
 # Sections holding named entries, and the placeholder for an entry's name in KEYS.
-_ENTRIES = {"theme.apps": APP, "edit.tools": TOOL}
-_ENTRY_KINDS = {"theme.apps": "An app's", "edit.tools": "A tool's"}
+_ENTRIES = {"theme.apps": APP, "edit.tools": TOOL, "group.predicates": PREDICATE}
+_ENTRY_KINDS = {
+    "theme.apps": "An app's",
+    "edit.tools": "A tool's",
+    "group.predicates": "A predicate's",
+}
 
 
 def _entry_keys(section: str, indent: str) -> list[str]:
@@ -524,8 +571,17 @@ def setter_example_lines(indent: str = "  ") -> list[str]:
 
 def tool_example_lines(indent: str = "    ") -> list[str]:
     """The commented examples under edit.tools, as the template has them."""
+    return _example_lines(TOOL_EXAMPLES, indent)
+
+
+def predicate_example_lines(indent: str = "    ") -> list[str]:
+    """The commented examples under group.predicates, as the template has them."""
+    return _example_lines(PREDICATE_EXAMPLES, indent)
+
+
+def _example_lines(examples: tuple[ToolExample, ...], indent: str) -> list[str]:
     lines = []
-    for example in TOOL_EXAMPLES:
+    for example in examples:
         lines.append(f"{indent}#")
         if example.note:
             lines.extend(_comment(example.note, indent))

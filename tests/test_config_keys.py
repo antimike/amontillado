@@ -14,12 +14,15 @@ from amontillado.config import load_config, syntax_error
 from amontillado.config_keys import (
     APP,
     KEYS,
+    PREDICATE,
+    PREDICATE_EXAMPLES,
     SETTER_EXAMPLES,
     TOOL,
     TOOL_EXAMPLES,
     WIDTH,
     flag_help,
     names,
+    predicate_example_lines,
     template,
     tool_example_lines,
 )
@@ -52,6 +55,8 @@ def test_the_table_covers_every_key_the_config_reads() -> None:
     assert names(f"theme.apps.{APP}") == config_module._APP_KEYS
     assert names("edit") == config_module._EDIT_KEYS
     assert names(f"edit.tools.{TOOL}") == config_module._TOOL_KEYS
+    assert names("group") == config_module._GROUP_KEYS
+    assert names(f"group.predicates.{PREDICATE}") == config_module._TOOL_KEYS
     for key in KEYS:
         assert key.meaning.endswith("."), key.path
 
@@ -65,8 +70,8 @@ def test_the_template_fits_and_loads_as_the_defaults(home: Path) -> None:
 
 
 def _uncomment_tools(text: str) -> str:
-    """The tool examples' YAML lines uncommented; their notes stay comments."""
-    examples = set(tool_example_lines())
+    """The tool and predicate examples' YAML lines uncommented; their notes stay comments."""
+    examples = set(tool_example_lines()) | set(predicate_example_lines())
     return "\n".join(
         TOOL_LINE.sub(r"\1\2", line) if line in examples else line for line in text.splitlines()
     )
@@ -88,6 +93,11 @@ def test_every_commented_value_is_valid(home: Path, caplog: pytest.LogCaptureFix
     assert {name: tool.cmd for name, tool in config.edit.tools.items()} == {
         example.name: example.cmd for example in TOOL_EXAMPLES
     }
+    assert {name: p.cmd for name, p in config.group.predicates.items()} == {
+        example.name: example.cmd for example in PREDICATE_EXAMPLES
+    }
+    for name, predicate in config.group.predicates.items():
+        assert syntax_error(predicate.cmd) is None, name
 
 
 @pytest.mark.parametrize(("what", "command"), SETTER_EXAMPLES)

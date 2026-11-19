@@ -58,7 +58,7 @@ HUES_CHOICES = ("amontillado", "generator")
 RENDERERS = ("amontillado", "matugen")
 PREVIEWS = ("auto", "kitty", "viewer")
 GROUP_ORDERS = ("least-shown", "nearest")
-_GROUP_KEYS = frozenset({"max_distance", "order", "setter"})
+_GROUP_KEYS = frozenset({"max_distance", "order", "setter", "predicates"})
 # Two pictures within this distance go together (docs/design.md, "Grouping", decision 6:
 # calibrated with MH 2026-11-18).
 DEFAULT_MAX_DISTANCE = 0.09
@@ -151,9 +151,9 @@ class CropConfig:
 
 
 @dataclass(frozen=True)
-class EditTool:
-    """One editor under `edit.tools`: a command line run by `sh -c`, with AMO_INPUT,
-    AMO_OUTPUT and AMO_WORKDIR in its environment (`amontillado.edit`)."""
+class NamedCommand:
+    """A command line run by `sh -c`, kept by name with a description: an editor under
+    `edit.tools` (`amontillado.edit`) or a predicate under `group.predicates`."""
 
     cmd: str
     description: str | None = None
@@ -165,7 +165,7 @@ class EditConfig:
 
     # None: amo edit needs --tool or --extcmd.
     default_tool: str | None = None
-    tools: dict[str, EditTool] = field(default_factory=dict)
+    tools: dict[str, NamedCommand] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -178,6 +178,8 @@ class GroupConfig:
     order: str = "least-shown"
     # Run under sh -c once per monitor by amo group --apply, with AMO_MONITOR and AMO_WALLPAPER.
     setter: str | None = None
+    # Commands that accept (exit 0) or reject (exit 1) a companion, by name: --predicate NAME.
+    predicates: dict[str, NamedCommand] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -271,6 +273,8 @@ def commands(config: Config) -> list[tuple[str, str]]:
         found.append((f"edit.tools.{name}.cmd", tool.cmd))
     if config.group.setter is not None:
         found.append(("group.setter", config.group.setter))
+    for name, predicate in config.group.predicates.items():
+        found.append((f"group.predicates.{name}.cmd", predicate.cmd))
     if config.on_change is not None:
         found.append(("on_change", config.on_change))
     if config.theme.wallpaper_reload is not None:
@@ -436,7 +440,8 @@ def _group(value: object) -> GroupConfig:
     setter = shell_command("group.setter", group.get("setter"))
     if setter is not None and "AMO_WALLPAPER" not in setter:
         raise ConfigError("group.setter: names no $AMO_WALLPAPER")
-    return GroupConfig(float(bound), order or "least-shown", setter)
+    predicates = _named_commands("group.predicates", group.get("predicates"))
+    return GroupConfig(float(bound), order or "least-shown", setter, predicates)
 
 
 def _edit(value: object) -> EditConfig:
@@ -444,18 +449,24 @@ def _edit(value: object) -> EditConfig:
     if value is None:
         return EditConfig()
     edit = _settings_mapping("edit", value, _EDIT_KEYS)
-    tools = {}
-    for name, tool in _settings_mapping("edit.tools", edit.get("tools") or {}, None).items():
-        if not isinstance(name, str) or not _TOOL_NAME.fullmatch(name):
-            raise ConfigError(f"edit.tools: {name!r} is not a tool name")
-        tools[name] = _tool(f"edit.tools.{name}", tool)
+    tools = _named_commands("edit.tools", edit.get("tools"))
     default = edit.get("default_tool")
     if default is not None and default not in tools:
         raise ConfigError(f"edit.default_tool: {default!r} is not one of edit.tools")
     return EditConfig(default, tools)
 
 
-def _tool(where: str, value: object) -> EditTool:
+def _named_commands(where: str, value: object) -> dict[str, NamedCommand]:
+    """A mapping of names to {cmd, description} (`edit.tools`, `group.predicates`), checked."""
+    named = {}
+    for name, entry in _settings_mapping(where, {} if value is None else value, None).items():
+        if not isinstance(name, str) or not _TOOL_NAME.fullmatch(name):
+            raise ConfigError(f"{where}: {name!r} is not a name")
+        named[name] = _named_command(f"{where}.{name}", entry)
+    return named
+
+
+def _named_command(where: str, value: object) -> NamedCommand:
     tool = _settings_mapping(where, value, _TOOL_KEYS)
     cmd = tool.get("cmd")
     if not isinstance(cmd, str) or not cmd.strip():
@@ -463,7 +474,7 @@ def _tool(where: str, value: object) -> EditTool:
     description = tool.get("description")
     if description is not None and not (isinstance(description, str) and description.strip()):
         raise ConfigError(f"{where}.description must be text")
-    return EditTool(cmd, description)
+    return NamedCommand(cmd, description)
 
 
 def _app(where: str, value: object) -> AppConfig:

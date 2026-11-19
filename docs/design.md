@@ -349,8 +349,9 @@ edit:                                    # amo edit's editors ("Editing")
 never substituted into the text (agreed 2026-11-07, amo-j24.3): `theme.wallpaper.reload` and
 `theme.apps.<app>.reload` get `AMO_WALLPAPER`, `AMO_PROFILE`, `AMO_DIR` and `AMO_VARIANT`;
 `crop.viewer` gets `AMO_FILE`; `amo edit`'s tools get `AMO_INPUT`, `AMO_OUTPUT` and
-`AMO_WORKDIR`; `api_key_command` gets none. So pipelines and fallbacks need no wrapper script,
-and quoting is the user's job (`"$AMO_WALLPAPER"`). The prefix keeps generic names such as
+`AMO_WORKDIR`; `group.setter` gets `AMO_MONITOR` and `AMO_WALLPAPER`, and `group.predicates`
+`AMO_PRIMARY`, `AMO_CANDIDATE` and `AMO_MONITOR`; `api_key_command` gets none. So pipelines
+and fallbacks need no wrapper script, and quoting is the user's job (`"$AMO_WALLPAPER"`). The prefix keeps generic names such as
 `PROFILE` or `DIR` from silently colliding with the user's own environment; an `AMO_*` variable
 amo itself was started with never reaches a reload hook. The `{placeholder}` syntax of v0.2 and
 v0.3 is gone: a leftover `{wallpaper}`, `{profile}`, `{dir}`, `{variant}` or `{file}` (not
@@ -1600,8 +1601,10 @@ before metrics version 3, or absent and measured before it) is an error naming `
 
 ```text
 amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--purity LIST]
-          [--order least-shown|nearest] [--max-distance D] [--keep-category] [--format tsv|json]
+          [--order least-shown|nearest] [--max-distance D] [--keep-category]
+          [--predicate NAME]... [--predicate-cmd CMD] [--format tsv|json]
           [--non-interactive] [--apply] [--dry-run]
+amo group --list-predicates
 ```
 
 - **Monitors** are given in order, at least one, each name once; the first is the primary. Each
@@ -1633,6 +1636,27 @@ amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--puri
   flags, not a preference: too few such pictures is an error, though within them the nearest
   beyond the bound still fill in. A primary without a category is refused, and records without
   one are never companions (or automatic primaries) under it. Opt-in.
+- **Predicates** (amo-6x6, MH 2026-11-14, shape agreed 2026-11-18): the user's own test of a
+  companion, for what amo does not measure (a tag, a source, a rule per monitor).
+  `group.predicates.<name>: {cmd, description}` (as `edit.tools`), `--predicate NAME`
+  (repeatable: all must accept, the first rejection ending the round) and a one-off
+  `--predicate-cmd CMD` (as `amo edit --extcmd`); `--list-predicates` lists them. A predicate
+  runs under `sh -c` with `AMO_PRIMARY` and `AMO_CANDIDATE`, paths to JSON files amo writes in
+  a temporary directory, never the info files: `{"record": ..., "file": {"path", "width",
+  "height", "default", "metrics"}, "monitor": {"name", "aspect"}, "distance"}`, the record as
+  `amo list --where` sees it (a row of the `pictures` view, `tags` and `info` parsed), the
+  metrics as the info file has them (palette included), the distance to the primary to 3
+  decimals (0 for the primary). `AMO_MONITOR` is the candidate's monitor; an `AMO_*` variable
+  amo was started with never reaches it. Exit 0 accepts, 1 rejects (`jq -e` gives both);
+  anything else (126, 127, a signal) stops `amo group` with an error. Its standard output goes
+  to standard error; amo waits for it (no timeout: a predicate may ask the user). It is called
+  lazily, in the order candidates are taken (least-shown, or nearest), stopping at the first
+  accepted, the nearest beyond the bound included, and each pair's verdict is kept for the
+  run. A hard filter like `--keep-category`: no candidate accepted is an error. It judges
+  companions, not the primary itself, but an automatic primary needs a compatible companion it
+  accepts for every other monitor (amo-6f0.8), so a primary it leaves alone is passed over;
+  each one tried costs predicate runs, up to one per compatible picture. Later perhaps for `amo
+  list --like` too.
 - **Output**: `--format tsv` (default) prints `NAME<TAB>PATH` per monitor in the order given, so
   the first line is the primary and `amo theme apply` takes its path; `--format json` prints
   `{"primary": NAME, "monitors": [{"name", "aspect", "path", "record", "distance"}, ...]}`, the

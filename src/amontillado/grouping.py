@@ -25,7 +25,7 @@ for every monitor.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -147,6 +147,11 @@ class Pool:
 _FAR = 1e3
 
 
+# Asked about each candidate in turn (amo group --predicate): the monitor, the candidate's file
+# and its distance to the primary; True accepts it.
+Accept = Callable[[Monitor, IndexedFile, float], bool]
+
+
 def companions(
     primary: IndexedFile,
     monitors: Sequence[Monitor],
@@ -155,13 +160,17 @@ def companions(
     max_distance: float,
     nearest: bool,
     category: str | None = None,
+    accept: Accept | None = None,
+    beyond: bool = True,
 ) -> list[Choice]:
     """A picture for each of `monitors` (the primary's monitor not among them) from the pool of
     its ratio, other than the primary's record and each other's, not gated off by warmth, and
     of `category` if given. Compatible ones (within `max_distance` of the primary) are taken in
     pool order (least shown first), or nearest first with `nearest` (ties in pool order); with
-    none left, the nearest beyond the bound. Raises GroupError when a monitor has no candidate
-    left."""
+    none left, the nearest beyond the bound (unless not `beyond`). `accept`, if given, is asked
+    about the candidates in that order and the first it accepts is taken: it is called lazily,
+    never for a candidate after the one taken. Raises GroupError when a monitor has no candidate
+    left (or none accepted)."""
     used = [primary.record_id]
     chosen: list[Choice] = []
     # Monitors of one ratio share a pool: its distances to the primary are computed once.
@@ -180,15 +189,29 @@ def companions(
                 f"not enough matching pictures: none left for monitor {monitor.name} "
                 f"({len(monitors) + 1} monitors)"
             )
-        compatible = candidates[apart[candidates] <= max_distance]
-        if compatible.size:
-            pick = compatible[np.argmin(apart[compatible])] if nearest else compatible[0]
-        else:
-            pick = candidates[np.argmin(apart[candidates])]
-        chosen.append(
-            Choice(monitor, pool.files[pick], float(apart[pick]), beyond=not compatible.size)
+        within = apart[candidates] <= max_distance
+        compatible, outside = candidates[within], candidates[~within]
+        if nearest:
+            compatible = compatible[np.argsort(apart[compatible], kind="stable")]
+        order = [(int(i), False) for i in compatible]
+        # The nearest beyond the bound, after every compatible one: reached only when none of
+        # those is left (or accepted).
+        if beyond:
+            order += [(int(i), True) for i in outside[np.argsort(apart[outside], kind="stable")]]
+        pick = next(
+            (
+                (i, is_beyond)
+                for i, is_beyond in order
+                if accept is None or accept(monitor, pool.files[i], float(apart[i]))
+            ),
+            None,
         )
-        used.append(pool.files[pick].record_id)
+        if pick is None:
+            reason = "accepted by the predicates" if accept is not None else "within the bound"
+            raise GroupError(f"no picture {reason} for monitor {monitor.name}")
+        i, is_beyond = pick
+        chosen.append(Choice(monitor, pool.files[i], float(apart[i]), beyond=is_beyond))
+        used.append(pool.files[i].record_id)
     return chosen
 
 
@@ -199,13 +222,23 @@ def fills(
     *,
     max_distance: float,
     category: str | None = None,
+    accept: Accept | None = None,
+    nearest: bool = True,
 ) -> bool:
-    """Whether `primary` gets a compatible companion for every one of `monitors`, none from
-    beyond the bound."""
+    """Whether `primary` gets a compatible companion (accepted by `accept`, asked in the order
+    `nearest` gives, as `companions`) for every one of `monitors`, none from beyond the
+    bound."""
     try:
-        chosen = companions(
-            primary, monitors, pools, max_distance=max_distance, nearest=True, category=category
+        companions(
+            primary,
+            monitors,
+            pools,
+            max_distance=max_distance,
+            nearest=nearest,
+            category=category,
+            accept=accept,
+            beyond=False,
         )
     except GroupError:
         return False
-    return not any(choice.beyond for choice in chosen)
+    return True

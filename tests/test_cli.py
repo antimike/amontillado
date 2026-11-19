@@ -771,6 +771,80 @@ def test_group_keep_category(grouped: dict[str, Path], capsys: pytest.CaptureFix
         _group(capsys, str(grouped["black"]), "--monitor", "A=16:9", "--keep-category")
 
 
+def _predicates(home: Path, **predicates: str) -> None:
+    config = home / ".config/amontillado/config.yaml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    entries = {name: {"cmd": cmd, "description": f"{name}!"} for name, cmd in predicates.items()}
+    config.write_text(yamlio.dump({"group": {"predicates": entries}}))
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="needs jq")
+def test_group_predicate(
+    grouped: dict[str, Path],
+    home: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = tmp_path / "asked"
+    monkeypatch.setenv("MAROON_DIR", str(grouped["maroon"].parent))
+    # Logs each candidate, rejects maroon (red's nearest) by its record directory, and checks
+    # that the primary's JSON is red's.
+    reject_maroon = (
+        f'basename "$(jq -r .file.path "$AMO_CANDIDATE")" >> {log}; '
+        '[ "$(jq -r .record.directory "$AMO_CANDIDATE")" = "$MAROON_DIR" ] && exit 1; '
+        f'jq -e \'.record.id == "{_id(grouped["red"])}"\' "$AMO_PRIMARY" >/dev/null'
+    )
+    _predicates(home, no_maroon=reject_maroon, everything="true")
+    args = [str(grouped["red"]), "--monitor", "A=16:9", "--monitor", "B=16:9"]
+    args += ["--order", "nearest"]
+    assert _group(capsys, *args)[1] == ("B", "maroon")
+    assert _group(capsys, *args, "--predicate", "no_maroon", "--predicate", "everything") == [
+        ("A", "red"),
+        ("B", "noise"),
+    ]
+    # Asked lazily, nearest first: maroon (rejected), then noise (accepted); no more.
+    assert log.read_text() == "maroon.png\nnoise.png\n"
+    # A filter: nothing accepted is an error, even beyond the bound.
+    with pytest.raises(SystemExit, match="no picture accepted by the predicates for monitor B"):
+        _group(capsys, *args, "--predicate-cmd", "exit 1")
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="needs jq")
+def test_group_predicate_passes_over_primaries_left_alone(
+    grouped: dict[str, Path],
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for day, name in enumerate(("white", "noise", "black", "maroon"), start=1):
+        _shown_at(home, grouped[name], day)
+    monitors = ["--monitor", "A=16:9", "--monitor", "B=16:9", "--max-distance", "0.5"]
+    assert _group(capsys, *monitors) == [("A", "red"), ("B", "maroon")]
+    # Nothing goes with red once maroon is rejected: the next least shown, white, is primary.
+    monkeypatch.setenv("MAROON_DIR", str(grouped["maroon"].parent))
+    reject = '[ "$(jq -r .record.directory "$AMO_CANDIDATE")" != "$MAROON_DIR" ]'
+    assert _group(capsys, *monitors, "--predicate-cmd", reject) == [("A", "white"), ("B", "noise")]
+
+
+def test_group_predicate_errors(
+    grouped: dict[str, Path], home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _predicates(home, broken="exit 3")
+    args = ["group", str(grouped["red"]), "--monitor", "A=16:9", "--monitor", "B=16:9"]
+    with pytest.raises(SystemExit, match="predicate broken failed: exit status 3"):
+        main([*args, "--predicate", "broken"])
+    with pytest.raises(SystemExit, match=r"no predicate 'nope' under group\.predicates"):
+        main([*args, "--predicate", "nope"])
+    with pytest.raises(SystemExit, match="--predicate-cmd is empty"):
+        main([*args, "--predicate-cmd", " "])
+    with pytest.raises(SystemExit, match="at least one --monitor"):
+        main(["group"])
+    capsys.readouterr()
+    main(["group", "--list-predicates"])
+    assert capsys.readouterr().out == "broken  broken!\n"
+
+
 def _setter(home: Path, command: str) -> None:
     config = home / ".config/amontillado/config.yaml"
     config.parent.mkdir(parents=True, exist_ok=True)
