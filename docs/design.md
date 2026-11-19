@@ -556,7 +556,8 @@ amo list [FILTERS] [--aspect W:H] [--purity LIST]
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
 amo group [PICTURE] --monitor NAME=W:H... [FILTERS] [--purity LIST] [--order least-shown|nearest]
-          [--max-distance D] [--format tsv|json] [--non-interactive] [--apply] [--dry-run]
+          [--max-distance D] [--keep-category] [--format tsv|json] [--non-interactive] [--apply]
+          [--dry-run]
                                      one picture per monitor, colours going together ("Grouping")
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
 amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
@@ -1596,7 +1597,7 @@ before metrics version 3, or absent and measured before it) is an error naming `
 
 ```text
 amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--purity LIST]
-          [--order least-shown|nearest] [--max-distance D] [--format tsv|json]
+          [--order least-shown|nearest] [--max-distance D] [--keep-category] [--format tsv|json]
           [--non-interactive] [--apply] [--dry-run]
 ```
 
@@ -1616,6 +1617,12 @@ amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--puri
   records: the nearest beyond the bound (`--max-distance`, default `group.max_distance`) fill
   the rest, with a warning naming the monitors; a monitor with no matching record left is an
   error. Records without a palette yet are left out with one warning.
+- **`--keep-category`** (amo-6f0.7, MH 2026-11-14): only companions of the primary's category
+  (`source.category`, the index's `category`: general, anime or people for Wallhaven), since a
+  palette does not see style and a photo beside a drawing clashes. A filter like the class
+  flags, not a preference: too few such pictures is an error, though within them the nearest
+  beyond the bound still fill in. A primary without a category is refused, and records without
+  one are never companions (or automatic primaries) under it. Opt-in.
 - **Output**: `--format tsv` (default) prints `NAME<TAB>PATH` per monitor in the order given, so
   the first line is the primary and `amo theme apply` takes its path; `--format json` prints
   `{"primary": NAME, "monitors": [{"name", "aspect", "path", "record", "distance"}, ...]}`, the
@@ -1644,8 +1651,8 @@ amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--puri
   Off-the-shelf trimmers (ImageMagick `-trim`, ffmpeg `cropdetect`, Pillow's `getbbox`
   recipe) cannot tell bars from a dark background.
 - Palettes do not see style: within the bound, 30-33% of pairs are anime next to a photo (42%
-  at random). `amo group --keep-category` (amo-6f0.7) is the cheap remedy; style measures
-  (sharpness, perhaps a learned embedding) are amo-abc.
+  at random). `amo group --keep-category` is the cheap remedy; style measures (sharpness,
+  perhaps a learned embedding) are amo-abc.
 
 **Later** (amo-0k6, not v0.7): saved sets (a set the user liked, kept by name: `amo group
 --save NAME`) and ratings of pictures and sets, with ratings feeding the companion order.

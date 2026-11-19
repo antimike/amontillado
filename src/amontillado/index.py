@@ -405,6 +405,11 @@ def record_name(conn: sqlite3.Connection, record_id: str) -> str | None:
     return None if row is None else row[0]
 
 
+def categories(conn: sqlite3.Connection) -> dict[str, str | None]:
+    """Each indexed record's category (`source.category`; None when it has none), by id."""
+    return dict(conn.execute("SELECT id, category FROM records"))
+
+
 def names(conn: sqlite3.Connection) -> set[str]:
     """The names records answer to."""
     return {name for (name,) in conn.execute("SELECT name FROM records WHERE name IS NOT NULL")}
