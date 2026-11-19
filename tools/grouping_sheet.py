@@ -16,7 +16,7 @@ neighbours the two signatures share, and percentiles of the palette distance (be
 pictures, and to each picture's nearest), which show whether the sample has cluster structure.
 
 --mode compare (the default) is that spike. The other modes calibrate the shipped code
-(amontillado.metrics.palette, amontillado.grouping.palette_distance; amo-6f0.4) and print, for
+(amontillado.metrics.palette, amontillado.grouping.distance; amo-6f0.4) and print, for
 each k in --k, the distance percentiles and how many pictures have enough companions within
 each bound of --bounds (for 2 and 3 monitors without falling back beyond the bound):
 
@@ -41,6 +41,7 @@ The sheet holds Wallhaven thumbnails: write it outside the repository.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import math
 import time
@@ -54,7 +55,7 @@ from rich.logging import RichHandler
 
 from amontillado.cli import HelpFormatter
 from amontillado.colour import srgb_to_oklab
-from amontillado.grouping import palette_distance as shipped_distance
+from amontillado.grouping import distance as shipped_distance
 from amontillado.metrics import Metrics, load_rgb, measure
 from amontillado.metrics import palette as shipped_palette
 
@@ -292,13 +293,13 @@ def calibrate(args: argparse.Namespace, ids: list[str], thumbs: dict[str, Path])
     palettes = {
         k: {picture: shipped_palette(rgb, k) for picture, rgb in rgbs.items()} for k in args.k
     }
-    warmth = {picture: measure(rgb).warmth for picture, rgb in rgbs.items()}
+    measured = {picture: measure(rgb) for picture, rgb in rgbs.items()}
+    warmth = {picture: metrics.warmth for picture, metrics in measured.items()}
     distances = {}
     for k, by_picture in palettes.items():
         if args.variant is None:
-            d = np.array(
-                [[shipped_distance(by_picture[a], by_picture[b]) for b in ids] for a in ids]
-            )
+            at_k = {p: dataclasses.replace(measured[p], palette=by_picture[p]) for p in ids}
+            d = np.array([[shipped_distance(at_k[a], at_k[b]) for b in ids] for a in ids])
         else:
             data = {p: (*oklab_palette(by_picture[p]), warmth[p]) for p in ids}
             variant = VARIANTS[args.variant]

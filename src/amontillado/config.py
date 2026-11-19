@@ -59,8 +59,9 @@ RENDERERS = ("amontillado", "matugen")
 PREVIEWS = ("auto", "kitty", "viewer")
 GROUP_ORDERS = ("least-shown", "nearest")
 _GROUP_KEYS = frozenset({"max_distance", "order", "setter"})
-# Two pictures within this palette distance go together (docs/design.md, "Grouping"; *initial*).
-DEFAULT_MAX_DISTANCE = 0.05
+# Two pictures within this distance go together (docs/design.md, "Grouping", decision 6:
+# calibrated with MH 2026-11-18).
+DEFAULT_MAX_DISTANCE = 0.09
 _CROP_KEYS = frozenset({"preview", "viewer"})
 DEFAULT_VIEWER = 'xdg-open "$AMO_FILE"'
 _EDIT_KEYS = frozenset({"default_tool", "tools"})

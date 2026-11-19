@@ -72,7 +72,7 @@ amo list --dark --order least-shown --random 1   # the dark picture shown least,
 amo list --dark --format rofi | rofi -dmenu -show-icons   # pick one, with thumbnails
 amo measure some.png                       # metrics and classes of any image, as YAML
 amo list --tag night --where "shown_count = 0"   # search provenance and the whole record
-amo list --like forest --max-distance 0.05   # pictures whose colours go with forest's
+amo list --like forest --max-distance 0.09   # pictures whose colours go with forest's
 amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9   # a picture per monitor, colours together
 amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9 --apply   # ... and set them (group.setter)
 amo crop forest 21:9 --interactive         # place the crop by hand
