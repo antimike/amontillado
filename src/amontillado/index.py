@@ -405,6 +405,21 @@ def record_name(conn: sqlite3.Connection, record_id: str) -> str | None:
     return None if row is None else row[0]
 
 
+def pictures(conn: sqlite3.Connection) -> dict[str, dict[str, object]]:
+    """Each indexed record as `amo list --where` sees it (a row of the `pictures` view, its
+    `tags` and `info` parsed from JSON), by id."""
+    cursor = conn.execute("SELECT * FROM pictures")
+    columns = [column for column, *_ in cursor.description]
+    rows = {}
+    for values in cursor:
+        row = dict(zip(columns, values, strict=True))
+        for column in ("tags", "info"):
+            if isinstance(row[column], str):
+                row[column] = json.loads(row[column])
+        rows[row["id"]] = row
+    return rows
+
+
 def categories(conn: sqlite3.Connection) -> dict[str, str | None]:
     """Each indexed record's category (`source.category`; None when it has none), by id."""
     return dict(conn.execute("SELECT id, category FROM records"))
