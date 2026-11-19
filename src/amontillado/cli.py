@@ -65,7 +65,7 @@ from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.gitcommit import HookError, annex_repository, git_commit
-from amontillado.grouping import Choice, GroupError, Monitor, companions, distance
+from amontillado.grouping import Choice, GroupError, Monitor, Pool, companions, distance, fills
 from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
@@ -1383,32 +1383,28 @@ def cmd_group(args: argparse.Namespace) -> None:
         logger.warning(
             "no palette yet: %s left out; run `amo index`", _count(len(unmeasured), "picture")
         )
-    primary = given or next(
-        (
-            file
-            for record_id in order
-            if (file := file_for(record_id, primary_monitor.ratio)).metrics.palette and accept(file)
-        ),
-        None,
+    pools = {
+        ratio: Pool(
+            [
+                file
+                for record_id in order
+                if (file := file_for(record_id, ratio)).metrics.palette and accept(file)
+            ],
+            category,
+        )
+        for ratio in {monitor.ratio for monitor in args.monitors}
+    }
+    primary = given or _auto_primary(
+        pools[primary_monitor.ratio].files, others, pools, max_distance, category
     )
     if primary is None:
         sys.exit("amontillado: no matching pictures")
     kept = category.get(primary.record_id)
-
-    def accept_companion(row: IndexedFile) -> bool:
-        return accept(row) and (kept is None or category.get(row.record_id) == kept)
-
     try:
         chosen = [
             Choice(primary_monitor, primary, 0.0),
             *companions(
-                primary,
-                others,
-                order,
-                file_for,
-                accept_companion,
-                max_distance=max_distance,
-                nearest=nearest,
+                primary, others, pools, max_distance=max_distance, nearest=nearest, category=kept
             ),
         ]
     except GroupError as exc:
@@ -1472,6 +1468,29 @@ def _apply_group(
             _index_error(config, exc)
     if failed:
         sys.exit(f"amontillado: group.setter failed for {'; '.join(failed)}")
+
+
+def _auto_primary(
+    candidates: list[IndexedFile],
+    others: list[Monitor],
+    pools: dict[float, Pool],
+    max_distance: float,
+    category: dict[str, str | None],
+) -> IndexedFile | None:
+    """The primary amo group picks itself: the first of `candidates` (least shown first) that
+    gets a compatible companion for every other monitor, passing over those that cannot (they
+    would need the fallback beyond the bound). If none can, the first, with a warning."""
+    for candidate in candidates:
+        kept = category.get(candidate.record_id)
+        if fills(candidate, others, pools, max_distance=max_distance, category=kept):
+            return candidate
+    if candidates and others:
+        logger.warning(
+            "no matching picture has %s within %s: the least shown takes the nearest beyond",
+            _count(len(others), "companion"),
+            max_distance,
+        )
+    return candidates[0] if candidates else None
 
 
 def _group_primary(conn: sqlite3.Connection, query: str, monitor: Monitor) -> IndexedFile:

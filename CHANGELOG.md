@@ -19,12 +19,13 @@ All notable changes to amontillado are documented here. The format follows
   near-black and near-white counting less, contrast added, and clearly warm and clearly cool
   pictures kept apart; calibrated by eye on 400 wallpapers (docs/design.md, "Grouping:
   decisions" 6).
-- `amo group [PICTURE] --monitor NAME=W:H...`: one picture per monitor, the first monitor's
-  (the primary) PICTURE or the matching picture shown least, the others matching pictures whose
-  colours go with it, in least-shown or nearest order (`group.order`, `--order`), within
-  `group.max_distance` (0.09, `--max-distance`); each monitor gets its record's file of its
-  ratio, with `amo list --aspect`'s crop offer. Prints `NAME<TAB>PATH` per monitor, or JSON
-  (`--format json`). Monitors are given, not detected.
+- `amo group [PICTURE] --monitor NAME=W:H...`: one picture per monitor. The first monitor's
+  (the primary) is PICTURE, or the matching picture shown least that has compatible pictures
+  for every other monitor; the others are matching pictures whose colours go with it, in
+  least-shown or nearest order (`group.order`, `--order`), within `group.max_distance` (0.09,
+  `--max-distance`). Each monitor gets its record's file of its ratio, with `amo list
+  --aspect`'s crop offer. Prints `NAME<TAB>PATH` per monitor, or JSON (`--format json`).
+  Monitors are given, not detected.
 - `amo group --keep-category`: only companions of the primary's category (general, anime,
   people), so a photo is not set beside a drawing; too few such pictures is an error.
 - `amo group --apply` sets each monitor's wallpaper with `group.setter`, a config command run

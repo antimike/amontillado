@@ -1608,7 +1608,14 @@ amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--puri
 - **The primary** is PICTURE if given (any form under "Lookup"; a file path is that file; it
   need not match the filters, and must be here and have a palette), else the first record
   matching the filters in `amo list --order least-shown` order (never shown first, ties at
-  random).
+  random) that has a compatible companion for every other monitor (amo-6f0.8): a picture too
+  particular in its colours to fill the set is passed over, so the fallback beyond the bound
+  happens only for a PICTURE given, or when no matching picture can fill the set (then the
+  least shown, with a warning). Such pictures stay first in least-shown order, so each run
+  tries them again: each monitor ratio's candidates are filtered once and their palettes
+  stacked (`grouping.Pool`), one primary against the pool being one array operation, about 6
+  ms for 5,000 pictures (some 8 s if a quarter of a 5,000-picture library cannot fill a set; a
+  few hundred pictures take well under a second).
 - **Companions** are the other records matching the same filters (and purity), through their
   file for their monitor's ratio, and compatible with the primary, distinct, taken in
   `--order`: `least-shown` (default, `group.order`) explores the library, `nearest` gives the

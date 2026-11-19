@@ -725,6 +725,28 @@ def test_group_refuses(grouped: dict[str, Path], args: list[str], error: str) ->
         main(["group", *args])
 
 
+def test_group_passes_over_primaries_that_cannot_fill_the_set(
+    grouped: dict[str, Path],
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # red is shown least, but its nearest (maroon) is 0.36 away; white's (noise) is 0.30.
+    for day, name in enumerate(("white", "noise", "black", "maroon"), start=1):
+        _shown_at(home, grouped[name], day)
+    monitors = ["--monitor", "A=16:9", "--monitor", "B=16:9"]
+    assert _group(capsys, *monitors, "--max-distance", "0.31") == [("A", "white"), ("B", "noise")]
+    assert "no matching picture has" not in caplog.text
+    # None can: the least shown, with the nearest beyond.
+    assert _group(capsys, *monitors, "--max-distance", "0.2") == [("A", "red"), ("B", "maroon")]
+    assert "no matching picture has 1 companion within 0.2" in caplog.text
+    # A PICTURE given is used as it is.
+    assert _group(capsys, str(grouped["red"]), *monitors, "--max-distance", "0.31")[0] == (
+        "A",
+        "red",
+    )
+
+
 def _categorise(pictures: dict[str, Path], **by_name: str) -> None:
     for name, category in by_name.items():
         info = pictures[name].parent / "info.yaml"

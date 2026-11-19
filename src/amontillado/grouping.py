@@ -17,13 +17,15 @@ and a gate: a clearly warm picture and a clearly cool one (`warmth` beyond GATE_
 way) never go together (infinite distance). 0 is identical colours. A cheap stand-in for earth
 mover's distance, which would need a linear-programming solver.
 
-`companions` picks the pictures that go with a primary one, one per monitor, for `amo group`.
+`companions` picks the pictures that go with a primary one, one per monitor, for `amo group`,
+from a `Pool` per monitor ratio; `fills` tells whether a primary gets compatible companions
+for every monitor.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -104,49 +106,106 @@ class GroupError(Exception):
     """No group can be made; the message says why."""
 
 
+class Pool:
+    """The files a monitor's picture can come from (with a palette, and accepted by the
+    caller's filters), in the order they are taken in (least shown first), with their palettes
+    stacked so that their distances to one picture are one array operation: `amo group` ranks
+    the whole pool against each primary it tries."""
+
+    def __init__(
+        self, files: Sequence[IndexedFile], categories: Mapping[str, str | None] | None = None
+    ) -> None:
+        self.files = list(files)
+        self.ids = np.array([file.record_id for file in self.files], dtype=object)
+        categories = categories or {}
+        self.categories = np.array(
+            [categories.get(file.record_id) for file in self.files], dtype=object
+        )
+        prepared = [_prepared(file.metrics.palette) for file in self.files]
+        width = max((len(weights) for _, weights, _ in prepared), default=1)
+        # Padding: colours too far away to be anyone's nearest, weighing nothing.
+        self.lab = np.full((len(prepared), width, 3), _FAR)
+        self.weights = np.zeros((len(prepared), width))
+        for row, (lab, weights, _) in enumerate(prepared):
+            self.lab[row, : len(weights)] = lab
+            self.weights[row, : len(weights)] = weights
+        self.contrast = np.array([contrast for _, _, contrast in prepared])
+        self.warmth = np.array([file.metrics.warmth for file in self.files])
+
+    def distances(self, metrics: Metrics) -> np.ndarray:
+        """`distance` from `metrics` to each file of the pool, in pool order."""
+        lab, weights, contrast = _prepared(metrics.palette)
+        d = np.sqrt(((lab[None, :, None, :] - self.lab[:, None, :, :]) ** 2).sum(3))
+        nearest = ((d.min(2) * weights).sum(1) + (d.min(1) * self.weights).sum(1)) / 2
+        apart = nearest + CONTRAST_WEIGHT * np.abs(contrast - self.contrast)
+        gated = (metrics.warmth * self.warmth < 0) & (
+            np.minimum(abs(metrics.warmth), np.abs(self.warmth)) > GATE_WARMTH
+        )
+        return np.where(gated, np.inf, apart)
+
+
+_FAR = 1e3
+
+
 def companions(
     primary: IndexedFile,
     monitors: Sequence[Monitor],
-    records: Sequence[str],
-    file_for: Callable[[str, float], IndexedFile],
-    accept: Callable[[IndexedFile], bool],
+    pools: Mapping[float, Pool],
     *,
     max_distance: float,
     nearest: bool,
+    category: str | None = None,
 ) -> list[Choice]:
-    """A picture for each of `monitors` (the primary's monitor not among them) from `records`
-    (record ids, in least-shown order), other than the primary's and each other: each record
-    through its file for the monitor's ratio (`file_for`), which must have a palette, be
-    accepted (`accept`: filters, purity, on disk) and not be gated off by warmth. Compatible
-    ones (within `max_distance` of the primary) are taken in `records` order, or nearest first
-    with `nearest`; with none left, the nearest beyond the bound. Raises GroupError when a
-    monitor has no candidate left."""
-    used = {primary.record_id}
+    """A picture for each of `monitors` (the primary's monitor not among them) from the pool of
+    its ratio, other than the primary's record and each other's, not gated off by warmth, and
+    of `category` if given. Compatible ones (within `max_distance` of the primary) are taken in
+    pool order (least shown first), or nearest first with `nearest` (ties in pool order); with
+    none left, the nearest beyond the bound. Raises GroupError when a monitor has no candidate
+    left."""
+    used = [primary.record_id]
     chosen: list[Choice] = []
+    # Monitors of one ratio share a pool: its distances to the primary are computed once.
+    measured: dict[float, np.ndarray] = {}
     for monitor in monitors:
-        candidates = []
-        for position, record_id in enumerate(records):
-            if record_id in used:
-                continue
-            file = file_for(record_id, monitor.ratio)
-            if not file.metrics.palette or not accept(file):
-                continue
-            apart = distance(primary.metrics, file.metrics)
-            # The warmth gate: never a companion, not even beyond the bound.
-            if math.isfinite(apart):
-                candidates.append((apart, position, file))
-        if not candidates:
+        pool = pools[monitor.ratio]
+        if monitor.ratio not in measured:
+            measured[monitor.ratio] = pool.distances(primary.metrics)
+        apart = measured[monitor.ratio]
+        allowed = np.isfinite(apart) & ~np.isin(pool.ids, used)
+        if category is not None:
+            allowed &= pool.categories == category
+        candidates = np.flatnonzero(allowed)
+        if not candidates.size:
             raise GroupError(
                 f"not enough matching pictures: none left for monitor {monitor.name} "
                 f"({len(monitors) + 1} monitors)"
             )
-        compatible = [c for c in candidates if c[0] <= max_distance]
-        if compatible:
-            pool = sorted(compatible) if nearest else compatible
-            apart, _, file = pool[0]
-            chosen.append(Choice(monitor, file, apart))
+        compatible = candidates[apart[candidates] <= max_distance]
+        if compatible.size:
+            pick = compatible[np.argmin(apart[compatible])] if nearest else compatible[0]
         else:
-            apart, _, file = min(candidates)
-            chosen.append(Choice(monitor, file, apart, beyond=True))
-        used.add(file.record_id)
+            pick = candidates[np.argmin(apart[candidates])]
+        chosen.append(
+            Choice(monitor, pool.files[pick], float(apart[pick]), beyond=not compatible.size)
+        )
+        used.append(pool.files[pick].record_id)
     return chosen
+
+
+def fills(
+    primary: IndexedFile,
+    monitors: Sequence[Monitor],
+    pools: Mapping[float, Pool],
+    *,
+    max_distance: float,
+    category: str | None = None,
+) -> bool:
+    """Whether `primary` gets a compatible companion for every one of `monitors`, none from
+    beyond the bound."""
+    try:
+        chosen = companions(
+            primary, monitors, pools, max_distance=max_distance, nearest=True, category=category
+        )
+    except GroupError:
+        return False
+    return not any(choice.beyond for choice in chosen)
