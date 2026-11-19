@@ -6,6 +6,14 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-18
+
+Palette-aware grouping: every picture now has a palette, `amo list --like` finds pictures
+whose colours go with one, and `amo group` picks a coherent picture for each monitor (and with
+`--apply` sets them), the theme taken from the first. The colour distance and its bound were
+calibrated by eye on 400 wallpapers. The first `amo index` after upgrading measures every
+picture again.
+
 ### Added
 
 - Each file's metrics gain a `palette`: up to 6 colours from k-means in OKLab, with their
@@ -31,6 +39,11 @@ All notable changes to amontillado are documented here. The format follows
 - `amo group --apply` sets each monitor's wallpaper with `group.setter`, a config command run
   once per monitor with `AMO_MONITOR` and `AMO_WALLPAPER`, and counts each picture as shown.
   `amo config init` has examples for hyprpaper, awww (swww), sway, wpaperd and xwallpaper.
+
+### Changed
+
+- The template sources' pins moved to their current commits: tinted-terminal, base16-rofi,
+  base16-dunst, base16-waybar, tinted-shell and pywal16 (`amo theme sync` fetches them).
 
 ### Fixed
 

@@ -17,7 +17,9 @@ and captures without keyboard focus, optionally off screen; `amo edit` with name
 instead of `{placeholder}`s ("Config", 2026-11-08). v0.5 (2026-11-13): the `system` variant,
 which follows the desktop's colour scheme ("Variant"). v0.6 (2026-11-13): `amo list --order
 least-shown`, the stale-index warning ("CLI"), the light variant's bright step calibrated
-("Contrast checks"), and the grouping design for v0.7 ("Grouping (v0.7)").
+("Contrast checks"), and the grouping design for v0.7 ("Grouping (v0.7)"). v0.7 (2026-11-18):
+grouping built ("Grouping (v0.7)"): a palette per file, `amo list --like`, `amo group` with a
+setter hook, the distance and its bound calibrated with MH ("Grouping: decisions" 6).
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -1540,8 +1542,9 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
 
 ## Grouping (v0.7)
 
-**Status: agreed with MH 2026-11-13** (spike amo-50c.1; built in epic `amo-6f0`; the decisions
-are under "Grouping: decisions" below). Pictures that go together, for several monitors, with
+**Status: agreed with MH 2026-11-13** (spike amo-50c.1), built in epic `amo-6f0` and released
+in v0.7.0 (2026-11-18), the distance recalibrated with MH (decision 6; the decisions are under
+"Grouping: decisions" below). Pictures that go together, for several monitors, with
 the theme taken from the primary monitor's picture ("Roadmap", item 2). Monitor detection and
 the wallpaper setter stay in the user's desktop configuration: amo takes monitors as arguments.
 
@@ -1731,9 +1734,11 @@ by eye on a contact sheet (`just grouping-sheet` reproduces it).
 
 1. v0.1 (released 2026-10-28): the CLI above, calibrated thresholds, tests, CI, a tagged
    release.
-2. Palette-aware grouping (epic `amo-6f0`, v0.7; designed in v0.6, "Grouping (v0.7)"): a
-   stored palette per file, `amo list --like`, and `amo group`, a coherent set for several
-   monitors, the theme taken from the primary monitor's picture.
+2. Palette-aware grouping (epic `amo-6f0`; released in v0.7, 2026-11-18; designed in v0.6,
+   "Grouping (v0.7)"): a stored palette per file, `amo list --like`, and `amo group`, a
+   coherent set for several monitors, the theme taken from the primary monitor's picture.
+   Later: saved sets and ratings (amo-0k6), letterbox detection (amo-5o8), style measures
+   (amo-abc).
 3. v0.2, the theme engine (epic `amo-aqp`; released 2026-11-03): palette files, generator
    adapters, per-app templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
    from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,
