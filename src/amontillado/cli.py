@@ -65,7 +65,7 @@ from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.gitcommit import HookError, annex_repository, git_commit
-from amontillado.grouping import Choice, GroupError, Monitor, companions, palette_distance
+from amontillado.grouping import Choice, GroupError, Monitor, companions, distance
 from amontillado.hook import run_on_change
 from amontillado.index import (
     IndexDatabaseError,
@@ -339,8 +339,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-distance",
         type=_distance,
         metavar="D",
-        help="With --like: only the matches within D of PICTURE (0 is identical colours; two "
-        "pictures that go together are about 0.05 apart).",
+        help="With --like: only the matches within D of PICTURE (0 is identical colours; amo "
+        "group takes pictures within group.max_distance, 0.09 by default, as going together).",
     )
     list_.add_argument(
         "--format",
@@ -1558,7 +1558,8 @@ def _nearest(
     rows: list[IndexedFile], like: IndexedFile, max_distance: float | None
 ) -> list[IndexedFile]:
     """`rows` other than `like`'s record, nearest to it in colour first (ties by path), those
-    beyond `max_distance` left out. Rows without a palette are left out with a warning."""
+    beyond `max_distance` left out; those of the opposite temperature (the warmth gate) come
+    last, by path. Rows without a palette are left out with a warning."""
     others = [row for row in rows if row.record_id != like.record_id]
     unmeasured = [row for row in others if not row.metrics.palette]
     if unmeasured:
@@ -1567,11 +1568,11 @@ def _nearest(
             _count(len(unmeasured), "picture"),
         )
     ranked = sorted(
-        (palette_distance(like.metrics.palette, row.metrics.palette), str(row.path), row)
+        (distance(like.metrics, row.metrics), str(row.path), row)
         for row in others
         if row.metrics.palette
     )
-    return [row for distance, _, row in ranked if max_distance is None or distance <= max_distance]
+    return [row for apart, _, row in ranked if max_distance is None or apart <= max_distance]
 
 
 def _least_shown(rows: list[IndexedFile], shown: dict[str, tuple[int, str]]) -> list[IndexedFile]:

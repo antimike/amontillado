@@ -295,9 +295,9 @@ def test_crop_block(home: Path) -> None:
 
 
 def test_group_block(home: Path) -> None:
-    assert load_config().group == GroupConfig(0.05, "least-shown")
+    assert load_config().group == GroupConfig(0.09, "least-shown")
     write_config(home, "group:\n")
-    assert load_config().group == GroupConfig(0.05, "least-shown")
+    assert load_config().group == GroupConfig(0.09, "least-shown")
     write_config(home, "group: {max_distance: 0, order: nearest}\n")
     assert load_config().group == GroupConfig(0.0, "nearest")
     write_config(home, """group: {setter: 'awww img -o "$AMO_MONITOR" "$AMO_WALLPAPER"'}\n""")

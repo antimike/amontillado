@@ -13,14 +13,17 @@ All notable changes to amontillado are documented here. The format follows
   writes the same palette. Metrics version 3: the next `amo index` measures every file again
   once; a file whose git-annex content is not here keeps its version 2 metrics and stays
   indexed. Index schema 9 (the palette as JSON).
-- `amo list --like PICTURE`: the matches ordered by how close their colours are to PICTURE's
-  (the distance between their palettes), nearest first; `--max-distance D` keeps those within
-  D. It excludes `--order` and `--random`.
+- `amo list --like PICTURE`: the matches ordered by how close their colours are to PICTURE's,
+  nearest first; `--max-distance D` keeps those within D. It excludes `--order` and
+  `--random`. The colour distance compares palettes with colour counting more than lightness,
+  near-black and near-white counting less, contrast added, and clearly warm and clearly cool
+  pictures kept apart; calibrated by eye on 400 wallpapers (docs/design.md, "Grouping:
+  decisions" 6).
 - `amo group [PICTURE] --monitor NAME=W:H...`: one picture per monitor, the first monitor's
   (the primary) PICTURE or the matching picture shown least, the others matching pictures whose
   colours go with it, in least-shown or nearest order (`group.order`, `--order`), within
-  `group.max_distance` (`--max-distance`); each monitor gets its record's file of its ratio,
-  with `amo list --aspect`'s crop offer. Prints `NAME<TAB>PATH` per monitor, or JSON
+  `group.max_distance` (0.09, `--max-distance`); each monitor gets its record's file of its
+  ratio, with `amo list --aspect`'s crop offer. Prints `NAME<TAB>PATH` per monitor, or JSON
   (`--format json`). Monitors are given, not detected.
 - `amo group --apply` sets each monitor's wallpaper with `group.setter`, a config command run
   once per monitor with `AMO_MONITOR` and `AMO_WALLPAPER`, and counts each picture as shown.

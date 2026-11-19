@@ -612,7 +612,7 @@ def test_list_like_orders_by_palette_distance(
     # Nearest first; red itself left out, given by its file or its directory.
     assert _listed(capsys, "--like", red) == ["maroon", "noise", "white", "black"]
     assert _listed(capsys, "--like", str(library / "red")) == ["maroon", "noise", "white", "black"]
-    assert _listed(capsys, "--like", red, "--max-distance", "0.28") == ["maroon"]
+    assert _listed(capsys, "--like", red, "--max-distance", "0.5") == ["maroon"]
     assert _listed(capsys, "--like", red, "--dark") == ["black"]
 
 
@@ -654,7 +654,7 @@ def _group(capsys: pytest.CaptureFixture[str], *args: str) -> list[tuple[str, st
 
 @pytest.fixture
 def grouped(indexed: dict[str, Path], library: Path) -> dict[str, Path]:
-    """`indexed` and a maroon record, 0.27 from red (black 0.68, white 0.45, noise 0.31)."""
+    """`indexed` and a maroon record, 0.36 from red (noise 0.73, white 0.74, black 0.90)."""
     indexed["maroon"] = _record(library / "maroon", (128, 0, 0), "maroon.png")
     main(["index"])
     return indexed
@@ -665,7 +665,7 @@ def test_group_picks_compatible_companions(
 ) -> None:
     red = str(grouped["red"])
     monitors = ["--monitor", "DP-1=16:9", "--monitor", "HDMI-1=16:9"]
-    assert _group(capsys, red, *monitors, "--max-distance", "0.28") == [
+    assert _group(capsys, red, *monitors, "--max-distance", "0.5") == [
         ("DP-1", "red"),
         ("HDMI-1", "maroon"),
     ]
@@ -690,7 +690,7 @@ def test_group_json(grouped: dict[str, Path], capsys: pytest.CaptureFixture[str]
     assert first == {"name": "A", "aspect": "16:9", "path": str(grouped["red"]),
                      "record": _id(grouped["red"]), "distance": 0.0}  # fmt: skip
     assert (second["name"], second["path"]) == ("B", str(grouped["maroon"]))
-    assert second["distance"] == pytest.approx(0.27, abs=0.01)
+    assert second["distance"] == pytest.approx(0.36, abs=0.01)
 
 
 def test_group_primary_is_the_least_shown_match(

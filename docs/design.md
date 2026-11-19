@@ -1564,12 +1564,23 @@ before version 3 that is absent (annexed content not here) keeps its version 2 m
 are still read and written back unchanged, and stays indexed without a palette until its
 content is got; grouping skips it.
 
-**Distance** between two palettes: each colour's OKLab distance to the nearest colour of the
-other palette, weighted by its share, averaged over both directions (0 for identical palettes).
-A cheap stand-in for earth mover's distance, which would need a linear-programming solver
-(scipy). Two pictures are **compatible** when their distance is at most `group.max_distance`,
-0.05 (*initial*; on the calibration sample the median distance to a picture's nearest neighbour
-was 0.033, its 95th percentile 0.055, and the median between any two pictures 0.09).
+**Distance** between two pictures (calibrated with MH, decision 6): each palette colour's
+distance to the nearest colour of the other palette, weighted, averaged over both directions,
+in OKLab with three corrections (`amontillado.grouping`):
+
+- the colour axes (a, b) count 2.5 times as much as lightness;
+- near-black and near-white colours (L < 0.2 or > 0.95) count a quarter of their share, the
+  weights then renormalised, so two mostly dark pictures are compared mostly on their accents;
+- the difference in contrast (the share-weighted standard deviation of the palette's lightness)
+  is added, a quarter of it;
+
+and a **warmth gate**: a picture whose `warmth` is above 0.5 and one below -0.5 never go
+together (infinite distance: never a companion, last in `amo list --like`). 0 is identical
+colours. A cheap stand-in for earth mover's distance, which would need a linear-programming
+solver (scipy). The distance is computed at query time from the stored palette and metrics, so
+changing it needs no re-measuring. Two pictures are **compatible** when their distance is at
+most `group.max_distance`, 0.09 (calibrated; on the calibration sample the median distance to
+a picture's nearest neighbour is 0.065 and between any two pictures 0.167).
 
 **`amo list --like PICTURE`** (amo-6f0.2) orders the matches by distance to PICTURE, nearest
 first (ties by path), PICTURE's record left out; each record is compared through the file `amo
@@ -1623,8 +1634,18 @@ amo group [PICTURE] --monitor NAME=W:H [--monitor NAME=W:H]... [FILTERS] [--puri
   examples: swaybg sets every output from one process, and feh assigns pictures by screen order
   in one call, so both are run from a script reading `amo group`'s output (tsv or json).
 
-**Known limitation** (from the spike): a letterboxed picture's bars dominate its palette, so it
-groups with mostly black pictures. To look at in calibration (amo-6f0.4).
+**Known limitations** (calibration, amo-6f0.4):
+
+- A letterboxed picture's bars dominate its palette, so it groups with mostly black pictures (1
+  of the 400 sample pictures). The fix belongs at add and fetch, not in grouping: detect the
+  bars by where the dark pixels lie (a letterbox's dark cluster sits in the outer rows and
+  never in the middle; a dark background's spreads through the frame; the clusters' spreads do
+  not tell them apart) and offer a crop to the picture as a derived file (amo-5o8).
+  Off-the-shelf trimmers (ImageMagick `-trim`, ffmpeg `cropdetect`, Pillow's `getbbox`
+  recipe) cannot tell bars from a dark background.
+- Palettes do not see style: within the bound, 30-33% of pairs are anime next to a photo (42%
+  at random). `amo group --keep-category` (amo-6f0.7) is the cheap remedy; style measures
+  (sharpness, perhaps a learned embedding) are amo-abc.
 
 **Later** (amo-0k6, not v0.7): saved sets (a set the user liked, kept by name: `amo group
 --save NAME`) and ratings of pictures and sets, with ratings feeding the companion order.
@@ -1657,6 +1678,29 @@ by eye on a contact sheet (`just grouping-sheet` reproduces it).
 5. **Output tsv or json, and an optional setter hook**, not built-in setter formats: setter
    command lines drift between versions, and the config command convention (`sh -c`, `AMO_*`)
    already covers it, with examples in the config template.
+6. **The distance, k and the bound, calibrated by eye** (amo-6f0.4, MH 2026-11-14 to 11-18;
+   `just grouping-sheet`, its threshold, sets, k, letterbox and variants modes, on the 400
+   calibration thumbnails). Plain OKLab nearest-colour distance (the spike's) failed MH's
+   judgment where colours differed but lightness matched: pictures sharing a hue on different
+   backgrounds were far apart, mostly-black pictures matched whatever their accents, warm next
+   to black-and-white, red next to blue. Measured cause: palette colours vary 7-8 times more in
+   lightness than in colour (standard deviation 0.28 against 0.035 and 0.041), so lightness
+   made up a median 61% of a distance. Variants were judged side by side on the same anchors:
+   colour weighted 2.5 times (V1), plus extremes down-weighted (V2, best overall), plus a
+   contrast term at 0.5 with the warmth gate (V3; MH liked most of its sets), then contrast
+   alone at 0.25 and 0.5 and with the gate: 0.25 slightly better than 0.5; the gate changed
+   one neighbour in 18 anchors but has no downside, so it stays. **k** stays 6: choosing k per
+   picture by cluster validity (silhouette) gave 2 for 86% of pictures, since a wallpaper's
+   colours form gradients, not clusters (the palette quantises; it does not find clusters),
+   and on the sheets k = 4, 6 and 8 differed mostly in order, MH preferring 6 by a little.
+   **The bound** 0.09: under the new distance, at 0.08 / 0.09 / 0.10, 64 / 74 / 85% of
+   pictures have two companions (three monitors without falling back), 28 / 19 / 10% of the
+   sample is never shown by automatic grouping once primaries that cannot fill a set are
+   skipped (amo-6f0.8), and companions within it differ from the primary by a median hue of 16
+   / 20 / 23 degrees (81 at random). MH preferred 0.08 and 0.09 to 0.10 by eye, and the
+   companions between 0.09 and 0.10 were the visibly weaker ones; 0.09 keeps most of 0.08's
+   coherence with a larger pool for the least-shown rotation. A larger or more uniform library
+   than the sample has more companions per picture, so it could afford a tighter bound.
 
 ## Testing
 

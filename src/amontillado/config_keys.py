@@ -164,10 +164,11 @@ KEYS: tuple[Key, ...] = (
     ),
     Key(
         "group.max_distance",
-        "How close (palette distance) a picture must be to the primary monitor's to go with it: "
-        "0 is identical colours, about 0.03 the typical nearest neighbour, 0.09 two pictures "
-        "picked at random. Lower gives more coherent sets from fewer pictures. Too few within "
-        "it: the nearest beyond fill in, with a warning. --max-distance overrides it.",
+        "How close (colour distance) a picture must be to the primary monitor's to go with it: "
+        "0 is identical colours; on a sample of 400 wallpapers, 0.065 was the typical nearest "
+        "neighbour and 0.17 two pictures picked at random, and at 0.09 three in four pictures "
+        "had two companions. Lower gives more coherent sets from fewer pictures. Too few "
+        "within it: the nearest beyond fill in, with a warning. --max-distance overrides it.",
         str(DEFAULT_MAX_DISTANCE),
         default=str(DEFAULT_MAX_DISTANCE),
     ),
