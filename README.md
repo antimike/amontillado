@@ -28,10 +28,9 @@ not too busy behind it. amontillado aims to make those properties something you 
   optional), check its contrast and fix what fails, render it into each app's file
   (amontillado's own templates, or tinted-theming, matugen-themes and pywal16 ones, pinned),
   and swap them all in at once, with each app's reload command.
-
-Later, the same measurements are meant to drive palette-aware selection: grouping images whose
-colours go together, so that several monitors show a coherent set. See
-[docs/design.md](docs/design.md) for the plan and the reasoning behind it.
+- **Group** pictures whose colours go together, so that several monitors show a coherent set:
+  `amo group` picks one per monitor, the theme taken from the first. See
+  [docs/design.md](docs/design.md) for the reasoning behind it.
 
 ## Status
 
@@ -43,7 +42,8 @@ colour-scheme hook, record naming and hand-made derived files; v0.4.0 optional v
 and merge by key), `amo edit`, and a GTK4 `libadwaita-vars` template; v0.5.0 a `system`
 variant that follows the desktop's dark/light colour scheme; v0.6.0 `amo list --order
 least-shown`, a warning when the index is out of date, and darker bright colours for light
-themes ([CHANGELOG.md](CHANGELOG.md)).
+themes; v0.7.0 palette-aware grouping: a palette per picture, `amo list --like`, and `amo
+group`, one picture per monitor whose colours go together ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
@@ -51,7 +51,7 @@ themes ([CHANGELOG.md](CHANGELOG.md)).
 Pin a tag:
 
 ```sh
-pipx install git+https://github.com/antimike/amontillado@v0.6.0
+pipx install git+https://github.com/antimike/amontillado@v0.7.0
 ```
 
 From a checkout, for development: `just install-dev` (an editable pipx install), or

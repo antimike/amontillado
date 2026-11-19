@@ -10,13 +10,13 @@
 # not redistributed by amontillado (all three upstreams are MIT).
 version: 1
 repositories:
-  tinted-theming/tinted-terminal: {commit: cd1785404c94d2d812d85da51010639e2fc86ca9}
-  tinted-theming/base16-rofi: {commit: 307f0f898f176b779fa51a1b5b9c7ce79fa572d4}
-  tinted-theming/base16-dunst: {commit: 32c9cec5a85d4d57857472c06437cc0e2c4a8166}
-  tinted-theming/base16-waybar: {commit: a7bb37eacde16df4110e81444b99bec02d45dbda}
-  tinted-theming/tinted-shell: {commit: 3586db39dd1bfcadd3285da17a28841a54862a0d}
+  tinted-theming/tinted-terminal: {commit: 4532b9a196925fbc9013607a040d4baeae9978aa}
+  tinted-theming/base16-rofi: {commit: 21de7ac99886a66c08cbb93c5fdc1964461d1325}
+  tinted-theming/base16-dunst: {commit: 78b63e1ed7f7a2e60a299e714bc00d6d4d76c2c8}
+  tinted-theming/base16-waybar: {commit: cd3a7eb4f269e428e39d36b137c61f9934cc63ba}
+  tinted-theming/tinted-shell: {commit: 497c34eacade613cd28fa51e98440d336dcc1f80}
   InioX/matugen-themes: {commit: 81dbb64821cd1716371a7590bfab245c0af0d19a}
-  eylles/pywal16: {commit: 9f34fbfe5f21b1c23aeea16647c926d788f2ce31}
+  eylles/pywal16: {commit: 9767ef685ee8451766d023e33db9d625f3e3d5bb}
 sources:
   builtin:
     kitty: {output: kitty.conf, complete: false, description: colour options; include from kitty.conf}
