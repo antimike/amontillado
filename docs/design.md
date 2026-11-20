@@ -21,7 +21,9 @@ least-shown`, the stale-index warning ("CLI"), the light variant's bright step c
 grouping built ("Grouping (v0.7)"): a palette per file, `amo list --like`, `amo group` with a
 setter hook, the distance and its bound calibrated with MH ("Grouping: decisions" 6). v0.8
 (2026-11-19): `amo group --predicate` ("Grouping (v0.7)", Predicates) and letterbox detection
-with `amo crop --letterbox` ("Letterboxes (v0.8)").
+with `amo crop --letterbox` ("Letterboxes (v0.8)"). v0.9 (2026-11-20): Wallhaven tag
+categories kept in `source.tag_categories` for naming, `amo fetch --refresh-tags` to backfill
+them, and `amo name --from-tags --force` ("Names of fetched records", "CLI").
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -1881,9 +1883,9 @@ rejected for a dark middle, one of thin or one-sided bars).
    the grouping spike (amo-50c.1) that designs item 2 for v0.7.
 9. v0.8 (epic `amo-soq`; released 2026-11-19): `amo group --predicate` (amo-6x6) and letterbox
    detection with a crop offer (amo-5o8).
-10. v0.8.1 (epic `amo-301`; planned): the hyprpaper >= 0.8 reload example (amo-qu4), and
-    Wallhaven tag categories kept for naming, with a backfill (amo-ugu); v0.9.0 if the backfill
-    adds an option.
+10. v0.9 (epic `amo-301`, planned as v0.8.1; released 2026-11-20): the hyprpaper >= 0.8 reload
+    example (amo-qu4), and Wallhaven tag categories kept for naming, with a backfill and `amo
+    name --from-tags --force` (amo-ugu); a minor release because those add options.
 
 ## Open questions
 

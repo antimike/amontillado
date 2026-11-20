@@ -6,6 +6,14 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-20
+
+Wallhaven tag categories: `amo fetch` keeps each tag's category, so naming a record from its
+tags later passes over artists', companies' and technique tags as a fresh fetch does.
+Records fetched before this release get theirs with `amo fetch --refresh-tags`; `amo name
+--from-tags --force` then renames them. Planned as 0.8.1; minor because of the new options.
+Also a working hyprpaper 0.8 example for the wallpaper hook.
+
 ### Added
 
 - `amo fetch` keeps each tag's Wallhaven category in the info file's
