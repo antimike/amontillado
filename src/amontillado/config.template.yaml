@@ -213,8 +213,9 @@ theme:
     # command skipped if it names it, when the theme has none), AMO_PROFILE, AMO_DIR (the profile's
     # directory) and AMO_VARIANT (dark or light: the variant of an app without its own) in its
     # environment. Quote them ("$AMO_WALLPAPER"). Setting the wallpaper stays your command:
-    # amontillado only knows which picture belongs to the theme.
-    # reload: 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'
+    # amontillado only knows which picture belongs to the theme. The example is hyprpaper's (>=
+    # 0.8): no monitor before the comma sets every monitor.
+    # reload: 'hyprctl hyprpaper wallpaper ",$AMO_WALLPAPER,cover"'
 
   # The apps to theme, one entry per app by name; each renders one file into the profile, which the
   # app's own config includes. Every key of an app is optional: {} renders the built-in template of

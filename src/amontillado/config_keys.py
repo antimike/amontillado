@@ -291,8 +291,9 @@ KEYS: tuple[Key, ...] = (
         "AMO_PROFILE, AMO_DIR (the profile's directory) and AMO_VARIANT (dark or light: the "
         "variant of an app without its own) in its environment. Quote them "
         '("$AMO_WALLPAPER"). Setting the wallpaper stays your command: amontillado only '
-        "knows which picture belongs to the theme.",
-        "'hyprctl hyprpaper reload ,\"$AMO_WALLPAPER\"'",
+        "knows which picture belongs to the theme. The example is hyprpaper's (>= 0.8): no "
+        "monitor before the comma sets every monitor.",
+        "'hyprctl hyprpaper wallpaper \",$AMO_WALLPAPER,cover\"'",
     ),
     Key(
         "theme.apps",
