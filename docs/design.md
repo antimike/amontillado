@@ -78,6 +78,7 @@ source:                             # Wallhaven's; for hand-added pictures see "
   purity: sfw                       # sfw | sketchy | nsfw
   category: general                 # general | anime | people
   tags: [landscape, night]
+  tag_categories: {landscape: Landscapes, night: ""}  # Wallhaven's, per tag; "" for none
   colors: ["#000000", "#424153"]    # Wallhaven's own swatches
   source: ""                        # the uploader's credited source, if any
   uploaded: 2024-06-02T21:53:31

@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `amo fetch` keeps each tag's Wallhaven category in the info file's
+  `source.tag_categories` (`{tag: category}`, `""` for none), beside `source.tags`, which
+  stays a list of names.
+
 ### Fixed
 
 - The `theme.wallpaper.reload` example in `amo config init` used hyprpaper's pre-0.8 `reload`

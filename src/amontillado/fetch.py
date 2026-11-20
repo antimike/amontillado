@@ -298,6 +298,11 @@ def name_from_tags(
     return entry, name
 
 
+def tag_categories(tags: list[Tag]) -> dict[str, str]:
+    """`source.tag_categories`: each tag's name and its Wallhaven category ("" for none)."""
+    return {tag.name: tag.category for tag in tags}
+
+
 def _slug(text: str) -> str:
     """`text` as lowercase ASCII words joined by hyphens, a trailing qualifier in brackets
     dropped: `Joker (DC)` is `joker`, `Pokémon` is `pokemon`, `Assassin's Creed` is
@@ -359,7 +364,7 @@ def _keep(
         record = Record(
             uuid.uuid4().hex,
             name,
-            source=_source(wallpaper, [tag.name for tag in tags]),
+            source=_source(wallpaper, tags),
             fetched=datetime.now(UTC).replace(microsecond=0),
             files={file.name: FileEntry(sha256, width, height, metrics)},
             thumbnail=THUMBNAIL_PATH,
@@ -387,7 +392,7 @@ def _keep(
     return file, metrics
 
 
-def _source(wallpaper: Wallpaper, tags: list[str]) -> dict[str, object]:
+def _source(wallpaper: Wallpaper, tags: list[Tag]) -> dict[str, object]:
     return {
         "site": SITE,
         "id": wallpaper.id,
@@ -395,7 +400,8 @@ def _source(wallpaper: Wallpaper, tags: list[str]) -> dict[str, object]:
         "image_url": wallpaper.image_url,
         "purity": wallpaper.purity,
         "category": wallpaper.category,
-        "tags": tags,
+        "tags": [tag.name for tag in tags],
+        "tag_categories": tag_categories(tags),
         "colors": list(wallpaper.colors),
         "source": wallpaper.source,
         "uploaded": wallpaper.uploaded,

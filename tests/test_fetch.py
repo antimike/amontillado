@@ -65,6 +65,7 @@ def test_keeps_a_matching_wallpaper_as_a_record(
     assert info["name"] == "night-sky-aaa111"
     assert info["source"]["id"] == "aaa111"
     assert info["source"]["tags"] == ["night sky"]
+    assert info["source"]["tag_categories"] == {"night sky": "Nature"}
     assert info["source"]["purity"] == "sfw"
     assert info["fetched"] is not None
     # Wallhaven's thumbnail, as served.
