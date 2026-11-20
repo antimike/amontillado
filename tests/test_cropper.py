@@ -53,6 +53,8 @@ def test_start_shows_the_box_it_was_given() -> None:
     for at in (0.0, 0.3, 1.0):
         box = crop_box(2000, 1000, 1.0, at)
         assert _state(box).box == box
+    # A box inside a letterbox: a smaller one, at its own place.
+    assert _state((300, 100, 800, 800)).box == (300, 100, 800, 800)
 
 
 def test_moves_are_a_share_of_the_box_and_stay_inside() -> None:

@@ -98,9 +98,12 @@ class State:
 
 
 def start(width: int, height: int, ratio: float, box: Box) -> State:
-    """The state showing `box`, a largest box of `ratio` (as `amo crop --at` places it)."""
+    """The state showing `box`, a box of `ratio` (as `amo crop --at` places it: the largest,
+    or the largest inside a letterbox, a smaller scale)."""
     x, y, box_width, box_height = box
-    return State(width, height, ratio, centre=(x + box_width / 2, y + box_height / 2))
+    _, _, largest, _ = crop_box(width, height, ratio)
+    scale = min(1.0, box_width / largest)
+    return State(width, height, ratio, scale, centre=(x + box_width / 2, y + box_height / 2))
 
 
 def press(state: State, key: str) -> State | str:
