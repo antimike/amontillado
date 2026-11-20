@@ -562,6 +562,7 @@ amo list [FILTERS] [--aspect W:H] [--purity LIST]
                                      matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--keep-letterboxed] [--dry-run]
+amo fetch --refresh-tags [PICTURE...] [--dry-run]   tag categories for records fetched before 0.9
 amo group [PICTURE] --monitor NAME=W:H... [FILTERS] [--purity LIST] [--order least-shown|nearest]
           [--max-distance D] [--keep-category] [--predicate NAME]... [--predicate-cmd CMD]
           [--format tsv|json] [--non-interactive] [--apply] [--dry-run]
@@ -689,6 +690,19 @@ any other colour is replaced by the nearest swatch by OKLab distance, with a log
 and exits non-zero if it kept fewer than `--count` (`--test-set` prints and fails as under
 "Test set"). `--dry-run` measures thumbnails, downloads
 nothing, and prints the page URL of each wallpaper it would keep.
+
+`amo fetch --refresh-tags [PICTURE...]` (amo-ugu; MH 2026-11-20 put it under `fetch`, which
+already holds the API key, the pacing and the purity rules) asks Wallhaven again (`/w/<id>`,
+paced as a search) for the tags of records already kept and writes `source.tags` and
+`source.tag_categories` (see "Names of fetched records"): the PICTUREs given, or every indexed
+Wallhaven record whose info file has no `tag_categories`, so a second run asks nothing. No image
+is downloaded; the API key is looked up only when an nsfw record is among them. A tag list that
+changed on Wallhaven is written too, with a warning naming what was added and removed. It takes
+no search, look or keeping options, updates the index, and prints the directory of each record
+written; `--dry-run` asks Wallhaven and writes nothing. A record that fails (gone from
+Wallhaven, not fetched from it, needing `amo index`) is logged, the others still refreshed, and
+the exit status is non-zero. `amo name --from-tags --force --dry-run` then shows the names the
+categories give.
 
 ## Theme engine (v0.2)
 

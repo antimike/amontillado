@@ -22,7 +22,7 @@ from amontillado import __version__, cli, yamlio
 from amontillado import library as library_module
 from amontillado.cli import get_cli_arguments, main
 from amontillado.index import connect, record_shown, usage
-from amontillado.wallhaven import Client
+from amontillado.wallhaven import API, Client
 
 
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1384,6 +1384,62 @@ def test_fetch_sfw_never_looks_up_the_key(
     monkeypatch.setenv("WALLHAVEN_API_KEY", "secret-key")
     main(["fetch"])
     assert all("X-API-Key" not in headers for _, headers in web.requests)
+
+
+def test_fetch_refresh_tags(
+    library: Path,
+    web: FakeWeb,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    old = _old_fetched(library, "aaa111", ["night sky"])
+    changed = _old_fetched(library, "bbb222", ["old tag"])
+    current = _old_fetched(library, "ccc333", ["cave"], {"cave": "Nature"})
+    _record(library / "hand", (0, 255, 0), "hand.png")
+    main(["index"])
+    capsys.readouterr()
+    caplog.set_level(logging.INFO)
+    main(["fetch", "--refresh-tags", "--dry-run"])
+    assert capsys.readouterr().out == ""
+    assert f"would write the tags of {old}" in caplog.text
+    assert "tag_categories" not in (old / "info.yaml").read_text()
+    # ccc333 has its categories: not asked for.
+    assert sorted(web.urls()) == [f"{API}/w/aaa111", f"{API}/w/bbb222"]
+    web.requests.clear()
+    main(["fetch", "--refresh-tags"])
+    assert capsys.readouterr().out.split() == [str(old), str(changed)]
+    assert "Wallhaven's tags changed: added snow; removed old tag" in caplog.text
+    assert yamlio.load((old / "info.yaml").read_text())["source"]["tag_categories"] == {
+        "night sky": "Nature"
+    }
+    # The index has the new tag list at once.
+    assert _list(capsys, "--tag", "snow") == {"wallhaven-bbb222"}
+    web.requests.clear()
+    main(["fetch", "--refresh-tags"])
+    assert web.requests == []
+    # A PICTURE given is asked for whatever its info file has.
+    main(["fetch", "--refresh-tags", str(current)])
+    assert web.urls() == [f"{API}/w/ccc333"]
+    assert capsys.readouterr().out == ""
+    web.routes.pop(f"{API}/w/ccc333")
+    with pytest.raises(SystemExit, match="1 of 1 record could not be refreshed"):
+        main(["fetch", "--refresh-tags", str(current)])
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--refresh-tags", "--dark"], "--refresh-tags takes no look filters"),
+        (["--refresh-tags", "--count", "2", "--tags", "x"], "takes no --tags, --count"),
+        (["somewhere"], "fetch takes PICTUREs only with --refresh-tags"),
+    ],
+)
+def test_fetch_refresh_tags_takes_only_pictures(
+    library: Path, web: FakeWeb, args: list[str], message: str
+) -> None:
+    with pytest.raises(SystemExit, match=message):
+        main(["fetch", *args])
+    assert web.requests == []
 
 
 def test_fetch_exits_when_the_search_fails(library: Path, web: FakeWeb) -> None:

@@ -570,6 +570,14 @@ def record_location(conn: sqlite3.Connection, record_id: str) -> tuple[Path, Pat
     return Path(row[0]), Path(row[1])
 
 
+def record_purity(conn: sqlite3.Connection, record_id: str) -> str:
+    """The purity of an indexed record; LookupFailed if it is not indexed."""
+    row = conn.execute("SELECT purity FROM records WHERE id = ?", (record_id,)).fetchone()
+    if row is None:
+        raise LookupFailed(f"{record_id}: not in the index; run `amo index`")
+    return str(row[0])
+
+
 def find_record(conn: sqlite3.Connection, query: str) -> str:
     """The id of the record that `query` names: an existing file or record directory, else a
     name, an id, or a unique prefix of an id. Raises LookupFailed."""

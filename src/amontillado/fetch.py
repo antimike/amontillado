@@ -17,6 +17,7 @@ the full image, so it fills one bucket only.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import os
 import re
@@ -43,6 +44,9 @@ from amontillado.library import (
     NamingError,
     file_stat,
     name_record,
+    needs_healing,
+    present_files,
+    record_entry,
     source_ids_on_disk,
 )
 from amontillado.metrics import Metrics, image_size, measure_file
@@ -80,7 +84,7 @@ NAME_MAX_LENGTH = 40  # of the tag part, before "-<id>"
 
 
 class FetchError(Exception):
-    """A search result cannot be kept; the message says why."""
+    """A search result cannot be kept, or a record's tags refreshed; the message says why."""
 
 
 @dataclass(frozen=True)
@@ -310,6 +314,69 @@ def stored_tags(source: Mapping[str, object]) -> list[Tag]:
         for name in (names if isinstance(names, list) else [])
         if isinstance(name, str)
     ]
+
+
+def refresh_tags(
+    config: Config,
+    directory: Path,
+    root: Path,
+    client: Client,
+    *,
+    missing_only: bool = False,
+    dry_run: bool = False,
+) -> Entry | None:
+    """Ask Wallhaven again for the tags of a record fetched from it (one `/w/<id>` call) and
+    write them to its `source.tags` and `source.tag_categories`, for records fetched before
+    the categories were kept. A change in Wallhaven's tag list is logged. Returns the record as
+    it now is (under `dry_run`, as it is: nothing is written), or None when its info file has
+    those tags already, or, with `missing_only`, has categories at all (then without asking).
+    Raises FetchError for a record that is not one, was not fetched from Wallhaven or needs
+    `amo index` first, and WallhavenError when Wallhaven does not answer with the tags."""
+    path = info_path(directory)
+    if path is None:
+        raise FetchError(f"{directory}: not a record")
+    record = read_record(path)
+    source = record.source or {}
+    if source.get("site") != SITE or not source.get("id"):
+        raise FetchError(f"{directory}: not fetched from Wallhaven")
+    if missing_only and isinstance(source.get("tag_categories"), Mapping):
+        return None
+    present = present_files(directory, record)
+    if not present or needs_healing(directory, record, present):
+        raise FetchError(f"{directory}: needs healing; run `amo index` first")
+    tags = client.tags(str(source["id"]))
+    names = [tag.name for tag in tags]
+    categories = tag_categories(tags)
+    old = source.get("tags")
+    old = [tag for tag in old if isinstance(tag, str)] if isinstance(old, list) else []
+    if old == names and source.get("tag_categories") == categories:
+        return None
+    if old != names:
+        added = [tag for tag in names if tag not in old]
+        removed = [tag for tag in old if tag not in names]
+        logger.warning(
+            "%s: Wallhaven's tags changed: %s",
+            directory,
+            "; ".join(
+                f"{label} {', '.join(changed)}"
+                for label, changed in (("added", added), ("removed", removed))
+                if changed
+            )
+            or "reordered",
+        )
+    updated: dict[str, object] = {}
+    for key, value in source.items():
+        if key != "tag_categories":
+            updated[key] = names if key == "tags" else value
+        if key == "tags":
+            updated["tag_categories"] = categories
+    updated.setdefault("tags", names)
+    updated.setdefault("tag_categories", categories)
+    if dry_run:
+        return record_entry(config, directory, root, record, present)
+    refreshed = dataclasses.replace(record, source=updated)
+    write_record(path, refreshed)
+    return record_entry(config, directory, root, refreshed, present)
 
 
 def tag_categories(tags: list[Tag]) -> dict[str, str]:
