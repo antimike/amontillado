@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The `theme.wallpaper.reload` example in `amo config init` used hyprpaper's pre-0.8 `reload`
+  request, which hyprpaper 0.8 rejects; it is now `hyprctl hyprpaper wallpaper
+  ",$AMO_WALLPAPER,cover"` (every monitor).
+
 ## [0.8.0] - 2026-11-19
 
 Grouping refinements: `amo group --predicate` runs your own commands to accept or reject

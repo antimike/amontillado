@@ -1241,7 +1241,7 @@ theme:
   hues: amontillado                     # amontillado | generator ("Generators")
   variant: auto                         # auto | dark | light
   contrast: adjust                      # adjust | report | off
-  wallpaper: {reload: 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'}
+  wallpaper: {reload: 'hyprctl hyprpaper wallpaper ",$AMO_WALLPAPER,cover"'}
   apps:
     kitty:    {reload: "pkill -USR1 kitty"}                   # source defaults to builtin
     rofi:     {source: tinted}                                 # complete theme from base16-rofi

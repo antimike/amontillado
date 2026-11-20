@@ -160,7 +160,7 @@ theme:
   hues: generator
   variant: auto
   contrast: report
-  wallpaper: {{reload: 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'}}
+  wallpaper: {{reload: 'hyprctl hyprpaper wallpaper ",$AMO_WALLPAPER,cover"'}}
   apps:
     kitty:    {{reload: "pkill -USR1 kitty"}}
     waybar:   {{source: builtin, template: gtk, output: waybar-colors.css}}
@@ -201,7 +201,7 @@ def test_theme_block(home: Path) -> None:
         "generator",
         "report",
     )
-    assert theme.wallpaper_reload == 'hyprctl hyprpaper reload ,"$AMO_WALLPAPER"'
+    assert theme.wallpaper_reload == 'hyprctl hyprpaper wallpaper ",$AMO_WALLPAPER,cover"'
     apps = theme.apps
     assert list(apps) == ["kitty", "waybar", "zed", "rofi-alt", "nvim", "bare", "mytool", "pinned"]
     assert apps["kitty"] == AppConfig(reload="pkill -USR1 kitty")
