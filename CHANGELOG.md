@@ -6,6 +6,14 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-19
+
+Grouping refinements: `amo group --predicate` runs your own commands to accept or reject
+companions, and letterboxed pictures, whose black bars made them group with dark ones, are
+detected when measured, passed over by `amo fetch`, and cropped on request (`amo crop
+--letterbox`, offered by `amo add`). The first `amo index` after upgrading measures every
+picture again (metrics version 4); only the `version` line of each info file changes.
+
 ### Added
 
 - Letterbox detection: each file's metrics gain `letterbox`, the picture between dark bars
