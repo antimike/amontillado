@@ -96,7 +96,7 @@ from amontillado.index import (
     record_name,
     record_shown,
     saved_snapshot,
-    unnamed,
+    site_records,
     usage,
 )
 from amontillado.index import (
@@ -720,16 +720,18 @@ def build_parser() -> argparse.ArgumentParser:
         "name",
         help="Name or rename a record.",
         usage="%(prog)s [-h] [--no-rename-directory] [--dry-run] PICTURE NAME\n"
-        "       %(prog)s [-h] --from-tags [--no-rename-directory] [--dry-run] [PICTURE ...]",
+        "       %(prog)s [-h] --from-tags [--force] [--no-rename-directory] [--dry-run] "
+        "[PICTURE ...]",
         description="Give a record a name, or a new one, and rename its directory to the name "
         "where it is (foo/bar/old becomes foo/bar/NAME; --no-rename-directory keeps it). A name "
         "already taken is refused, as amo add does. --from-tags names records fetched from "
         "Wallhaven without a name (before amo 0.2, or when the name was taken) as amo fetch "
         "would, from the tags their info.yaml keeps (wallhaven-x8ye3z becomes "
-        "cyberpunk-interior-technology-x8ye3z): the PICTUREs given, or every such record. The "
-        "kept tags lack Wallhaven's tag categories, so a tag amo fetch would pass over as an "
-        "artist's or a company's may be used. Updates the index, and any theme profile's "
-        "wallpaper link into a renamed directory. Prints each record's directory.",
+        "cyberpunk-interior-technology-x8ye3z): the PICTUREs given, or every such record; with "
+        "--force, named records too. Tags kept before amo 0.9 lack Wallhaven's tag categories, "
+        "so a tag amo fetch would pass over as an artist's or a company's may be used; amo "
+        "fetch --refresh-tags adds them. Updates the index, and any theme profile's wallpaper "
+        "link into a renamed directory. Prints the directory of each record named.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(name, argparse.SUPPRESS)
@@ -739,12 +741,18 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PICTURE NAME | PICTURE...",
         help="A record (a file, record directory, name or id, or an id prefix) and its new "
         "name; with --from-tags, records (default: every indexed Wallhaven record without a "
-        "name).",
+        "name, or with --force every one).",
     )
     name.add_argument(
         "--from-tags",
         action="store_true",
         help="Name from the stored Wallhaven tags; refuses records that have a name.",
+    )
+    name.add_argument(
+        "--force",
+        action="store_true",
+        help="With --from-tags: name records that have a name too, however they got it. A "
+        "record whose tags give the name it has is left as it is.",
     )
     name.add_argument(
         "--no-rename-directory",
@@ -2460,6 +2468,8 @@ def _list_tools(config: Config) -> None:
 def cmd_name(args: argparse.Namespace) -> None:
     if not args.from_tags and len(args.arguments) != 2:
         sys.exit("amontillado: name takes PICTURE NAME, or --from-tags [PICTURE...]")
+    if args.force and not args.from_tags:
+        sys.exit("amontillado: --force needs --from-tags")
     config = _load_config()
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
@@ -2472,9 +2482,11 @@ def cmd_name(args: argparse.Namespace) -> None:
             except LookupFailed as exc:
                 sys.exit(f"amontillado: {exc}")
             if args.from_tags and not ids:
-                ids = unnamed(conn, SITE)
+                ids = site_records(conn, SITE, named=args.force)
                 if not ids:
-                    logger.info("no unnamed record fetched from Wallhaven")
+                    logger.info(
+                        "no %srecord fetched from Wallhaven", "" if args.force else "unnamed "
+                    )
                     return
             taken = names(conn)
             for record_id in ids:
@@ -2487,6 +2499,7 @@ def cmd_name(args: argparse.Namespace) -> None:
                             directory,
                             root,
                             taken,
+                            force=args.force,
                             rename_directory=args.rename_directory,
                             dry_run=args.dry_run,
                         )
@@ -2508,6 +2521,9 @@ def cmd_name(args: argparse.Namespace) -> None:
                 except OSError as exc:
                     logger.error("%s: %s", directory, exc)
                     failed += 1
+                    continue
+                if entry is None:
+                    logger.info("%s keeps its name, %s", directory, given)
                     continue
                 taken.discard(old)
                 taken.add(given)

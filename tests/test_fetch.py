@@ -15,9 +15,17 @@ from PIL import Image
 from amontillado import yamlio
 from amontillado.classes import Look
 from amontillado.config import Config
-from amontillado.fetch import FetchReport, NamingError, Options, fetch, name_from_tags, record_name
+from amontillado.fetch import (
+    FetchReport,
+    NamingError,
+    Options,
+    fetch,
+    name_from_tags,
+    record_name,
+    stored_tags,
+)
 from amontillado.index import add, connect, files
-from amontillado.library import add_picture, place
+from amontillado.library import add_picture, name_record, place
 from amontillado.wallhaven import API, Client, Response, Search, Tag
 
 NOISE = np.random.default_rng(0).integers(0, 256, size=(72, 128), dtype=np.uint8)
@@ -352,6 +360,40 @@ def test_name_from_tags_restores_the_record_when_the_move_fails(
     with pytest.raises(OSError, match="read-only"):
         name_from_tags(config, directory, config.library_roots[0], set())
     assert (directory / "info.yaml").read_text() == before
+
+
+def test_name_from_tags_passes_over_stored_categories(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    tags = [{"name": "Some Artist", "category": "Artists"}, {"name": "night sky"}]
+    web.add(f"{API}/w/aaa111", {"data": {"tags": tags}})
+    directory = _unnamed(config, conn, web, tmp_path)
+    source = yamlio.load((directory / "info.yaml").read_text())["source"]
+    assert source["tag_categories"] == {"Some Artist": "Artists", "night sky": ""}
+    _, name = name_from_tags(config, directory, config.library_roots[0], set())
+    assert name == "night-sky-aaa111"
+
+
+def test_name_from_tags_force_renames(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    root = config.library_roots[0]
+    name_record(config, directory, root, "by-hand", set())
+    with pytest.raises(NamingError, match="named already"):
+        name_from_tags(config, root / "by-hand", root, set())
+    entry, name = name_from_tags(config, root / "by-hand", root, {"by-hand"}, force=True)
+    assert entry is not None and entry.directory == root / "night-sky-aaa111"
+    # Its tags give the name it has: nothing to do.
+    entry, name = name_from_tags(config, root / name, root, {name}, force=True)
+    assert (entry, name) == (None, "night-sky-aaa111")
+
+
+def test_stored_tags() -> None:
+    source = {"tags": ["a", "b", 3], "tag_categories": {"a": "Artists", "b": None}}
+    assert stored_tags(source) == [Tag("a", "Artists"), Tag("b", "")]
+    assert stored_tags({"tags": ["a"]}) == [Tag("a", "")]
+    assert stored_tags({}) == []
 
 
 def test_name_from_tags_without_categories() -> None:

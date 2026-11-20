@@ -25,7 +25,7 @@ import sqlite3
 import tempfile
 import unicodedata
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from logging import getLogger
@@ -269,33 +269,47 @@ def name_from_tags(
     root: Path,
     taken: set[str],
     *,
+    force: bool = False,
     rename_directory: bool = True,
     dry_run: bool = False,
-) -> tuple[Entry, str]:
+) -> tuple[Entry | None, str]:
     """Name a record fetched from Wallhaven without a name (before amo-0z2, or when its name
-    was taken) from the tags its info.yaml keeps, by `record_name`, as `name_record` does.
-    The stored tags have no Wallhaven categories, so only NAME_SKIP_TAGS passes tags over;
-    `source.category` stands in when none is usable. Returns the record as `name_record` does,
-    and the name. Raises NamingError as `name_record` does, and for a record that is named
-    already or was not fetched from Wallhaven."""
+    was taken), or with `force` one that has a name, from the tags its info.yaml keeps, by
+    `record_name`, as `name_record` does. Tags fetched before `source.tag_categories` existed
+    have no categories (`stored_tags`): only NAME_SKIP_TAGS passes them over. Returns the
+    record as `name_record` does, or None when it already has the name, and the name. Raises
+    NamingError as `name_record` does, and for a record that was not fetched from Wallhaven or,
+    without `force`, is named already."""
     path = info_path(directory)
     if path is None:
         raise NamingError(f"{directory}: not a record")
     record = read_record(path)
-    if record.name is not None:
+    if record.name is not None and not force:
         raise NamingError(f"{directory}: named already ({record.name})")
     source = record.source or {}
     if source.get("site") != SITE or not source.get("id"):
         raise NamingError(f"{directory}: not fetched from Wallhaven")
-    stored = source.get("tags")
-    tags = (
-        [Tag(tag, "") for tag in stored if isinstance(tag, str)] if isinstance(stored, list) else []
-    )
-    name = record_name(tags, str(source.get("category") or ""), str(source["id"]))
+    name = record_name(stored_tags(source), str(source.get("category") or ""), str(source["id"]))
+    if name == record.name:
+        return None, name
     entry = name_record(
         config, directory, root, name, taken, rename_directory=rename_directory, dry_run=dry_run
     )
     return entry, name
+
+
+def stored_tags(source: Mapping[str, object]) -> list[Tag]:
+    """The tags a record's `source` keeps, with their categories from `source.tag_categories`
+    ("" for a tag it lacks, and for every tag of a record fetched before it existed)."""
+    names = source.get("tags")
+    categories = source.get("tag_categories")
+    if not isinstance(categories, Mapping):
+        categories = {}
+    return [
+        Tag(name, category if isinstance(category := categories.get(name), str) else "")
+        for name in (names if isinstance(names, list) else [])
+        if isinstance(name, str)
+    ]
 
 
 def tag_categories(tags: list[Tag]) -> dict[str, str]:

@@ -370,12 +370,29 @@ def test_crop_then_list(
         main(["crop", str(indexed["red"]), "1:1"])
 
 
-def _old_fetched(library: Path, wallhaven_id: str, tags: list[str]) -> Path:
-    """A record fetched before names existed: no name, in wallhaven-<id>, its tags kept."""
+def _old_fetched(
+    library: Path,
+    wallhaven_id: str,
+    tags: list[str],
+    categories: dict[str, str] | None = None,
+    name: str | None = None,
+) -> Path:
+    """A record fetched before names existed: no name (or `name`), in wallhaven-<id>, its tags
+    kept (with `categories` as source.tag_categories)."""
     directory = library / f"wallhaven-{wallhaven_id}"
     _record(directory, (0, 0, 255), f"wallhaven-{wallhaven_id}.png")
-    source = {"site": "wallhaven", "id": wallhaven_id, "category": "general", "tags": tags}
-    (directory / "info.yaml").write_text(yamlio.dump({"source": source}))
+    source: dict[str, object] = {
+        "site": "wallhaven",
+        "id": wallhaven_id,
+        "category": "general",
+        "tags": tags,
+    }
+    if categories is not None:
+        source["tag_categories"] = categories
+    info: dict[str, object] = {"source": source}
+    if name is not None:
+        info["name"] = name
+    (directory / "info.yaml").write_text(yamlio.dump(info))
     return directory
 
 
@@ -410,6 +427,26 @@ def test_name_from_tags(
     with pytest.raises(SystemExit, match="1 of 1 record could not be named"):
         main(["name", "--from-tags", str(library / "hand")])
     assert "not fetched from Wallhaven" in caplog.text
+
+
+def test_name_from_tags_force_renames_named_records(
+    library: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    # Named from tags before their categories were kept: pixiv got into the name.
+    categories = {"pixiv": "Companies & Logos", "sky": "Nature"}
+    _old_fetched(library, "x8ye3z", ["pixiv", "sky"], categories, name="pixiv-sky-x8ye3z")
+    _old_fetched(library, "k92q1d", ["artwork"], {"artwork": ""}, name="general-k92q1d")
+    main(["index"])
+    capsys.readouterr()
+    caplog.set_level(logging.INFO)
+    with pytest.raises(SystemExit, match="--force needs --from-tags"):
+        main(["name", "--force", "a", "b"])
+    main(["name", "--from-tags"])
+    assert "no unnamed record fetched from Wallhaven" in caplog.text
+    main(["name", "--from-tags", "--force"])
+    assert capsys.readouterr().out == f"{library / 'sky-x8ye3z'}\n"
+    assert f"{library / 'wallhaven-k92q1d'} keeps its name, general-k92q1d" in caplog.text
+    assert yamlio.load((library / "sky-x8ye3z" / "info.yaml").read_text())["name"] == "sky-x8ye3z"
 
 
 def test_name_takes_picture_and_name(library: Path) -> None:

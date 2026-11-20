@@ -517,12 +517,12 @@ machine's index, so two machines would assign the same name and a sync would mak
 duplicate-name conflict. A name already taken (by a hand-named record) leaves the record
 unnamed, in `wallhaven-<id>`, with a warning. Records fetched before names existed keep theirs
 (none) until `amo name --from-tags` names them from the tags their info.yaml keeps (under
-"CLI"). Those tags are names only, without Wallhaven's tag categories, so the category rule
-cannot apply there: an artist's or a technique's tag may make it into the name;
-`NAME_SKIP_TAGS` still applies, and the wallpaper's category stands in when no tag is usable.
-Planned instead (amo-ugu): `amo fetch` keeps each tag's category in `source.tag_categories`,
-and a one-off pass re-asks Wallhaven (`/w/<id>`) for those of records fetched before, so
-naming itself never needs the network.
+"CLI"), applying the same rules with the categories in `source.tag_categories` (amo-ugu; kept by
+`amo fetch` since 0.9), so naming itself never needs the network. Tags kept before that have no
+categories, so the category rule cannot apply to them (an artist's or a technique's tag may make
+it into the name; `NAME_SKIP_TAGS` still applies) until `amo fetch --refresh-tags` re-asks
+Wallhaven for them (under "CLI"); `amo name --from-tags --force` then re-derives names already
+given.
 
 **Revisit:** the info-file scan in step 2 parses every info file on each `amo fetch`
 (decided 2026-10-28). If that makes fetching noticeably slow on a large library, drop it and
@@ -577,7 +577,7 @@ amo edit PICTURE [--tool NAME | --extcmd CMD] [--name N] [--from FILE] [--dry-ru
                                      edit a copy in an editor, add the result; prints it
 amo edit --list-tools                the editors under edit.tools
 amo name PICTURE NAME [--no-rename-directory] [--dry-run]      name or rename a record
-amo name --from-tags [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
+amo name --from-tags [--force] [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
 amo info diff OLD NEW [--json]       the key paths that differ between two info files
 amo info merge BASE OURS THEIRS [--name PATH] [--stdout]   three-way merge (a git merge driver)
 amo hook git-commit                  as on_change: commit amo's changes to the root's git repository
@@ -670,14 +670,16 @@ named from one the user named the same way (a user can call one `wallhaven-x8ye3
 the user opts out instead; under git-annex storage (amo-qnn) an unwanted rename shows in the log
 and is reverted there. `amo name --from-tags [PICTURE...]` names records fetched from
 Wallhaven without a name (see "Names of fetched records"): the PICTUREs given, or every indexed
-one without a name; it never renames a named record. Naming is never `amo index`'s job, since a
-name is authored, not derived. Refused (per record; the others are still named): an invalid
-name, the record's own, a name already taken (as `amo add` does), a record that needs `amo
-index` first, an existing directory for the name, and under `--from-tags` a named record or one
-not fetched from Wallhaven. It writes the name, then renames the directory (restoring info.yaml
-if that fails), and updates the index and any theme profile's wallpaper link into the
-directory, so neither needs a re-run. Prints each record's directory; `--dry-run` logs the
-names instead.
+one without a name; it renames a named record only with `--force` (amo-ugu, MH 2026-11-20:
+whatever gave the record its name, since asking for it is the point; with no PICTURE, every
+indexed Wallhaven record), and leaves one whose tags give the name it has as it is. Naming is
+never `amo index`'s job, since a name is authored, not derived. Refused (per record; the others
+are still named): an invalid name, the record's own, a name already taken (as `amo add` does),
+a record that needs `amo index` first, an existing directory for the name, and under
+`--from-tags` a named record without `--force` or one not fetched from Wallhaven. It writes the
+name, then renames the directory (restoring info.yaml if that fails), and updates the index and
+any theme profile's wallpaper link into the directory, so neither needs a re-run. Prints the
+directory of each record named; `--dry-run` logs the names instead.
 
 FILTERS are the class flags above, and `--hue`. WALLHAVEN: `--tags QUERY` (Wallhaven's `q`),
 `--purity LIST` (default sfw), `--category LIST` (general, anime, people; default all),

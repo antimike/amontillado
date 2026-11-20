@@ -10,7 +10,11 @@ All notable changes to amontillado are documented here. The format follows
 
 - `amo fetch` keeps each tag's Wallhaven category in the info file's
   `source.tag_categories` (`{tag: category}`, `""` for none), beside `source.tags`, which
-  stays a list of names.
+  stays a list of names. `amo name --from-tags` uses them, passing over artists', companies'
+  and technique tags as `amo fetch` does.
+- `amo name --from-tags --force` names records that already have a name from their tags (the
+  PICTUREs given, or every Wallhaven record); one whose tags give the name it has is left
+  alone.
 
 ### Fixed
 
