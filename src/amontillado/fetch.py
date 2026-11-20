@@ -91,6 +91,8 @@ class Options:
     discard_mismatches: bool = False
     dry_run: bool = False
     test_set: bool = False
+    # Keep pictures whose thumbnail has letterbox bars (passed over by default).
+    keep_letterboxed: bool = False
 
 
 @dataclass
@@ -104,6 +106,8 @@ class FetchReport:
     examined: int = 0
     known: int = 0
     rejected: int = 0
+    # Passed over for letterbox bars in the thumbnail.
+    letterboxed: int = 0
     discarded: int = 0
     failed: list[tuple[str, str]] = field(default_factory=list)
     # With Options.test_set: what fills each bucket, a path or, in a dry run, a wallpaper.
@@ -162,6 +166,10 @@ def fetch(
             thumbnail = measure_file(io.BytesIO(thumbnail_bytes))
         except (WallhavenError, OSError, Image.DecompressionBombError) as exc:
             _failed(report, wallpaper, f"thumbnail: {exc}")
+            continue
+        if thumbnail.letterbox is not None and not options.keep_letterboxed:
+            report.letterboxed += 1
+            logger.debug("%s: letterboxed; passed over", wallpaper.id)
             continue
         slot = _slot(slots, thumbnail, late)
         if slot is None:
@@ -372,6 +380,10 @@ def _keep(
         logger.info("kept %s (%s)", file, _classes(metrics))
     else:
         logger.info("kept %s, but the full image does not match (%s)", file, _classes(metrics))
+    if metrics.letterbox is not None:
+        logger.warning(
+            "%s is letterboxed: `amo crop %s --letterbox` crops the bars off", file, directory
+        )
     return file, metrics
 
 

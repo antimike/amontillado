@@ -791,7 +791,7 @@ def crop_picture(
         raise CropError(
             f"{directory / found} is {label.replace('x', ':')} already; --force crops anyway"
         )
-    box = crop_box(entry.width, entry.height, ratio, at)
+    box = _within_content(entry, ratio, at)
     if choose is not None:
         chosen = choose(directory / source, entry.width, entry.height, box)
         if chosen is None:
@@ -799,6 +799,28 @@ def crop_picture(
         box = chosen
     if dry_run:
         return record_entry(config, directory, root, record, present), name
+    record = _add_crop(path, record, source, name, box)
+    return record_entry(config, directory, root, record, present | {name}), name
+
+
+def _within_content(entry: FileEntry, ratio: float, at: float) -> Box:
+    """`crop_box` of an original, inside its letterbox (or pillarbox) if it has bars: a crop
+    of a letterboxed picture never takes in its bars."""
+    assert entry.width is not None and entry.height is not None and entry.metrics is not None
+    if entry.metrics.letterbox is None:
+        return crop_box(entry.width, entry.height, ratio, at)
+    x, y, width, height = entry.metrics.letterbox
+    left, top, crop_width, crop_height = crop_box(width, height, ratio, at)
+    return x + left, y + top, crop_width, crop_height
+
+
+def _add_crop(
+    path: Path, record: Record, source: str, name: str, box: Box, *, default: bool = False
+) -> Record:
+    """Write `box` of the record's `source` as `name` beside it, measured and listed with
+    `derived_from` and `crop` (the record's default file with `default`); the record as it now
+    is. The file is removed again if measuring it fails."""
+    directory = path.parent
     target = directory / name
     write_crop(directory / source, target, box)
     try:
@@ -813,8 +835,54 @@ def crop_picture(
         target.unlink(missing_ok=True)
         raise
     record = dataclasses.replace(record, files={**record.files, name: crop})
+    if default:
+        record = dataclasses.replace(record, default_file=name)
     write_record(path, record)
     changes.file_written(target)
+    return record
+
+
+# The suffix of a letterbox crop's name: `<stem>-content.<ext>`.
+CONTENT_LABEL = "content"
+
+
+def crop_letterbox(
+    config: Config,
+    directory: Path,
+    root: Path,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+) -> tuple[Entry, str]:
+    """Crop the bars off a record's letterboxed original (its metrics' `letterbox`), as
+    `<stem>-content<suffix>` beside it, recorded with `derived_from` and `crop` and made the
+    record's default file. Returns the record as it now is (under `dry_run`, as it is) and the
+    new file's name. Refuses (CropError) a record that needs `amo index`, an original without
+    bars, and without `force` an existing letterbox crop (`force` replaces it, never a file
+    that is not a crop)."""
+    path = info_path(directory)
+    if path is None:
+        raise CropError(f"{directory}: not a record")
+    record = read_record(path)
+    present = present_files(directory, record)
+    if needs_healing(directory, record, present):
+        raise CropError(f"{directory}: needs healing; run `amo index` first")
+    source = original_file(record, present)
+    if source is None:
+        raise CropError(f"{directory}: no original file to crop")
+    metrics = record.files[source].metrics
+    assert metrics is not None
+    if metrics.letterbox is None:
+        raise CropError(f"{directory / source}: no letterbox bars found")
+    name = f"{Path(source).stem}-{CONTENT_LABEL}{Path(source).suffix}"
+    existing = record.files.get(name)
+    if existing is not None and existing.derived_from is None:
+        raise CropError(f"{directory / name}: exists and is not a crop")
+    if existing is not None and not force:
+        raise CropError(f"{directory / name}: cropped already; --force crops again")
+    if dry_run:
+        return record_entry(config, directory, root, record, present), name
+    record = _add_crop(path, record, source, name, metrics.letterbox, default=True)
     return record_entry(config, directory, root, record, present | {name}), name
 
 

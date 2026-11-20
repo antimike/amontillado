@@ -22,6 +22,7 @@ from amontillado.library import (
     add_picture,
     additions_from_json,
     crop_box,
+    crop_letterbox,
     crop_picture,
     hand_source,
     heal_library,
@@ -742,6 +743,54 @@ def test_crop_picture_refusals(config: Config, save_image: SaveImage) -> None:
     heal_library(config)
     with pytest.raises(CropError, match="not a crop"):
         _crop(config, other.parent, force=True)
+
+
+def _letterboxed(path: Path) -> Path:
+    """A 400x200 noisy picture with black bars of 30 rows above and 20 below."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pixels = np.zeros((200, 400, 3), dtype=np.uint8)
+    rng = np.random.default_rng(0)
+    pixels[30:180] = rng.integers(60, 230, (150, 400, 3), dtype=np.uint8)
+    Image.fromarray(pixels).save(path)
+    return path
+
+
+def test_crop_letterbox(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _letterboxed(info.parent / "pic.png")
+    heal_library(config)
+    root = config.library_roots[0]
+    assert read_record(info).files["pic.png"].metrics.letterbox == (0, 30, 400, 150)  # type: ignore[union-attr]
+    entry, name = crop_letterbox(config, info.parent, root, dry_run=True)
+    assert (name, entry.default) == ("pic-content.png", "pic.png")
+    assert not (info.parent / name).exists()
+    entry, name = crop_letterbox(config, info.parent, root)
+    assert entry.default == "pic-content.png"
+    record = read_record(info)
+    crop = record.files[name]
+    assert record.default_file == name
+    assert (crop.derived_from, crop.crop, crop.width, crop.height) == (
+        "pic.png",
+        (0, 30, 400, 150),
+        400,
+        150,
+    )
+    assert crop.metrics is not None and crop.metrics.letterbox is None
+    assert heal_library(config).clean
+    with pytest.raises(CropError, match="cropped already; --force"):
+        crop_letterbox(config, info.parent, root)
+    crop_letterbox(config, info.parent, root, force=True)
+    # An aspect crop is cut from the original, inside the bars.
+    crop_picture(config, info.parent, root, 1.0, "1x1", at=0.0)
+    assert read_record(info).files["pic-1x1.png"].crop == (0, 30, 150, 150)
+
+
+def test_crop_letterbox_refuses_a_picture_without_bars(config: Config) -> None:
+    info = mark_record(config.library_roots[0] / "r")
+    _halves(info.parent / "pic.png")
+    heal_library(config)
+    with pytest.raises(CropError, match="no letterbox bars found"):
+        crop_letterbox(config, info.parent, config.library_roots[0])
 
 
 def test_crop_picture_dry_run_writes_nothing(config: Config) -> None:

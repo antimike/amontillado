@@ -11,6 +11,7 @@ from conftest import SaveImage, mark_record
 
 from amontillado.config import Config
 from amontillado.index import (
+    NOT_COLUMNS,
     SCHEMA_VERSION,
     IndexDatabaseError,
     LookupFailed,
@@ -181,7 +182,7 @@ def test_metric_columns_follow_the_dataclass(config: Config) -> None:
     conn = connect(config.index_path)
     columns = [row[1] for row in conn.execute("PRAGMA table_info(files)")]
     start = columns.index("lightness")
-    fields = [name for name in Metrics.__dataclass_fields__ if name != "palette"]
+    fields = [name for name in Metrics.__dataclass_fields__ if name not in NOT_COLUMNS]
     assert columns[start : start + len(fields)] == fields
     # Added by schema 9, so last: an upgrade appends it, and inserts are positional.
     assert columns[-1] == "palette"

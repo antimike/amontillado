@@ -1086,6 +1086,67 @@ def test_add_indexes_and_refuses_duplicates(
     main(["index", "--check"])
 
 
+def _letterboxed(path: Path) -> Path:
+    """A 400x200 noisy picture between black bars of 30 rows above and 20 below."""
+    pixels = np.zeros((200, 400, 3), dtype=np.uint8)
+    pixels[30:180] = np.random.default_rng(0).integers(60, 230, (150, 400, 3), dtype=np.uint8)
+    return _save(pixels, path)
+
+
+def test_add_warns_of_a_letterbox_and_crop_cuts_it_off(
+    library: Path,
+    home: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    main(["index"])
+    main(["add", "--name", "film", str(_letterboxed(home / "film.png"))])
+    directory = library / "film"
+    assert f"`amo crop {directory} --letterbox` crops the bars off" in caplog.text
+    assert not (directory / "film-content.png").exists()
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        main(["index"])
+    assert "1 letterboxed (amo crop --letterbox)" in caplog.text
+    with pytest.raises(SystemExit, match="W:H or --letterbox"):
+        main(["crop", "film"])
+    with pytest.raises(SystemExit, match="W:H or --letterbox"):
+        main(["crop", "film", "1:1", "--letterbox"])
+    capsys.readouterr()
+    main(["crop", "film", "--letterbox"])
+    assert capsys.readouterr().out == f"{directory / 'film-content.png'}\n"
+    assert _list(capsys) == {"film-content"}  # the default file now
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        main(["index"])
+    assert "letterboxed" not in caplog.text
+
+
+def test_add_offers_the_letterbox_crop_on_a_terminal(
+    library: Path, home: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    main(["index"])
+    _terminal(monkeypatch, "")
+    main(["add", "--name", "film", str(_letterboxed(home / "film.png"))])
+    assert _list(capsys) == {"film-content"}
+    _terminal(monkeypatch, "n")
+    main(["add", "--name", "other", str(_letterboxed(home / "other.jpg"))])
+    assert not (library / "other" / "other-content.jpg").exists()
+    # --non-interactive never asks.
+    monkeypatch.setattr("builtins.input", lambda: pytest.fail("asked"))
+    main(
+        [
+            "add",
+            "--non-interactive",
+            "--force",
+            "--name",
+            "third",
+            str(_letterboxed(home / "third.png")),
+        ]
+    )
+    assert not (library / "third" / "third-content.png").exists()
+
+
 def test_add_refuses_a_taken_name(library: Path, home: Path) -> None:
     main(["add", "--name", "night", str(_save(np.zeros((36, 64, 3), np.uint8), home / "a.png"))])
     other = _save(np.full((36, 64, 3), 9, np.uint8), home / "b.png")

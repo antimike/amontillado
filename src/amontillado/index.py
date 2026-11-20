@@ -119,6 +119,9 @@ INSERT INTO files VALUES (
     :mtime_ns, :absent, :palette
 )
 """
+# Metrics fields without a column of their own: the palette has one, as JSON; the letterbox and
+# the metrics version live in the info file only (`amo index` counts letterboxes from it).
+NOT_COLUMNS = frozenset({"palette", "letterbox", "version"})
 # The metric columns in Metrics field order, so that a row unpacks into Metrics; the palette
 # (JSON) last. Columns added by an upgrade go last in the tables too: inserts are positional.
 _SELECT_FILES = """
@@ -338,7 +341,7 @@ def _file_rows(entry: Entry) -> list[dict[str, object]]:
                 **{
                     key: getattr(file.metrics, key)
                     for key in Metrics.__dataclass_fields__
-                    if key != "palette"
+                    if key not in NOT_COLUMNS
                 },
                 # Version 2's metrics (an absent file measured before the palette) have none.
                 "palette": json.dumps(file.metrics.palette) if file.metrics.palette else None,
