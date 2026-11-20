@@ -9,19 +9,22 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import IO
 
 import numpy as np
 from PIL import Image, ImageOps
 
-from amontillado import yamlio
+from amontillado import letterbox, yamlio
 from amontillado.colour import HEX_PATTERN, oklch_to_hex, srgb_to_oklab, srgb_to_oklch
 
 # Bump when a metric's definition changes: sidecars with an older version are recomputed.
-# Version 3 added the palette.
-METRICS_VERSION = 3
+# Version 3 added the palette, version 4 the letterbox.
+METRICS_VERSION = 4
+# Older versions still read and written back unchanged, for a file whose git-annex content is
+# not here to measure again ("Absent content"): 2 has no palette, 3 no letterbox.
+OLD_VERSIONS = (2, 3)
 
 MEASURE_WIDTH = 432
 
@@ -44,6 +47,7 @@ PALETTE_SEED = 0
 PALETTE_STEPS = 20
 
 Palette = tuple[tuple[str, float], ...]
+Box = tuple[int, int, int, int]
 
 _ALPHA_MODES = frozenset({"RGBA", "RGBa", "LA", "La", "PA"})
 # EXIF orientations that swap width and height for display.
@@ -65,14 +69,25 @@ class Metrics:
     busy: float
     # Up to PALETTE_COLOURS (`#rrggbb`, share of the pixels) pairs, largest share first.
     palette: Palette = ()
+    # The picture between letterbox (or pillarbox) bars, as (x, y, width, height) in the file's
+    # pixels (as displayed); None without bars (amontillado.letterbox).
+    letterbox: Box | None = None
+    # The version these metrics were measured under: older ones are kept only for absent files.
+    version: int = METRICS_VERSION
 
     def to_dict(self) -> dict[str, object]:
         """The sidecar `metrics` block: version first, values rounded for readability, the
         palette on one line."""
-        # Without a palette these are version 2's metrics (an absent file measured before
-        # version 3, "Absent content"), written back as they were.
-        values: dict[str, object] = {"version": METRICS_VERSION if self.palette else 2}
+        # Older versions' metrics (an absent file measured before, "Absent content") are written
+        # back as they were.
+        values: dict[str, object] = {"version": self.version}
         for name, value in asdict(self).items():
+            if name == "version":
+                continue
+            if name == "letterbox":
+                if value is not None:
+                    values[name] = yamlio.flow(list(value))
+                continue
             if name == "palette":
                 if not value:
                     continue
@@ -84,19 +99,24 @@ class Metrics:
 
     @property
     def current(self) -> bool:
-        """Whether these are this version's metrics: version 2's have no palette."""
-        return bool(self.palette)
+        """Whether these are this version's metrics."""
+        return self.version == METRICS_VERSION
 
     @classmethod
     def from_dict(cls, values: Mapping[str, object], *, version: int = METRICS_VERSION) -> Metrics:
-        """Metrics from a sidecar `metrics` block of `version` (METRICS_VERSION, or 2, which
-        had no palette); the block's own version is the caller's to check.
+        """Metrics from a sidecar `metrics` block of `version` (METRICS_VERSION, or one of
+        OLD_VERSIONS); the block's own version is the caller's to check.
 
         Raises ValueError naming the first field that is missing or of the wrong type.
         """
-        fields: dict[str, object] = {}
+        fields: dict[str, object] = {"version": version}
         for name in cls.__dataclass_fields__:
             value = values.get(name)
+            if name == "version":
+                continue
+            if name == "letterbox":
+                fields[name] = _parse_box(value) if version >= 4 else None
+                continue
             if name == "palette":
                 fields[name] = _parse_palette(value) if version >= 3 else ()
                 continue
@@ -127,6 +147,16 @@ def _parse_palette(value: object) -> Palette:
             raise ValueError("metrics.palette is missing or invalid")
         pairs.append((colour, float(share)))
     return tuple(pairs)
+
+
+def _parse_box(value: object) -> Box | None:
+    if value is None:
+        return None
+    ok = isinstance(value, list) and len(value) == 4
+    ok = ok and all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in value)
+    if not ok or not (value[2] > 0 and value[3] > 0):  # type: ignore[index]
+        raise ValueError("metrics.letterbox is invalid")
+    return tuple(value)  # type: ignore[arg-type,return-value]
 
 
 def image_size(path: Path) -> tuple[int, int]:
@@ -222,8 +252,11 @@ def _to_rgb(image: Image.Image) -> Image.Image:
 
 
 def measure(rgb: np.ndarray) -> Metrics:
-    """Measure an 8-bit sRGB array of shape (h, w, 3)."""
+    """Measure an 8-bit sRGB array of shape (h, w, 3). `letterbox` is the content box in the
+    array's pixels (`measure_file` gives it in the file's)."""
     lightness, chroma, hue = srgb_to_oklch(rgb)
+    bars = letterbox.find_bars(lightness)
+    height, width = lightness.shape
     chromatic = chroma > CHROMATIC_MIN
     hue_stats = _hue_statistics(hue[chromatic], chroma[chromatic])
     return Metrics(
@@ -232,6 +265,7 @@ def measure(rgb: np.ndarray) -> Metrics:
         colourful_share=float(chromatic.mean()),
         busy=_edge_density(lightness),
         palette=palette(rgb),
+        letterbox=None if bars is None else bars.content(width, height),
         **hue_stats,
     )
 
@@ -284,8 +318,34 @@ def _nearest(lab: np.ndarray, centres: np.ndarray) -> np.ndarray:
 
 
 def measure_file(path: Path | IO[bytes]) -> Metrics:
-    """Measure the image at `path`, or in a binary file object."""
-    return measure(load_rgb(path))
+    """Measure the image at `path`, or in a binary file object. A letterbox found at the
+    measuring scale is found again at the file's own resolution along the axis its bars lie
+    on, so that its box is exact in the file's pixels."""
+    metrics = measure(load_rgb(path))
+    if metrics.letterbox is None:
+        return metrics
+    if not isinstance(path, Path):
+        path.seek(0)
+    return replace(metrics, letterbox=_letterbox_at_full_size(path, metrics.letterbox))
+
+
+def _letterbox_at_full_size(path: Path | IO[bytes], measured: Box) -> Box | None:
+    """The content box in the file's pixels: the image scaled to MEASURE_WIDTH across its
+    bars but kept whole along them, so that each row (or column) is one of the file's."""
+    with Image.open(path) as image:
+        image = _to_rgb(ImageOps.exif_transpose(image))
+        width, height = image.size
+        rows = measured[1] > 0  # bars at the top and bottom
+        size = (MEASURE_WIDTH, height) if rows else (width, MEASURE_WIDTH)
+        array = np.asarray(image.resize(size, Image.Resampling.BOX), dtype=np.uint8)
+    lightness = srgb_to_oklab(array)[..., 0]
+    bars = letterbox.find_bars(lightness)
+    if bars is None:
+        return None
+    x, y, w, h = bars.content(*size)
+    if rows:
+        return (0, y, width, h) if bars.top else None
+    return (x, 0, w, height) if bars.left else None
 
 
 def _hue_statistics(hue: np.ndarray, weight: np.ndarray) -> dict[str, object]:

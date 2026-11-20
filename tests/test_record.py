@@ -241,8 +241,34 @@ def test_version_2_metrics_are_kept_but_not_complete() -> None:
     assert file.metrics.to_dict() == old
 
 
+def test_version_3_metrics_are_kept_but_not_complete() -> None:
+    old = {**METRICS.to_dict(), "version": 3}
+    entry = parse({"files": {"a.png": {"sha256": SHA, "width": 4, "height": 2, "metrics": old}}})
+    file = entry.files["a.png"]
+    assert file.metrics is not None and file.metrics.version == 3
+    assert file.metrics.palette and file.metrics.letterbox is None
+    assert file.measured and not file.complete
+    assert file.metrics.to_dict() == old
+
+
+def test_letterbox_round_trips() -> None:
+    block = {**METRICS.to_dict(), "letterbox": [0, 12, 400, 176]}
+    entry = parse(
+        {"files": {"a.png": {"sha256": SHA, "width": 400, "height": 200, "metrics": block}}}
+    )
+    file = entry.files["a.png"]
+    assert file.complete and file.metrics is not None
+    assert file.metrics.letterbox == (0, 12, 400, 176)
+    assert file.metrics.to_dict() == block
+    for bad in ([0, 12, 400], [0, 12, 0, 176], [0, -1, 4, 4], "box"):
+        block["letterbox"] = bad
+        entry = parse({"files": {"a.png": {"sha256": SHA, "metrics": block}}})
+        assert entry.files["a.png"].metrics is None, bad
+
+
 def test_version_3_metrics_without_a_palette_are_left_for_recomputation() -> None:
     block = {key: value for key, value in METRICS.to_dict().items() if key != "palette"}
+    block["version"] = 3
     entry = parse({"files": {"a.png": {"sha256": SHA, "metrics": block}}})
     assert entry.files["a.png"].metrics is None
 

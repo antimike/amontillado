@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from amontillado import changes, yamlio
-from amontillado.metrics import METRICS_VERSION, Metrics
+from amontillado.metrics import METRICS_VERSION, OLD_VERSIONS, Metrics
 
 SCHEMA = 2
 INFO_NAMES = ("info.yaml", "info.yml")
@@ -258,9 +258,10 @@ def _parse_file(file_name: str, raw: object) -> FileEntry:
 
 
 def _parse_metrics(block: object) -> Metrics | None:
-    # Version 2's metrics differ only in having no palette: kept, for a file whose content is
-    # not here to measure again; `FileEntry.complete` sends any other to be measured.
-    if not isinstance(block, dict) or block.get("version") not in (2, METRICS_VERSION):
+    # Older versions' metrics lack only later keys (2 the palette, 3 the letterbox): kept, for a
+    # file whose content is not here to measure again; `FileEntry.complete` sends any other to
+    # be measured.
+    if not isinstance(block, dict) or block.get("version") not in (*OLD_VERSIONS, METRICS_VERSION):
         return None
     try:
         return Metrics.from_dict(block, version=block["version"])

@@ -8,6 +8,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ### Added
 
+- Letterbox detection: each file's metrics gain `letterbox`, the picture between dark bars
+  (top and bottom, or left and right) as `[x, y, width, height]`, absent without bars. Bars
+  are told from a dark background by where the dark lies: a letterbox's middle is lit, a logo
+  on black's is not. Metrics version 4: the next `amo index` measures every file again once; a
+  file whose git-annex content is not here keeps its older metrics.
+
 - `amo group --predicate NAME`: only companions a command of yours accepts, named under the
   new `group.predicates` config key (`{cmd, description}`, as `edit.tools`); repeatable, all
   must accept; `--predicate-cmd CMD` runs a one-off command line, and `--list-predicates` lists

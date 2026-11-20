@@ -60,3 +60,7 @@ uninstall:
 # Contact sheets comparing grouping signatures on the calibration sample (tools/grouping_sheet.py).
 grouping-sheet *args:
     uv run tools/grouping_sheet.py {{args}}
+
+# Contact sheets calibrating letterbox detection (tools/letterbox_sheet.py; sample needs the network).
+letterbox-sheet *args:
+    uv run tools/letterbox_sheet.py {{args}}

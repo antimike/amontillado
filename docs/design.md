@@ -86,7 +86,7 @@ files:
     width: 3840
     height: 2160
     metrics:                        # per file: a crop measures differently
-      version: 3                    # bump when a metric's definition changes: forces recomputation
+      version: 4                    # bump when a metric's definition changes: forces recomputation
       lightness: 0.31
       chroma: 0.042
       colourful_share: 0.38
@@ -397,6 +397,7 @@ only, each weighted by its chroma, so a few vivid pixels count more than many ne
 | `warmth` | (warm weight − cool weight) / total chromatic weight, in −1..1 | warm vs cool; warm sectors are red, orange, yellow, pink |
 | `busy` | edge density: share of interior pixels whose Sobel gradient magnitude on L exceeds 0.08 (*initial*) | legibility of text over translucent, blurred windows |
 | `palette` | up to 6 (*initial*) `[hex, share]` pairs: k-means in OKLab over every 4th pixel, largest share first ("Grouping (v0.7)") | which pictures go together: `amo list --like`, `amo group` |
+| `letterbox` | the picture between dark bars, `[x, y, width, height]` in the file's pixels; absent without bars ("Letterboxes (v0.8)") | bars dominate a palette; `amo crop --letterbox` cuts them off |
 
 The Sobel kernels are divided by 8, so the gradient magnitude is the change in L per pixel: a
 hard black-to-white edge scores 0.5 on the pixels either side of it. The one-pixel border is
