@@ -13,6 +13,13 @@ All notable changes to amontillado are documented here. The format follows
   are told from a dark background by where the dark lies: a letterbox's middle is lit, a logo
   on black's is not. Metrics version 4: the next `amo index` measures every file again once; a
   file whose git-annex content is not here keeps its older metrics.
+- `amo crop PICTURE --letterbox` crops the bars off as `<stem>-content.<ext>` and makes it
+  the default file, so lists, `--like` and `amo group` see the picture without them; the
+  original is kept. `amo crop PICTURE W:H` of a letterboxed picture cuts inside the bars.
+- `amo add` offers that crop for a letterboxed picture (`[Y/n]`), or warns when it may not ask
+  (new `--non-interactive`); `amo index` counts letterboxed pictures in its summary.
+- `amo fetch` passes over pictures whose thumbnail is letterboxed (counted in its summary);
+  `--keep-letterboxed` keeps them, with a warning naming `amo crop --letterbox`.
 
 - `amo group --predicate NAME`: only companions a command of yours accepts, named under the
   new `group.predicates` config key (`{cmd, description}`, as `edit.tools`); repeatable, all

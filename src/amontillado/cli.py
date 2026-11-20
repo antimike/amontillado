@@ -111,6 +111,7 @@ from amontillado.library import (
     AddError,
     Addition,
     CropError,
+    Entry,
     NamingError,
     Report,
     Snapshot,
@@ -118,6 +119,7 @@ from amontillado.library import (
     add_picture,
     additions_from_json,
     annex_absent,
+    crop_letterbox,
     crop_picture,
     hand_source,
     heal_library,
@@ -521,6 +523,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="Add files whose content is already in the library."
     )
     add.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Never ask (as when stdin or stderr is not a terminal): a letterboxed picture is "
+        "added as it is, with a warning naming amo crop --letterbox.",
+    )
+    add.add_argument(
         "--dry-run", action="store_true", help="Log what would be added; change nothing."
     )
     add.add_argument(
@@ -570,14 +578,25 @@ def build_parser() -> argparse.ArgumentParser:
         description="Write the largest W:H crop of a record's original (its default file, if "
         "that is not a crop itself) beside it, as <stem>-<W>x<H>.<ext> in the same format, "
         "and record it in info.yaml (derived_from, crop) and the index. amo list --aspect W:H "
-        "then prints it. Prints the new file's path.",
+        "then prints it. A letterboxed original is cropped inside its bars. With --letterbox "
+        "instead of W:H: crop the bars off, as <stem>-content.<ext>, and make that the default "
+        "file. Prints the new file's path.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(crop, argparse.SUPPRESS)
     crop.add_argument(
         "picture", metavar="PICTURE", help="A file, record directory, name or id (or prefix)."
     )
-    crop.add_argument("aspect", type=_aspect, metavar="W:H", help="The aspect ratio, e.g. 21:9.")
+    crop.add_argument(
+        "aspect", type=_aspect, nargs="?", metavar="W:H", help="The aspect ratio, e.g. 21:9."
+    )
+    crop.add_argument(
+        "--letterbox",
+        action="store_true",
+        help="Crop the letterbox (or pillarbox) bars off instead, to the picture between them "
+        "(the metrics' letterbox; amo add and amo index report pictures that have one), and "
+        "make the crop the default file.",
+    )
     crop.add_argument(
         "--at",
         type=_fraction,
@@ -818,6 +837,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Delete a download whose full image does not match the look filters. By default "
         "it is kept as a record, but not printed or counted towards --count.",
+    )
+    fetch.add_argument(
+        "--keep-letterboxed",
+        action="store_true",
+        help="Keep pictures whose thumbnail has letterbox (or pillarbox) bars, as downloaded, "
+        "with a warning naming amo crop --letterbox. By default they are passed over: the bars "
+        "skew their look and palette.",
     )
     fetch.add_argument(
         "--dry-run",
@@ -2231,9 +2257,45 @@ def _add_one(
     if name is not None:
         taken.add(name)
     logger.info("added %s as %s", file, entry.directory)
+    metrics = entry.record.files[file.name].metrics
+    if metrics is not None and metrics.letterbox is not None:
+        _offer_letterbox_crop(conn, config, entry, file.name, may_ask=_may_ask(args))
+
+
+def _offer_letterbox_crop(
+    conn: sqlite3.Connection, config: Config, entry: Entry, file: str, *, may_ask: bool
+) -> None:
+    """A picture just added has letterbox bars: crop them off if the user says so (when a
+    prompt is allowed), else warn, naming the command that does it."""
+    where = entry.directory / file
+    command = f"amo crop {entry.directory} --letterbox"
+    if not may_ask or not _ask_yes(f"{where} is letterboxed; crop the bars off"):
+        logger.warning("%s is letterboxed: `%s` crops the bars off", where, command)
+        return
+    try:
+        cropped, name = crop_letterbox(config, entry.directory, entry.root)
+    except (CropError, OSError, Image.DecompressionBombError) as exc:
+        logger.error("%s: %s; the picture is added as it is (`%s`)", where, exc, command)
+        return
+    replace_in_index(conn, cropped)
+    logger.info("cropped the bars off: %s, now the default file", entry.directory / name)
+
+
+def _ask_yes(question: str) -> bool:
+    """Ask a yes-or-no question on stderr, yes by default; the end of input is no."""
+    STDERR.print(f"{question}? [Y/n] ", end="", markup=False, highlight=False)
+    try:
+        answer = input().strip().lower()
+    except EOFError:
+        return False
+    return answer in ("", "y", "yes")
 
 
 def cmd_crop(args: argparse.Namespace) -> None:
+    if (args.aspect is None) == (not args.letterbox):
+        sys.exit("amontillado: crop needs W:H or --letterbox (not both)")
+    if args.letterbox and (args.interactive or args.at != 0.5):
+        sys.exit("amontillado: --letterbox crops to the bars: no --at or --interactive")
     config = _load_config()
     if args.interactive and not (sys.stdin.isatty() and sys.stderr.isatty()):
         sys.exit("amontillado: --interactive needs a terminal (stdin and stderr)")
@@ -2243,19 +2305,24 @@ def cmd_crop(args: argparse.Namespace) -> None:
         with closing(connect(config.index_path)) as conn:
             try:
                 directory, root = record_location(conn, find_record(conn, args.picture))
-                entry, name = crop_picture(
-                    config,
-                    directory,
-                    root,
-                    args.aspect.ratio,
-                    args.aspect.label,
-                    at=args.at,
-                    force=args.force,
-                    dry_run=args.dry_run,
-                    choose=chooser(config.crop, args.aspect.ratio, args.aspect.label)
-                    if args.interactive
-                    else None,
-                )
+                if args.letterbox:
+                    entry, name = crop_letterbox(
+                        config, directory, root, force=args.force, dry_run=args.dry_run
+                    )
+                else:
+                    entry, name = crop_picture(
+                        config,
+                        directory,
+                        root,
+                        args.aspect.ratio,
+                        args.aspect.label,
+                        at=args.at,
+                        force=args.force,
+                        dry_run=args.dry_run,
+                        choose=chooser(config.crop, args.aspect.ratio, args.aspect.label)
+                        if args.interactive
+                        else None,
+                    )
             except (CropError, LookupFailed, RecordError) as exc:
                 sys.exit(f"amontillado: {exc}")
             except (OSError, Image.DecompressionBombError) as exc:
@@ -2484,6 +2551,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         args.discard_mismatches,
         args.dry_run,
         args.test_set,
+        args.keep_letterboxed,
     )
     # Only NSFW needs the key, and its command may ask for a passphrase: no lookup otherwise.
     key = None
@@ -2515,11 +2583,12 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         for wallpaper in report.would_keep:
             print(wallpaper.url)
     logger.info(
-        "%s %d, examined %s: %d rejected, %d failed; %d already in the library",
+        "%s %d, examined %s: %d rejected, %d letterboxed, %d failed; %d already in the library",
         "would keep" if args.dry_run else "kept",
         report.count,
         _count(report.examined, "thumbnail"),
         report.rejected,
+        report.letterboxed,
         len(report.failed),
         report.known,
     )
@@ -2557,9 +2626,21 @@ def _summary(head: str, report: Report, check: bool) -> str:
         f"{_count(len(report.absent), 'file')} not here (git-annex)" if report.absent else "",
         _count(len(report.conflicts), "conflict") if report.conflicts else "",
         f"{len(report.failed)} failed" if report.failed else "",
+        f"{_letterboxed(report)} letterboxed (amo crop --letterbox)"
+        if _letterboxed(report)
+        else "",
     ]
     details = ", ".join(part for part in parts if part)
     return f"{head}: {details}" if details else head
+
+
+def _letterboxed(report: Report) -> int:
+    """How many records' default files have letterbox bars: their bars are not cropped off."""
+    count = 0
+    for entry in report.entries:
+        metrics = entry.record.files[entry.default].metrics
+        count += metrics is not None and metrics.letterbox is not None
+    return count
 
 
 def _problems(report: Report, *, check: bool) -> list[str]:

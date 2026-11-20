@@ -77,6 +77,7 @@ amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9   # a picture per monitor, c
 amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9 --apply   # ... and set them (group.setter)
 amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9 --predicate same-site   # your own test
 amo crop forest 21:9 --interactive         # place the crop by hand
+amo crop film --letterbox                  # crop a film still's black bars off
 amo edit forest                            # retouch a copy in your editor, keep the result
 
 amo config init                            # a commented config: every key, its meaning

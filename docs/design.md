@@ -558,15 +558,17 @@ amo list [FILTERS] [--aspect W:H] [--purity LIST]
          [--where SQL]
                                      matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
-          [--busy-from thumb|full] [--discard-mismatches] [--dry-run]
+          [--busy-from thumb|full] [--discard-mismatches] [--keep-letterboxed] [--dry-run]
 amo group [PICTURE] --monitor NAME=W:H... [FILTERS] [--purity LIST] [--order least-shown|nearest]
-          [--max-distance D] [--keep-category] [--format tsv|json] [--non-interactive] [--apply]
-          [--dry-run]
+          [--max-distance D] [--keep-category] [--predicate NAME]... [--predicate-cmd CMD]
+          [--format tsv|json] [--non-interactive] [--apply] [--dry-run]
                                      one picture per monitor, colours going together ("Grouping")
 amo shown PICTURE... [--dry-run]     record that pictures were shown (for the usage table)
-amo add FILE... [--name N] [--nsfw] [--force] [--dry-run] [PROVENANCE]   make each file a record
+amo add FILE... [--name N] [--nsfw] [--force] [--non-interactive] [--dry-run] [PROVENANCE]
+                                     make each file a record
 amo add --from-json FILE [--force] [--dry-run]              the pictures a JSON file lists
 amo crop PICTURE W:H [--at F] [--interactive] [--force] [--dry-run]   crop a record's original; prints it
+amo crop PICTURE --letterbox [--force] [--dry-run]   crop the bars off ("Letterboxes"); prints it
 amo add-derived PICTURE FILE [--name N] [--from FILE] [--dry-run]   add a hand-made derived file
 amo edit PICTURE [--tool NAME | --extcmd CMD] [--name N] [--from FILE] [--dry-run]
                                      edit a copy in an editor, add the result; prints it
@@ -1679,12 +1681,8 @@ amo group --list-predicates
 **Known limitations** (calibration, amo-6f0.4):
 
 - A letterboxed picture's bars dominate its palette, so it groups with mostly black pictures (1
-  of the 400 sample pictures). The fix belongs at add and fetch, not in grouping: detect the
-  bars by where the dark pixels lie (a letterbox's dark cluster sits in the outer rows and
-  never in the middle; a dark background's spreads through the frame; the clusters' spreads do
-  not tell them apart) and offer a crop to the picture as a derived file (amo-5o8).
-  Off-the-shelf trimmers (ImageMagick `-trim`, ffmpeg `cropdetect`, Pillow's `getbbox`
-  recipe) cannot tell bars from a dark background.
+  of the 400 sample pictures). The fix belongs at add and fetch, not in grouping: v0.8 detects
+  the bars and offers a crop to the picture as the default file ("Letterboxes (v0.8)").
 - Palettes do not see style: within the bound, 30-33% of pairs are anime next to a photo (42%
   at random). `amo group --keep-category` is the cheap remedy; style measures (sharpness,
   perhaps a learned embedding) are amo-abc.
@@ -1744,6 +1742,76 @@ by eye on a contact sheet (`just grouping-sheet` reproduces it).
    coherence with a larger pool for the least-shown rotation. A larger or more uniform library
    than the sample has more companions per picture, so it could afford a tighter bound.
 
+## Letterboxes (v0.8)
+
+**Status: built in amo-5o8, thresholds calibrated with MH 2026-11-19** (decisions below).
+Dark bars framing a picture (a film still's letterbox, a pillarbox around a narrower picture)
+dominate its palette and metrics: it groups with black pictures and reads as dark. Detected
+when a file is measured, cropped off on request.
+
+**Detection** (`amontillado.letterbox`), on the measured image's OKLab lightness: a *bar row* is
+a row whose mean lightness is below 0.15 and whose standard deviation is below 0.03; a
+letterbox is a run of bar rows from the top edge and another from the bottom, each at least 3%
+of the height, with a lit picture between them: at most 15% of the middle third of the rows
+between the bars may be darker than 0.15. A pillarbox is the same along columns; a letterbox
+wins over a pillarbox. The test is where the dark lies, not how uniform it is: a logo on black
+also has uniform dark rows at both edges, but its middle is dark too. Off-the-shelf trimmers
+(ImageMagick `-trim`, ffmpeg `cropdetect`, Pillow's `getbbox` recipe) cannot tell the two
+apart. The bars found at the measuring width (432 px) are found again at the file's own
+resolution along the axis they lie on (the image scaled to 432 px across the bars and kept
+whole along them), so the box is exact in the file's pixels.
+
+**Stored** as the file's `metrics.letterbox`, `[x, y, width, height]` (as `crop`), absent
+without bars: metrics version 4, so the first `amo index` after upgrading measures every file
+again once (a file whose git-annex content is not here keeps its version 2 or 3 metrics,
+read and written back unchanged). Not in the index's `files` table: `amo index` counts from the
+info files it reads.
+
+**Commands:**
+
+- `amo crop PICTURE --letterbox` (instead of `W:H`; no `--at` or `--interactive`) writes the
+  box of the record's original as `<stem>-content.<ext>` (`derived_from`, `crop`, measured)
+  and makes it the record's `default_file`, so `amo list`, `--like` and `amo group` use the
+  picture without its bars; the original is kept. Refused: an original without bars, a record
+  that needs `amo index`, and without `--force` a content crop already there (`--force`
+  replaces it, never a file that is not a crop).
+- `amo crop PICTURE W:H` of a letterboxed original cuts the largest W:H box inside the bars
+  (`--at` places it there), so no aspect crop takes them in; `--interactive` starts from that
+  box (a smaller scale) and can still be moved anywhere.
+- `amo add` asks `... is letterboxed; crop the bars off? [Y/n]` when it may ask ("Records",
+  Prompts), else (or on no) warns, naming `amo crop DIR --letterbox`. `--non-interactive`
+  never asks.
+- `amo index` counts the records whose default file is letterboxed in its summary (`N
+  letterboxed (amo crop --letterbox)`); it never crops.
+- `amo fetch` passes over a result whose thumbnail is letterboxed (counted in its summary):
+  the bars skew the look the filters judge, and Wallhaven has more. `--keep-letterboxed` keeps
+  them as downloaded, each with a warning naming `amo crop --letterbox` (fetch never crops; it
+  runs unattended). A full image with bars its thumbnail did not show is kept, with the same
+  warning.
+
+### Letterboxes: decisions
+
+Agreed with MH 2026-11-19 (amo-5o8). Calibrated on 542 Wallhaven thumbnails: the 400 of the
+calibration sample and 150 from the queries "film stills", "movie scenes" and "screen shot"
+(`just letterbox-sheet`: a sheet of the pictures found, one of those with bars at both ends
+rejected for a dark middle, one of thin or one-sided bars).
+
+1. **The thresholds.** All 9 pictures found (7 letterboxes, 2 pillarboxes) were true, with the
+   content box right; 3 of them are among the 400 random pictures (0.75%). Of the 17 rejected
+   for a dark middle, 15 are logos or figures on black (the middle 27-96% dark) and 2 are
+   dark film scenes (24% and 71%). Nothing measured separates the 71% scene from the logos
+   (the share of content pixels the bars' colour, the darkness next to the bars), so the
+   bound is 15%: dark film scenes stay as they are rather than a logo's background being
+   cropped. At 25% one scene more is found, with a logo at 27%. Bars thinner than 3% (two
+   pictures with a 1% bar on one side, one with text in its bar) are left alone.
+2. **Stored in the metrics** (version 4), so `amo index` counts letterboxes across the library
+   and `amo crop` reuses the box; the cost is one re-measure of every file, and a changed
+   `version` line in every info file.
+3. **The crop is the default file, the original kept**: a derived file like any crop, so it can
+   be made again; `default_file` makes every consumer use it without knowing about bars.
+4. **`amo fetch` skips letterboxed thumbnails, `--keep-letterboxed` keeps them** (MH: an
+   opt-in to keep them).
+
 ## Testing
 
 - No network in tests: the HTTP layer is one small function, replaced by a stub that serves
@@ -1762,8 +1830,8 @@ by eye on a contact sheet (`just grouping-sheet` reproduces it).
 2. Palette-aware grouping (epic `amo-6f0`; released in v0.7, 2026-11-18; designed in v0.6,
    "Grouping (v0.7)"): a stored palette per file, `amo list --like`, and `amo group`, a
    coherent set for several monitors, the theme taken from the primary monitor's picture.
-   Later: saved sets and ratings (amo-0k6), letterbox detection (amo-5o8), style measures
-   (amo-abc).
+   Later: saved sets and ratings (amo-0k6), style measures (amo-abc); v0.8: predicates
+   (amo-6x6), letterbox detection (amo-5o8).
 3. v0.2, the theme engine (epic `amo-aqp`; released 2026-11-03): palette files, generator
    adapters, per-app templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
    from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,

@@ -175,6 +175,43 @@ def _encode(array: np.ndarray, fmt: str = "PNG") -> bytes:
     return buffer.getvalue()
 
 
+@pytest.fixture
+def letterboxed(web: FakeWeb) -> FakeWeb:
+    """bbb222, thumbnail and full image, is white between black bars at the top and bottom."""
+    for url, (width, height) in (
+        ("https://th.wallhaven.cc/lg/bb/bbb222.jpg", (432, 243)),
+        ("https://w.wallhaven.cc/full/bb/wallhaven-bbb222.png", (400, 200)),
+    ):
+        pixels = np.zeros((height, width, 3), dtype=np.uint8)
+        pixels[height // 8 : height - height // 8] = 255
+        web.add(url, _encode(pixels))
+    return web
+
+
+def test_letterboxed_thumbnails_are_passed_over(
+    config: Config, conn: sqlite3.Connection, letterboxed: FakeWeb
+) -> None:
+    report = _fetch(config, conn, letterboxed, count=2)
+    assert [path.name for path in report.kept] == ["wallhaven-aaa111.jpg"]
+    assert (report.letterboxed, report.rejected) == (1, 0)
+    assert "https://w.wallhaven.cc/full/bb/wallhaven-bbb222.png" not in letterboxed.urls()
+
+
+def test_keep_letterboxed(
+    config: Config,
+    conn: sqlite3.Connection,
+    letterboxed: FakeWeb,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    report = _fetch(config, conn, letterboxed, count=2, keep_letterboxed=True)
+    assert [path.name for path in report.kept] == ["wallhaven-aaa111.jpg", "wallhaven-bbb222.png"]
+    assert report.letterboxed == 0
+    directory = report.kept[1].parent
+    info = yamlio.load((directory / "info.yaml").read_text())
+    assert info["files"]["wallhaven-bbb222.png"]["metrics"]["letterbox"] == [0, 25, 400, 150]
+    assert f"`amo crop {directory} --letterbox` crops the bars off" in caplog.text
+
+
 def test_a_failure_leaves_nothing_behind(
     config: Config, conn: sqlite3.Connection, web: FakeWeb
 ) -> None:
