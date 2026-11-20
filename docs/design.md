@@ -19,7 +19,9 @@ which follows the desktop's colour scheme ("Variant"). v0.6 (2026-11-13): `amo l
 least-shown`, the stale-index warning ("CLI"), the light variant's bright step calibrated
 ("Contrast checks"), and the grouping design for v0.7 ("Grouping (v0.7)"). v0.7 (2026-11-18):
 grouping built ("Grouping (v0.7)"): a palette per file, `amo list --like`, `amo group` with a
-setter hook, the distance and its bound calibrated with MH ("Grouping: decisions" 6).
+setter hook, the distance and its bound calibrated with MH ("Grouping: decisions" 6). v0.8
+(2026-11-19): `amo group --predicate` ("Grouping (v0.7)", Predicates) and letterbox detection
+with `amo crop --letterbox` ("Letterboxes (v0.8)").
 Values marked *initial* are starting points to calibrate on real images; change them here when
 they change in code.
 
@@ -1830,8 +1832,7 @@ rejected for a dark middle, one of thin or one-sided bars).
 2. Palette-aware grouping (epic `amo-6f0`; released in v0.7, 2026-11-18; designed in v0.6,
    "Grouping (v0.7)"): a stored palette per file, `amo list --like`, and `amo group`, a
    coherent set for several monitors, the theme taken from the primary monitor's picture.
-   Later: saved sets and ratings (amo-0k6), style measures (amo-abc); v0.8: predicates
-   (amo-6x6), letterbox detection (amo-5o8).
+   Later: saved sets and ratings (amo-0k6), style measures (amo-abc).
 3. v0.2, the theme engine (epic `amo-aqp`; released 2026-11-03): palette files, generator
    adapters, per-app templates. Direction agreed in principle (2026-10-29): amontillado renders templates itself
    from optional sources (built-in variables-only templates, tinted-theming, matugen-themes,
@@ -1861,6 +1862,8 @@ rejected for a dark middle, one of thin or one-sided bars).
 8. v0.6 (epic `amo-50c`; released 2026-11-13): `amo list --order least-shown` (amo-50c.2), the
    stale-index warning (amo-50c.3), the light variant's darker bright colours (amo-50c.4), and
    the grouping spike (amo-50c.1) that designs item 2 for v0.7.
+9. v0.8 (epic `amo-soq`; released 2026-11-19): `amo group --predicate` (amo-6x6) and letterbox
+   detection with a crop offer (amo-5o8).
 
 ## Open questions
 

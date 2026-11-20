@@ -43,7 +43,8 @@ and merge by key), `amo edit`, and a GTK4 `libadwaita-vars` template; v0.5.0 a `
 variant that follows the desktop's dark/light colour scheme; v0.6.0 `amo list --order
 least-shown`, a warning when the index is out of date, and darker bright colours for light
 themes; v0.7.0 palette-aware grouping: a palette per picture, `amo list --like`, and `amo
-group`, one picture per monitor whose colours go together ([CHANGELOG.md](CHANGELOG.md)).
+group`, one picture per monitor whose colours go together; v0.8.0 your own predicates for `amo
+group` and letterbox detection with a crop to the picture ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
@@ -51,7 +52,7 @@ group`, one picture per monitor whose colours go together ([CHANGELOG.md](CHANGE
 Pin a tag:
 
 ```sh
-pipx install git+https://github.com/antimike/amontillado@v0.7.0
+pipx install git+https://github.com/antimike/amontillado@v0.8.0
 ```
 
 From a checkout, for development: `just install-dev` (an editable pipx install), or
