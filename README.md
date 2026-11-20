@@ -44,7 +44,8 @@ variant that follows the desktop's dark/light colour scheme; v0.6.0 `amo list --
 least-shown`, a warning when the index is out of date, and darker bright colours for light
 themes; v0.7.0 palette-aware grouping: a palette per picture, `amo list --like`, and `amo
 group`, one picture per monitor whose colours go together; v0.8.0 your own predicates for `amo
-group` and letterbox detection with a crop to the picture ([CHANGELOG.md](CHANGELOG.md)).
+group` and letterbox detection with a crop to the picture; v0.9.0 Wallhaven tag categories,
+so names from tags pass over artists and brands ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
@@ -52,7 +53,7 @@ group` and letterbox detection with a crop to the picture ([CHANGELOG.md](CHANGE
 Pin a tag:
 
 ```sh
-pipx install git+https://github.com/antimike/amontillado@v0.8.0
+pipx install git+https://github.com/antimike/amontillado@v0.9.0
 ```
 
 From a checkout, for development: `just install-dev` (an editable pipx install), or
@@ -79,6 +80,8 @@ amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9 --apply   # ... and set them
 amo group --monitor DP-1=21:9 --monitor HDMI-1=16:9 --predicate same-site   # your own test
 amo crop forest 21:9 --interactive         # place the crop by hand
 amo crop film --letterbox                  # crop a film still's black bars off
+amo fetch --refresh-tags                   # tag categories for records fetched before 0.9
+amo name --from-tags --force --dry-run     # the names their tags would give them now
 amo edit forest                            # retouch a copy in your editor, keep the result
 
 amo config init                            # a commented config: every key, its meaning
