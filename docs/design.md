@@ -1864,6 +1864,9 @@ rejected for a dark middle, one of thin or one-sided bars).
    the grouping spike (amo-50c.1) that designs item 2 for v0.7.
 9. v0.8 (epic `amo-soq`; released 2026-11-19): `amo group --predicate` (amo-6x6) and letterbox
    detection with a crop offer (amo-5o8).
+10. v0.8.1 (epic `amo-301`; planned): the hyprpaper >= 0.8 reload example (amo-qu4), and
+    Wallhaven tag categories kept for naming, with a backfill (amo-ugu); v0.9.0 if the backfill
+    adds an option.
 
 ## Open questions
 

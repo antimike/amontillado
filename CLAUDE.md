@@ -38,8 +38,16 @@ remote: never add one pointing at this repo. bd-track's daily cleanup timer cove
 
 ## Start prompt
 
-> Work in `~/.local/src/amontillado`. Read `CLAUDE.md`, `README.md`, `docs/design.md` and
-> `CONTRIBUTING.md`, then build v0.1 (epic `amo-3fg`; `bd ready` shows what is next) in the design's order: metrics (`amo measure`), sidecars and
-> the index (`amo index`, `amo list`), the Wallhaven fetcher (`amo fetch`, `--test-set`),
-> threshold calibration. One commit per layer, on a feature branch. Confirm with me before
-> pushing or creating the GitHub repo.
+The current epic's prompt (replace it when an epic closes):
+
+> Work the v0.8.1 epic (amo-301) in ~/.local/src/amontillado, ordered by its dependency edges.
+> Read CLAUDE.md, README.md, docs/design.md and CONTRIBUTING.md first, then each bead's
+> description. Loop: `bd ready --parent amo-301`; take the first bead; `/start <id>` on a
+> feature branch, one commit per layer, `just lint` and `just test` fresh (the suite takes ~6
+> min: run it in the background), public-scan before each commit, docs/design.md and CHANGELOG
+> [Unreleased] in step; merge to main, `bd close`, `/stop`. amo-qu4 needs hyprpaper 0.8.4's
+> real syntax checked on this machine. amo-ugu's backfill talks to Wallhaven: tests stay
+> offline. Release bead amo-301.1: decide v0.8.1 vs v0.9.0 (ugu adds an option), prepare
+> everything, ask me before tagging and pushing, file the chezmoi pin ticket. At the end: close
+> the epic, `bd dolt commit`, `bd export --output .beads/issues.jsonl`, a checkpoint in
+> auto-memory, and a summary.
