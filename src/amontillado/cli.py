@@ -61,7 +61,7 @@ from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check
 from amontillado.cropper import chooser
 from amontillado.edit import EditError, plan_edit, run_edit
-from amontillado.fetch import SITE, TEST_SET, fetch, name_from_tags
+from amontillado.fetch import SITE, TEST_SET, FetchError, fetch, name_from_tags, refresh_tags
 from amontillado.fetch import Options as FetchOptions
 from amontillado.generators import GeneratorError, choose_generator, generate, picture_palette
 from amontillado.gitcommit import HookError, annex_repository, git_commit
@@ -94,9 +94,10 @@ from amontillado.index import (
     rebuild,
     record_location,
     record_name,
+    record_purity,
     record_shown,
     saved_snapshot,
-    unnamed,
+    site_records,
     usage,
 )
 from amontillado.index import (
@@ -720,16 +721,18 @@ def build_parser() -> argparse.ArgumentParser:
         "name",
         help="Name or rename a record.",
         usage="%(prog)s [-h] [--no-rename-directory] [--dry-run] PICTURE NAME\n"
-        "       %(prog)s [-h] --from-tags [--no-rename-directory] [--dry-run] [PICTURE ...]",
+        "       %(prog)s [-h] --from-tags [--force] [--no-rename-directory] [--dry-run] "
+        "[PICTURE ...]",
         description="Give a record a name, or a new one, and rename its directory to the name "
         "where it is (foo/bar/old becomes foo/bar/NAME; --no-rename-directory keeps it). A name "
         "already taken is refused, as amo add does. --from-tags names records fetched from "
         "Wallhaven without a name (before amo 0.2, or when the name was taken) as amo fetch "
         "would, from the tags their info.yaml keeps (wallhaven-x8ye3z becomes "
-        "cyberpunk-interior-technology-x8ye3z): the PICTUREs given, or every such record. The "
-        "kept tags lack Wallhaven's tag categories, so a tag amo fetch would pass over as an "
-        "artist's or a company's may be used. Updates the index, and any theme profile's "
-        "wallpaper link into a renamed directory. Prints each record's directory.",
+        "cyberpunk-interior-technology-x8ye3z): the PICTUREs given, or every such record; with "
+        "--force, named records too. Tags kept before amo 0.9 lack Wallhaven's tag categories, "
+        "so a tag amo fetch would pass over as an artist's or a company's may be used; amo "
+        "fetch --refresh-tags adds them. Updates the index, and any theme profile's wallpaper "
+        "link into a renamed directory. Prints the directory of each record named.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(name, argparse.SUPPRESS)
@@ -739,12 +742,18 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PICTURE NAME | PICTURE...",
         help="A record (a file, record directory, name or id, or an id prefix) and its new "
         "name; with --from-tags, records (default: every indexed Wallhaven record without a "
-        "name).",
+        "name, or with --force every one).",
     )
     name.add_argument(
         "--from-tags",
         action="store_true",
         help="Name from the stored Wallhaven tags; refuses records that have a name.",
+    )
+    name.add_argument(
+        "--force",
+        action="store_true",
+        help="With --from-tags: name records that have a name too, however they got it. A "
+        "record whose tags give the name it has is left as it is.",
     )
     name.add_argument(
         "--no-rename-directory",
@@ -765,10 +774,18 @@ def build_parser() -> argparse.ArgumentParser:
         "the first library root, others in the NSFW root), and index it. The full image is "
         "judged again; see --discard-mismatches. Prints the path of each file kept that "
         "matches. Results already in the library are passed over. Fails if fewer than "
-        "--count are kept. With --test-set, keeps one image per bucket instead.",
+        "--count are kept. With --test-set, keeps one image per bucket instead. With "
+        "--refresh-tags, asks Wallhaven again for the tags of records already kept instead.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(fetch, argparse.SUPPRESS)
+    fetch.add_argument(
+        "pictures",
+        nargs="*",
+        metavar="PICTURE",
+        help="With --refresh-tags: the records to refresh (a file, record directory, name or "
+        "id, or an id prefix).",
+    )
     _add_look(fetch)
     wallhaven = fetch.add_argument_group("Wallhaven filters")
     wallhaven.add_argument(
@@ -846,10 +863,21 @@ def build_parser() -> argparse.ArgumentParser:
         "skew their look and palette.",
     )
     fetch.add_argument(
+        "--refresh-tags",
+        action="store_true",
+        help="Write each tag's Wallhaven category into the info files of records fetched "
+        "before amo 0.9 kept them (source.tag_categories), so amo name --from-tags can pass "
+        "over artists' and companies' tags: the PICTUREs given, or every Wallhaven record "
+        "without them. One API call per record, paced as a search is; no image is downloaded, "
+        "and nsfw records need the API key. A tag list that changed on Wallhaven is written "
+        "too, with a warning. Takes only PICTUREs and --dry-run. Prints each record's "
+        "directory. Then amo name --from-tags --force --dry-run shows the names the tags give.",
+    )
+    fetch.add_argument(
         "--dry-run",
         action="store_true",
         help="Measure thumbnails and print the pages of the wallpapers that would be kept; "
-        "download and write nothing.",
+        "download and write nothing. With --refresh-tags: ask Wallhaven, write nothing.",
     )
     fetch.set_defaults(func=cmd_fetch)
 
@@ -2460,6 +2488,8 @@ def _list_tools(config: Config) -> None:
 def cmd_name(args: argparse.Namespace) -> None:
     if not args.from_tags and len(args.arguments) != 2:
         sys.exit("amontillado: name takes PICTURE NAME, or --from-tags [PICTURE...]")
+    if args.force and not args.from_tags:
+        sys.exit("amontillado: --force needs --from-tags")
     config = _load_config()
     if not config.index_path.exists():
         sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
@@ -2472,9 +2502,11 @@ def cmd_name(args: argparse.Namespace) -> None:
             except LookupFailed as exc:
                 sys.exit(f"amontillado: {exc}")
             if args.from_tags and not ids:
-                ids = unnamed(conn, SITE)
+                ids = site_records(conn, SITE, named=args.force)
                 if not ids:
-                    logger.info("no unnamed record fetched from Wallhaven")
+                    logger.info(
+                        "no %srecord fetched from Wallhaven", "" if args.force else "unnamed "
+                    )
                     return
             taken = names(conn)
             for record_id in ids:
@@ -2487,6 +2519,7 @@ def cmd_name(args: argparse.Namespace) -> None:
                             directory,
                             root,
                             taken,
+                            force=args.force,
                             rename_directory=args.rename_directory,
                             dry_run=args.dry_run,
                         )
@@ -2509,6 +2542,9 @@ def cmd_name(args: argparse.Namespace) -> None:
                     logger.error("%s: %s", directory, exc)
                     failed += 1
                     continue
+                if entry is None:
+                    logger.info("%s keeps its name, %s", directory, given)
+                    continue
                 taken.discard(old)
                 taken.add(given)
                 if args.dry_run:
@@ -2527,6 +2563,11 @@ def cmd_name(args: argparse.Namespace) -> None:
 
 def cmd_fetch(args: argparse.Namespace) -> None:
     look = _look(args)
+    if args.refresh_tags:
+        _refresh_tags(args, look)
+        return
+    if args.pictures:
+        sys.exit("amontillado: fetch takes PICTUREs only with --refresh-tags")
     if args.test_set and (look != Look() or args.count is not None):
         sys.exit("amontillado: --test-set takes no look filters or --count")
     wanted = len(TEST_SET) if args.test_set else args.count or 1
@@ -2553,18 +2594,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         args.test_set,
         args.keep_letterboxed,
     )
-    # Only NSFW needs the key, and its command may ask for a passphrase: no lookup otherwise.
-    key = None
-    if "nsfw" in args.purity:
-        try:
-            key = api_key(config)
-        except ConfigError as exc:
-            sys.exit(f"amontillado: {exc}")
-        if key is None:
-            sys.exit(
-                f"amontillado: nsfw needs a Wallhaven API key: set {API_KEY_VARIABLE} or "
-                "api_key_command"
-            )
+    key = _nsfw_api_key(config) if "nsfw" in args.purity else None
     try:
         with closing(connect(config.index_path)) as conn:
             report = fetch(config, conn, Client(key), search, look, options)
@@ -2603,6 +2633,99 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: empty buckets: {', '.join(empty)}")
     if report.count < wanted:
         sys.exit(f"amontillado: {report.count} of {wanted} wanted")
+
+
+def _refresh_tags(args: argparse.Namespace, look: Look) -> None:
+    others = [
+        option
+        for option, given in (
+            ("look filters", look != Look()),
+            ("--tags", args.tags is not None),
+            ("--purity", args.purity != frozenset({"sfw"})),
+            ("--category", args.category is not None),
+            ("--atleast", args.atleast is not None),
+            ("--ratio", args.ratio is not None),
+            ("--color", args.color is not None),
+            ("--count", args.count is not None),
+            ("--test-set", args.test_set),
+            ("--max-candidates", args.max_candidates != 100),
+            ("--busy-from", args.busy_from != "thumb"),
+            ("--discard-mismatches", args.discard_mismatches),
+            ("--keep-letterboxed", args.keep_letterboxed),
+        )
+        if given
+    ]
+    if others:
+        sys.exit(f"amontillado: --refresh-tags takes no {', '.join(others)}")
+    config = _load_config()
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    refreshed = unchanged = failed = 0
+    try:
+        with closing(connect(config.index_path)) as conn:
+            try:
+                ids = [find_record(conn, picture) for picture in args.pictures]
+            except LookupFailed as exc:
+                sys.exit(f"amontillado: {exc}")
+            if not ids:
+                ids = site_records(conn, SITE, named=True)
+            key = None
+            if any(record_purity(conn, record_id) == "nsfw" for record_id in ids):
+                key = _nsfw_api_key(config)
+            client = Client(key)
+            for record_id in ids:
+                directory, root = record_location(conn, record_id)
+                try:
+                    entry = refresh_tags(
+                        config,
+                        directory,
+                        root,
+                        client,
+                        missing_only=not args.pictures,
+                        dry_run=args.dry_run,
+                    )
+                except (FetchError, WallhavenError, RecordError) as exc:
+                    logger.error("%s", exc)
+                    failed += 1
+                    continue
+                except OSError as exc:
+                    logger.error("%s: %s", directory, exc)
+                    failed += 1
+                    continue
+                if entry is None:
+                    unchanged += 1
+                    continue
+                refreshed += 1
+                if args.dry_run:
+                    logger.info("would write the tags of %s", directory)
+                    continue
+                replace_in_index(conn, entry)
+                print(entry.directory)
+    except (sqlite3.Error, IndexDatabaseError) as exc:
+        _index_error(config, exc)
+    logger.info(
+        "%s %d; %d had them already",
+        "would write the tags of" if args.dry_run else "wrote the tags of",
+        refreshed,
+        unchanged,
+    )
+    if failed:
+        sys.exit(f"amontillado: {failed} of {_count(len(ids), 'record')} could not be refreshed")
+
+
+def _nsfw_api_key(config: Config) -> str:
+    """The API key, which nsfw needs; its command may ask for a passphrase, so it is looked up
+    only then."""
+    try:
+        key = api_key(config)
+    except ConfigError as exc:
+        sys.exit(f"amontillado: {exc}")
+    if key is None:
+        sys.exit(
+            f"amontillado: nsfw needs a Wallhaven API key: set {API_KEY_VARIABLE} or "
+            "api_key_command"
+        )
+    return key
 
 
 def _progress(description: str) -> Callable[[list[T]], Iterable[T]] | None:

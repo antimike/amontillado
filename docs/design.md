@@ -78,6 +78,7 @@ source:                             # Wallhaven's; for hand-added pictures see "
   purity: sfw                       # sfw | sketchy | nsfw
   category: general                 # general | anime | people
   tags: [landscape, night]
+  tag_categories: {landscape: Landscapes, night: ""}  # Wallhaven's, per tag; "" for none
   colors: ["#000000", "#424153"]    # Wallhaven's own swatches
   source: ""                        # the uploader's credited source, if any
   uploaded: 2024-06-02T21:53:31
@@ -516,12 +517,12 @@ machine's index, so two machines would assign the same name and a sync would mak
 duplicate-name conflict. A name already taken (by a hand-named record) leaves the record
 unnamed, in `wallhaven-<id>`, with a warning. Records fetched before names existed keep theirs
 (none) until `amo name --from-tags` names them from the tags their info.yaml keeps (under
-"CLI"). Those tags are names only, without Wallhaven's tag categories, so the category rule
-cannot apply there: an artist's or a technique's tag may make it into the name;
-`NAME_SKIP_TAGS` still applies, and the wallpaper's category stands in when no tag is usable.
-Planned instead (amo-ugu): `amo fetch` keeps each tag's category in `source.tag_categories`,
-and a one-off pass re-asks Wallhaven (`/w/<id>`) for those of records fetched before, so
-naming itself never needs the network.
+"CLI"), applying the same rules with the categories in `source.tag_categories` (amo-ugu; kept by
+`amo fetch` since 0.9), so naming itself never needs the network. Tags kept before that have no
+categories, so the category rule cannot apply to them (an artist's or a technique's tag may make
+it into the name; `NAME_SKIP_TAGS` still applies) until `amo fetch --refresh-tags` re-asks
+Wallhaven for them (under "CLI"); `amo name --from-tags --force` then re-derives names already
+given.
 
 **Revisit:** the info-file scan in step 2 parses every info file on each `amo fetch`
 (decided 2026-10-28). If that makes fetching noticeably slow on a large library, drop it and
@@ -561,6 +562,7 @@ amo list [FILTERS] [--aspect W:H] [--purity LIST]
                                      matching paths, one per line
 amo fetch [FILTERS | --test-set] [WALLHAVEN] [--count N] [--max-candidates N]
           [--busy-from thumb|full] [--discard-mismatches] [--keep-letterboxed] [--dry-run]
+amo fetch --refresh-tags [PICTURE...] [--dry-run]   tag categories for records fetched before 0.9
 amo group [PICTURE] --monitor NAME=W:H... [FILTERS] [--purity LIST] [--order least-shown|nearest]
           [--max-distance D] [--keep-category] [--predicate NAME]... [--predicate-cmd CMD]
           [--format tsv|json] [--non-interactive] [--apply] [--dry-run]
@@ -576,7 +578,7 @@ amo edit PICTURE [--tool NAME | --extcmd CMD] [--name N] [--from FILE] [--dry-ru
                                      edit a copy in an editor, add the result; prints it
 amo edit --list-tools                the editors under edit.tools
 amo name PICTURE NAME [--no-rename-directory] [--dry-run]      name or rename a record
-amo name --from-tags [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
+amo name --from-tags [--force] [PICTURE...] [--no-rename-directory] [--dry-run]   name fetched records from their tags
 amo info diff OLD NEW [--json]       the key paths that differ between two info files
 amo info merge BASE OURS THEIRS [--name PATH] [--stdout]   three-way merge (a git merge driver)
 amo hook git-commit                  as on_change: commit amo's changes to the root's git repository
@@ -669,14 +671,16 @@ named from one the user named the same way (a user can call one `wallhaven-x8ye3
 the user opts out instead; under git-annex storage (amo-qnn) an unwanted rename shows in the log
 and is reverted there. `amo name --from-tags [PICTURE...]` names records fetched from
 Wallhaven without a name (see "Names of fetched records"): the PICTUREs given, or every indexed
-one without a name; it never renames a named record. Naming is never `amo index`'s job, since a
-name is authored, not derived. Refused (per record; the others are still named): an invalid
-name, the record's own, a name already taken (as `amo add` does), a record that needs `amo
-index` first, an existing directory for the name, and under `--from-tags` a named record or one
-not fetched from Wallhaven. It writes the name, then renames the directory (restoring info.yaml
-if that fails), and updates the index and any theme profile's wallpaper link into the
-directory, so neither needs a re-run. Prints each record's directory; `--dry-run` logs the
-names instead.
+one without a name; it renames a named record only with `--force` (amo-ugu, MH 2026-11-20:
+whatever gave the record its name, since asking for it is the point; with no PICTURE, every
+indexed Wallhaven record), and leaves one whose tags give the name it has as it is. Naming is
+never `amo index`'s job, since a name is authored, not derived. Refused (per record; the others
+are still named): an invalid name, the record's own, a name already taken (as `amo add` does),
+a record that needs `amo index` first, an existing directory for the name, and under
+`--from-tags` a named record without `--force` or one not fetched from Wallhaven. It writes the
+name, then renames the directory (restoring info.yaml if that fails), and updates the index and
+any theme profile's wallpaper link into the directory, so neither needs a re-run. Prints the
+directory of each record named; `--dry-run` logs the names instead.
 
 FILTERS are the class flags above, and `--hue`. WALLHAVEN: `--tags QUERY` (Wallhaven's `q`),
 `--purity LIST` (default sfw), `--category LIST` (general, anime, people; default all),
@@ -686,6 +690,19 @@ any other colour is replaced by the nearest swatch by OKLab distance, with a log
 and exits non-zero if it kept fewer than `--count` (`--test-set` prints and fails as under
 "Test set"). `--dry-run` measures thumbnails, downloads
 nothing, and prints the page URL of each wallpaper it would keep.
+
+`amo fetch --refresh-tags [PICTURE...]` (amo-ugu; MH 2026-11-20 put it under `fetch`, which
+already holds the API key, the pacing and the purity rules) asks Wallhaven again (`/w/<id>`,
+paced as a search) for the tags of records already kept and writes `source.tags` and
+`source.tag_categories` (see "Names of fetched records"): the PICTUREs given, or every indexed
+Wallhaven record whose info file has no `tag_categories`, so a second run asks nothing. No image
+is downloaded; the API key is looked up only when an nsfw record is among them. A tag list that
+changed on Wallhaven is written too, with a warning naming what was added and removed. It takes
+no search, look or keeping options, updates the index, and prints the directory of each record
+written; `--dry-run` asks Wallhaven and writes nothing. A record that fails (gone from
+Wallhaven, not fetched from it, needing `amo index`) is logged, the others still refreshed, and
+the exit status is non-zero. `amo name --from-tags --force --dry-run` then shows the names the
+categories give.
 
 ## Theme engine (v0.2)
 

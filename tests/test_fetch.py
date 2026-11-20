@@ -15,10 +15,20 @@ from PIL import Image
 from amontillado import yamlio
 from amontillado.classes import Look
 from amontillado.config import Config
-from amontillado.fetch import FetchReport, NamingError, Options, fetch, name_from_tags, record_name
+from amontillado.fetch import (
+    FetchError,
+    FetchReport,
+    NamingError,
+    Options,
+    fetch,
+    name_from_tags,
+    record_name,
+    refresh_tags,
+    stored_tags,
+)
 from amontillado.index import add, connect, files
-from amontillado.library import add_picture, place
-from amontillado.wallhaven import API, Client, Response, Search, Tag
+from amontillado.library import add_picture, name_record, place
+from amontillado.wallhaven import API, Client, Response, Search, Tag, WallhavenError
 
 NOISE = np.random.default_rng(0).integers(0, 256, size=(72, 128), dtype=np.uint8)
 NOISE_RGB = np.repeat(NOISE[..., None], 3, axis=2)
@@ -65,6 +75,7 @@ def test_keeps_a_matching_wallpaper_as_a_record(
     assert info["name"] == "night-sky-aaa111"
     assert info["source"]["id"] == "aaa111"
     assert info["source"]["tags"] == ["night sky"]
+    assert info["source"]["tag_categories"] == {"night sky": "Nature"}
     assert info["source"]["purity"] == "sfw"
     assert info["fetched"] is not None
     # Wallhaven's thumbnail, as served.
@@ -351,6 +362,113 @@ def test_name_from_tags_restores_the_record_when_the_move_fails(
     with pytest.raises(OSError, match="read-only"):
         name_from_tags(config, directory, config.library_roots[0], set())
     assert (directory / "info.yaml").read_text() == before
+
+
+def test_name_from_tags_passes_over_stored_categories(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    tags = [{"name": "Some Artist", "category": "Artists"}, {"name": "night sky"}]
+    web.add(f"{API}/w/aaa111", {"data": {"tags": tags}})
+    directory = _unnamed(config, conn, web, tmp_path)
+    source = yamlio.load((directory / "info.yaml").read_text())["source"]
+    assert source["tag_categories"] == {"Some Artist": "Artists", "night sky": ""}
+    _, name = name_from_tags(config, directory, config.library_roots[0], set())
+    assert name == "night-sky-aaa111"
+
+
+def test_name_from_tags_force_renames(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    directory = _unnamed(config, conn, web, tmp_path)
+    root = config.library_roots[0]
+    name_record(config, directory, root, "by-hand", set())
+    with pytest.raises(NamingError, match="named already"):
+        name_from_tags(config, root / "by-hand", root, set())
+    entry, name = name_from_tags(config, root / "by-hand", root, {"by-hand"}, force=True)
+    assert entry is not None and entry.directory == root / "night-sky-aaa111"
+    # Its tags give the name it has: nothing to do.
+    entry, name = name_from_tags(config, root / name, root, {name}, force=True)
+    assert (entry, name) == (None, "night-sky-aaa111")
+
+
+def _before_categories(directory: Path, comment: str = "") -> None:
+    """Make a fetched record's info file as amo fetch wrote it before tag_categories."""
+    path = directory / "info.yaml"
+    info = yamlio.load(path.read_text())
+    source = {k: v for k, v in info["source"].items() if k != "tag_categories"}
+    path.write_text(comment + yamlio.update_text(path.read_text(), {**info, "source": source}))
+
+
+def test_refresh_tags_writes_the_categories(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    _fetch(config, conn, web, Look(("dark",)))
+    directory = config.library_roots[0] / "night-sky-aaa111"
+    _before_categories(directory, "# mine\n")
+    client = Client(get=web.get, sleep=FakeClock().sleep, clock=FakeClock())
+    before = (directory / "info.yaml").read_text()
+    entry = refresh_tags(config, directory, config.library_roots[0], client, dry_run=True)
+    assert entry is not None and (directory / "info.yaml").read_text() == before
+    entry = refresh_tags(config, directory, config.library_roots[0], client)
+    assert entry is not None and entry.directory == directory
+    text = (directory / "info.yaml").read_text()
+    assert text.startswith("# mine\n")
+    source = yamlio.load(text)["source"]
+    assert source["tag_categories"] == {"night sky": "Nature"}
+    assert list(source).index("tag_categories") == list(source).index("tags") + 1
+    requests = len(web.requests)
+    # Has them now: missing_only asks nothing, and asking again changes nothing.
+    assert (
+        refresh_tags(config, directory, config.library_roots[0], client, missing_only=True) is None
+    )
+    assert len(web.requests) == requests
+    assert refresh_tags(config, directory, config.library_roots[0], client) is None
+    assert len(web.requests) == requests + 1
+
+
+def test_refresh_tags_writes_a_changed_tag_list(
+    config: Config,
+    conn: sqlite3.Connection,
+    web: FakeWeb,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _fetch(config, conn, web, Look(("dark",)))
+    directory = config.library_roots[0] / "night-sky-aaa111"
+    tags = [{"name": "night sky", "category": "Nature"}, {"name": "stars", "category": "Nature"}]
+    web.add(f"{API}/w/aaa111", {"data": {"tags": tags}})
+    client = Client(get=web.get, sleep=FakeClock().sleep, clock=FakeClock())
+    refresh_tags(config, directory, config.library_roots[0], client)
+    assert "Wallhaven's tags changed: added stars" in caplog.text
+    source = yamlio.load((directory / "info.yaml").read_text())["source"]
+    assert source["tags"] == ["night sky", "stars"]
+
+
+def test_refresh_tags_refuses(
+    config: Config, conn: sqlite3.Connection, web: FakeWeb, tmp_path: Path
+) -> None:
+    client = Client(get=web.get, sleep=FakeClock().sleep, clock=FakeClock())
+    root = config.library_roots[0]
+    hand = tmp_path / "hand.png"
+    Image.fromarray(NOISE_RGB).save(hand)
+    added = add_picture(config, place(config, hand, name=None, nsfw=False), name=None)
+    with pytest.raises(FetchError, match="not fetched from Wallhaven"):
+        refresh_tags(config, added.directory, root, client)
+    _fetch(config, conn, web, Look(("dark",)))
+    directory = root / "night-sky-aaa111"
+    web.routes.pop(f"{API}/w/aaa111")
+    with pytest.raises(WallhavenError):
+        refresh_tags(config, directory, root, client)
+    Image.fromarray(NOISE_RGB).save(directory / "loose.png")
+    with pytest.raises(FetchError, match="needs healing"):
+        refresh_tags(config, directory, root, client)
+
+
+def test_stored_tags() -> None:
+    source = {"tags": ["a", "b", 3], "tag_categories": {"a": "Artists", "b": None}}
+    assert stored_tags(source) == [Tag("a", "Artists"), Tag("b", "")]
+    assert stored_tags({"tags": ["a"]}) == [Tag("a", "")]
+    assert stored_tags({}) == []
 
 
 def test_name_from_tags_without_categories() -> None:

@@ -17,6 +17,7 @@ the full image, so it fills one bucket only.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import os
 import re
@@ -25,7 +26,7 @@ import sqlite3
 import tempfile
 import unicodedata
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from logging import getLogger
@@ -43,6 +44,9 @@ from amontillado.library import (
     NamingError,
     file_stat,
     name_record,
+    needs_healing,
+    present_files,
+    record_entry,
     source_ids_on_disk,
 )
 from amontillado.metrics import Metrics, image_size, measure_file
@@ -80,7 +84,7 @@ NAME_MAX_LENGTH = 40  # of the tag part, before "-<id>"
 
 
 class FetchError(Exception):
-    """A search result cannot be kept; the message says why."""
+    """A search result cannot be kept, or a record's tags refreshed; the message says why."""
 
 
 @dataclass(frozen=True)
@@ -269,33 +273,115 @@ def name_from_tags(
     root: Path,
     taken: set[str],
     *,
+    force: bool = False,
     rename_directory: bool = True,
     dry_run: bool = False,
-) -> tuple[Entry, str]:
+) -> tuple[Entry | None, str]:
     """Name a record fetched from Wallhaven without a name (before amo-0z2, or when its name
-    was taken) from the tags its info.yaml keeps, by `record_name`, as `name_record` does.
-    The stored tags have no Wallhaven categories, so only NAME_SKIP_TAGS passes tags over;
-    `source.category` stands in when none is usable. Returns the record as `name_record` does,
-    and the name. Raises NamingError as `name_record` does, and for a record that is named
-    already or was not fetched from Wallhaven."""
+    was taken), or with `force` one that has a name, from the tags its info.yaml keeps, by
+    `record_name`, as `name_record` does. Tags fetched before `source.tag_categories` existed
+    have no categories (`stored_tags`): only NAME_SKIP_TAGS passes them over. Returns the
+    record as `name_record` does, or None when it already has the name, and the name. Raises
+    NamingError as `name_record` does, and for a record that was not fetched from Wallhaven or,
+    without `force`, is named already."""
     path = info_path(directory)
     if path is None:
         raise NamingError(f"{directory}: not a record")
     record = read_record(path)
-    if record.name is not None:
+    if record.name is not None and not force:
         raise NamingError(f"{directory}: named already ({record.name})")
     source = record.source or {}
     if source.get("site") != SITE or not source.get("id"):
         raise NamingError(f"{directory}: not fetched from Wallhaven")
-    stored = source.get("tags")
-    tags = (
-        [Tag(tag, "") for tag in stored if isinstance(tag, str)] if isinstance(stored, list) else []
-    )
-    name = record_name(tags, str(source.get("category") or ""), str(source["id"]))
+    name = record_name(stored_tags(source), str(source.get("category") or ""), str(source["id"]))
+    if name == record.name:
+        return None, name
     entry = name_record(
         config, directory, root, name, taken, rename_directory=rename_directory, dry_run=dry_run
     )
     return entry, name
+
+
+def stored_tags(source: Mapping[str, object]) -> list[Tag]:
+    """The tags a record's `source` keeps, with their categories from `source.tag_categories`
+    ("" for a tag it lacks, and for every tag of a record fetched before it existed)."""
+    names = source.get("tags")
+    categories = source.get("tag_categories")
+    if not isinstance(categories, Mapping):
+        categories = {}
+    return [
+        Tag(name, category if isinstance(category := categories.get(name), str) else "")
+        for name in (names if isinstance(names, list) else [])
+        if isinstance(name, str)
+    ]
+
+
+def refresh_tags(
+    config: Config,
+    directory: Path,
+    root: Path,
+    client: Client,
+    *,
+    missing_only: bool = False,
+    dry_run: bool = False,
+) -> Entry | None:
+    """Ask Wallhaven again for the tags of a record fetched from it (one `/w/<id>` call) and
+    write them to its `source.tags` and `source.tag_categories`, for records fetched before
+    the categories were kept. A change in Wallhaven's tag list is logged. Returns the record as
+    it now is (under `dry_run`, as it is: nothing is written), or None when its info file has
+    those tags already, or, with `missing_only`, has categories at all (then without asking).
+    Raises FetchError for a record that is not one, was not fetched from Wallhaven or needs
+    `amo index` first, and WallhavenError when Wallhaven does not answer with the tags."""
+    path = info_path(directory)
+    if path is None:
+        raise FetchError(f"{directory}: not a record")
+    record = read_record(path)
+    source = record.source or {}
+    if source.get("site") != SITE or not source.get("id"):
+        raise FetchError(f"{directory}: not fetched from Wallhaven")
+    if missing_only and isinstance(source.get("tag_categories"), Mapping):
+        return None
+    present = present_files(directory, record)
+    if not present or needs_healing(directory, record, present):
+        raise FetchError(f"{directory}: needs healing; run `amo index` first")
+    tags = client.tags(str(source["id"]))
+    names = [tag.name for tag in tags]
+    categories = tag_categories(tags)
+    old = source.get("tags")
+    old = [tag for tag in old if isinstance(tag, str)] if isinstance(old, list) else []
+    if old == names and source.get("tag_categories") == categories:
+        return None
+    if old != names:
+        added = [tag for tag in names if tag not in old]
+        removed = [tag for tag in old if tag not in names]
+        logger.warning(
+            "%s: Wallhaven's tags changed: %s",
+            directory,
+            "; ".join(
+                f"{label} {', '.join(changed)}"
+                for label, changed in (("added", added), ("removed", removed))
+                if changed
+            )
+            or "reordered",
+        )
+    updated: dict[str, object] = {}
+    for key, value in source.items():
+        if key != "tag_categories":
+            updated[key] = names if key == "tags" else value
+        if key == "tags":
+            updated["tag_categories"] = categories
+    updated.setdefault("tags", names)
+    updated.setdefault("tag_categories", categories)
+    if dry_run:
+        return record_entry(config, directory, root, record, present)
+    refreshed = dataclasses.replace(record, source=updated)
+    write_record(path, refreshed)
+    return record_entry(config, directory, root, refreshed, present)
+
+
+def tag_categories(tags: list[Tag]) -> dict[str, str]:
+    """`source.tag_categories`: each tag's name and its Wallhaven category ("" for none)."""
+    return {tag.name: tag.category for tag in tags}
 
 
 def _slug(text: str) -> str:
@@ -359,7 +445,7 @@ def _keep(
         record = Record(
             uuid.uuid4().hex,
             name,
-            source=_source(wallpaper, [tag.name for tag in tags]),
+            source=_source(wallpaper, tags),
             fetched=datetime.now(UTC).replace(microsecond=0),
             files={file.name: FileEntry(sha256, width, height, metrics)},
             thumbnail=THUMBNAIL_PATH,
@@ -387,7 +473,7 @@ def _keep(
     return file, metrics
 
 
-def _source(wallpaper: Wallpaper, tags: list[str]) -> dict[str, object]:
+def _source(wallpaper: Wallpaper, tags: list[Tag]) -> dict[str, object]:
     return {
         "site": SITE,
         "id": wallpaper.id,
@@ -395,7 +481,8 @@ def _source(wallpaper: Wallpaper, tags: list[str]) -> dict[str, object]:
         "image_url": wallpaper.image_url,
         "purity": wallpaper.purity,
         "category": wallpaper.category,
-        "tags": tags,
+        "tags": [tag.name for tag in tags],
+        "tag_categories": tag_categories(tags),
         "colors": list(wallpaper.colors),
         "source": wallpaper.source,
         "uploaded": wallpaper.uploaded,

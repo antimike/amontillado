@@ -22,7 +22,7 @@ from amontillado import __version__, cli, yamlio
 from amontillado import library as library_module
 from amontillado.cli import get_cli_arguments, main
 from amontillado.index import connect, record_shown, usage
-from amontillado.wallhaven import Client
+from amontillado.wallhaven import API, Client
 
 
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:
@@ -370,12 +370,29 @@ def test_crop_then_list(
         main(["crop", str(indexed["red"]), "1:1"])
 
 
-def _old_fetched(library: Path, wallhaven_id: str, tags: list[str]) -> Path:
-    """A record fetched before names existed: no name, in wallhaven-<id>, its tags kept."""
+def _old_fetched(
+    library: Path,
+    wallhaven_id: str,
+    tags: list[str],
+    categories: dict[str, str] | None = None,
+    name: str | None = None,
+) -> Path:
+    """A record fetched before names existed: no name (or `name`), in wallhaven-<id>, its tags
+    kept (with `categories` as source.tag_categories)."""
     directory = library / f"wallhaven-{wallhaven_id}"
     _record(directory, (0, 0, 255), f"wallhaven-{wallhaven_id}.png")
-    source = {"site": "wallhaven", "id": wallhaven_id, "category": "general", "tags": tags}
-    (directory / "info.yaml").write_text(yamlio.dump({"source": source}))
+    source: dict[str, object] = {
+        "site": "wallhaven",
+        "id": wallhaven_id,
+        "category": "general",
+        "tags": tags,
+    }
+    if categories is not None:
+        source["tag_categories"] = categories
+    info: dict[str, object] = {"source": source}
+    if name is not None:
+        info["name"] = name
+    (directory / "info.yaml").write_text(yamlio.dump(info))
     return directory
 
 
@@ -410,6 +427,26 @@ def test_name_from_tags(
     with pytest.raises(SystemExit, match="1 of 1 record could not be named"):
         main(["name", "--from-tags", str(library / "hand")])
     assert "not fetched from Wallhaven" in caplog.text
+
+
+def test_name_from_tags_force_renames_named_records(
+    library: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    # Named from tags before their categories were kept: pixiv got into the name.
+    categories = {"pixiv": "Companies & Logos", "sky": "Nature"}
+    _old_fetched(library, "x8ye3z", ["pixiv", "sky"], categories, name="pixiv-sky-x8ye3z")
+    _old_fetched(library, "k92q1d", ["artwork"], {"artwork": ""}, name="general-k92q1d")
+    main(["index"])
+    capsys.readouterr()
+    caplog.set_level(logging.INFO)
+    with pytest.raises(SystemExit, match="--force needs --from-tags"):
+        main(["name", "--force", "a", "b"])
+    main(["name", "--from-tags"])
+    assert "no unnamed record fetched from Wallhaven" in caplog.text
+    main(["name", "--from-tags", "--force"])
+    assert capsys.readouterr().out == f"{library / 'sky-x8ye3z'}\n"
+    assert f"{library / 'wallhaven-k92q1d'} keeps its name, general-k92q1d" in caplog.text
+    assert yamlio.load((library / "sky-x8ye3z" / "info.yaml").read_text())["name"] == "sky-x8ye3z"
 
 
 def test_name_takes_picture_and_name(library: Path) -> None:
@@ -1347,6 +1384,62 @@ def test_fetch_sfw_never_looks_up_the_key(
     monkeypatch.setenv("WALLHAVEN_API_KEY", "secret-key")
     main(["fetch"])
     assert all("X-API-Key" not in headers for _, headers in web.requests)
+
+
+def test_fetch_refresh_tags(
+    library: Path,
+    web: FakeWeb,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    old = _old_fetched(library, "aaa111", ["night sky"])
+    changed = _old_fetched(library, "bbb222", ["old tag"])
+    current = _old_fetched(library, "ccc333", ["cave"], {"cave": "Nature"})
+    _record(library / "hand", (0, 255, 0), "hand.png")
+    main(["index"])
+    capsys.readouterr()
+    caplog.set_level(logging.INFO)
+    main(["fetch", "--refresh-tags", "--dry-run"])
+    assert capsys.readouterr().out == ""
+    assert f"would write the tags of {old}" in caplog.text
+    assert "tag_categories" not in (old / "info.yaml").read_text()
+    # ccc333 has its categories: not asked for.
+    assert sorted(web.urls()) == [f"{API}/w/aaa111", f"{API}/w/bbb222"]
+    web.requests.clear()
+    main(["fetch", "--refresh-tags"])
+    assert capsys.readouterr().out.split() == [str(old), str(changed)]
+    assert "Wallhaven's tags changed: added snow; removed old tag" in caplog.text
+    assert yamlio.load((old / "info.yaml").read_text())["source"]["tag_categories"] == {
+        "night sky": "Nature"
+    }
+    # The index has the new tag list at once.
+    assert _list(capsys, "--tag", "snow") == {"wallhaven-bbb222"}
+    web.requests.clear()
+    main(["fetch", "--refresh-tags"])
+    assert web.requests == []
+    # A PICTURE given is asked for whatever its info file has.
+    main(["fetch", "--refresh-tags", str(current)])
+    assert web.urls() == [f"{API}/w/ccc333"]
+    assert capsys.readouterr().out == ""
+    web.routes.pop(f"{API}/w/ccc333")
+    with pytest.raises(SystemExit, match="1 of 1 record could not be refreshed"):
+        main(["fetch", "--refresh-tags", str(current)])
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--refresh-tags", "--dark"], "--refresh-tags takes no look filters"),
+        (["--refresh-tags", "--count", "2", "--tags", "x"], "takes no --tags, --count"),
+        (["somewhere"], "fetch takes PICTUREs only with --refresh-tags"),
+    ],
+)
+def test_fetch_refresh_tags_takes_only_pictures(
+    library: Path, web: FakeWeb, args: list[str], message: str
+) -> None:
+    with pytest.raises(SystemExit, match=message):
+        main(["fetch", *args])
+    assert web.requests == []
 
 
 def test_fetch_exits_when_the_search_fails(library: Path, web: FakeWeb) -> None:

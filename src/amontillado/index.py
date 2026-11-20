@@ -433,11 +433,13 @@ def names(conn: sqlite3.Connection) -> set[str]:
     return {name for (name,) in conn.execute("SELECT name FROM records WHERE name IS NOT NULL")}
 
 
-def unnamed(conn: sqlite3.Connection, site: str) -> list[str]:
-    """The ids of the indexed records fetched from `site` that answer to no name, in
-    directory order."""
-    query = "SELECT id FROM records WHERE source_site = ? AND name IS NULL ORDER BY directory"
-    return [record_id for (record_id,) in conn.execute(query, (site,))]
+def site_records(conn: sqlite3.Connection, site: str, *, named: bool = False) -> list[str]:
+    """The ids of the indexed records fetched from `site`, in directory order: those that
+    answer to no name, or with `named` every one."""
+    query = "SELECT id FROM records WHERE source_site = ?"
+    if not named:
+        query += " AND name IS NULL"
+    return [record_id for (record_id,) in conn.execute(query + " ORDER BY directory", (site,))]
 
 
 def source_ids(conn: sqlite3.Connection, site: str) -> set[str]:
@@ -566,6 +568,14 @@ def record_location(conn: sqlite3.Connection, record_id: str) -> tuple[Path, Pat
     if row is None:
         raise LookupFailed(f"{record_id}: not in the index; run `amo index`")
     return Path(row[0]), Path(row[1])
+
+
+def record_purity(conn: sqlite3.Connection, record_id: str) -> str:
+    """The purity of an indexed record; LookupFailed if it is not indexed."""
+    row = conn.execute("SELECT purity FROM records WHERE id = ?", (record_id,)).fetchone()
+    if row is None:
+        raise LookupFailed(f"{record_id}: not in the index; run `amo index`")
+    return str(row[0])
 
 
 def find_record(conn: sqlite3.Connection, query: str) -> str:
