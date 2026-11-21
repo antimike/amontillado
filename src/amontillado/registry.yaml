@@ -32,6 +32,7 @@ sources:
     nvim: {output: palette.lua, complete: false, description: 'a Lua table, for a lush spec'}
     shell: {output: colors.sh, complete: false, description: export AMO_BASE00=... ; source from a shell}
     json: {output: palette.json, complete: false, description: the palette as JSON}
+    vivid: {output: vivid.yml, complete: true, description: 'a vivid theme (LS_COLORS: vivid generate vivid.yml); categories over the accents and brights'}
   tinted:
     kitty: {repository: tinted-theming/tinted-terminal, path: templates/kitty-base24.mustache, output: kitty-theme.conf, complete: true, sha256: d3e544b4b0f10bb9d49878864085919e0c6d0bf4d824997ecf22251d1be9ed2e}
     foot: {repository: tinted-theming/tinted-terminal, path: templates/foot-base24.mustache, output: foot.ini, complete: true, sha256: 97147366d46c14f481b5fcf0ec19559f0eb22a3dcd673f6b66131c06a42e13ab}

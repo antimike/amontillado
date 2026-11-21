@@ -8,6 +8,10 @@ All notable changes to amontillado are documented here. The format follows
 
 ### Added
 
+- Built-in template `vivid` (`vivid.yml`): a [vivid](https://github.com/sharkdp/vivid) theme
+  from the palette, for `LS_COLORS="$(vivid generate vivid.yml)"`, readable on both variants.
+  File types are shaded over the accents and the base24 brights; every colour it uses is one
+  the contrast check already holds against `base00`. amo renders it and never runs vivid.
 - Template `vivid` from tinted-theming's base16-vivid (`source: tinted`, `base16-vivid.yml`).
 - `amo list --format rofi` gives each row rofi's display option
   (`\x1fdisplay\x1f<label>`): rofi shows the record's directory name (the file name when the

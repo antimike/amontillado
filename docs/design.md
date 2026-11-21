@@ -1084,8 +1084,53 @@ GTK3 `gtk.css` and libadwaita's `gtk-4.0/gtk.css`), `rofi` (a `* { ... }` block 
 `dunst` (a `dunstrc.d` drop-in with the urgency colours: dunst has no variables, so this one is a
 small complete theme), `libadwaita` and `libadwaita-vars` (below), `nvim` (`palette.lua`),
 `shell` (`export
-AMO_BASE00=...`), and `json` (the palette as JSON, for anything else). `amo theme templates`
-lists them with their variables.
+AMO_BASE00=...`), `json` (the palette as JSON, for anything else) and `vivid` (below). `amo
+theme templates` lists them with their variables.
+
+`vivid` (amo-c0i, v0.10) is a complete [vivid](https://github.com/sharkdp/vivid) theme,
+`vivid.yml`: `LS_COLORS="$(vivid generate vivid.yml)"` (truecolour, or `vivid -m 8-bit`). amo
+renders it and never runs vivid (MH 2026-11-21: the consumer runs `vivid generate`, e.g. from a
+reload command). It exists because LS_COLORS sets such as trapd00r/LS_COLORS are fixed 256-cube
+colours for dark backgrounds: under a light variant (picture 3qz176, `base00` #f8f9fb) 42 of
+their pairs are below 3:1. Every foreground is a colour the contrast check holds on `base00`
+(the accents and brights at 4.5, `base03` at 3.0 for unimportant files and licences), and a
+cell background is always an accent under `base00` text, the same pair the other way round
+(WCAG ratios are symmetric), so the palette's check covers the whole theme and adds no pair; a
+test walks the rendered theme to keep it so. Per-file-type shading comes from the hues and the
+base24 brights (`base12`-`base17`, a step further from the background than their accents):
+
+| vivid category | Colour |
+|---|---|
+| directory | `base0D` bold |
+| symlink; fifo; socket, door; block and character devices | `base0C`; `base0A`; `base0E`; `base0A` bold |
+| executable file, `executable` | `base0B` bold |
+| missing symlink target | `base08` bold |
+| broken symlink, setuid; setgid; file with capability; sticky and other-writable; other-writable; sticky | `base00` on `base08`; on `base0A`; on `base09`; on `base0B`; on `base0D`; on `base0E` |
+| `text`: special and todo; licences; configuration; other | `base13` bold; `base03`; `base0A`; `base05` |
+| `markup` | `base09` |
+| `programming`: source; tooling (its CI files `base0B`) | `base0B`; `base14` |
+| `media`: image; audio; video; fonts; 3d | `base0E`; `base0C`; `base17`; `base15`; `base16` |
+| `office` | `base12` |
+| `archives` | `base08` bold |
+| `unimportant` | `base03` |
+
+Regular files, normal text and hard links are uncoloured (the terminal's foreground).
+**Decision** (MH 2026-11-21, from comparison sheets of 3qz176's palette): rare file types keep
+a cell background, as `base00` on an accent (option B). Rejected: base16-vivid's own pairs
+checked as new contrast pairs (option A: setuid's `base05` on `base08` is 2.27:1 in dark,
+other-writable's `base0E` on `base0B` 1.15:1, and adjusting would move the body text or magenta
+in every app); kept in view: no background, bold accent text (option C, calmer), to review
+after use (amo-z9h).
+
+**Prior art** (design gates, amo-c0i): tinted-theming/base16-vivid (MIT) renders from a base16
+scheme, and is in the registry as `tinted` `vivid` (`base16-vivid.yml`). It fails MH's
+requirement of per-file-type shading: seven categories (text, markup, programming,
+configuration, office, fonts, video) share one colour, `base07`, which in amo's palette is the
+strongest foreground beside `base05` regular files, and it uses neither `base09` nor the base24
+brights. Its cell backgrounds are option A above. vivid's `ansi` theme follows the terminal's
+ANSI 0-15, which MH ruled out (too few colours for the shading); its other bundled themes
+(gruvbox, solarized, ...) are fixed colours, not the palette's. Checked with vivid 0.11.1,
+base16-vivid at 546a950.
 
 `libadwaita` (amo-aqp.21) is complete like `dunst`, since libadwaita's colour names are a fixed
 API: it defines libadwaita's named colours (checked against libadwaita 1.9.1's own stylesheet)

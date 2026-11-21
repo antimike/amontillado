@@ -58,6 +58,8 @@ is here.
   pynvim; `just test-nvim` runs only those. They need `nvim` on PATH and the plugins already
   installed (lush.nvim, tinted-nvim v1) in `AMO_TEST_NVIM_PLUGINS` (default
   `~/.local/share/nvim/lazy`), and skip, naming what is missing, otherwise; nothing is fetched.
+- `tests/test_registry.py` runs `vivid generate` on the `vivid` template's render when
+  [vivid](https://github.com/sharkdp/vivid) is on PATH, and skips that test otherwise.
 
 ## Commits
 
