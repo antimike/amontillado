@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `amo list --format rofi` gives each row rofi's display option
+  (`\x1fdisplay\x1f<label>`): rofi shows the record's directory name (the file name when the
+  record has several files) instead of the full path, and still returns the path.
+
 ### Changed
 
 - [docs/version-control.md](docs/version-control.md), "One tested encrypted setup": what a
