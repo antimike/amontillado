@@ -164,8 +164,9 @@ on_change: jq -r '.command as $c | .changes[] | "\($c): \(.type) \(.path // .to)
 
 ## One tested encrypted setup
 
-For a library that should leave the machine only encrypted (tested in the amo-qnn.1 spike;
-[design.md](design.md), "git-annex libraries: decisions" 1 to 4):
+For a library that should leave the machine only encrypted (tested in the amo-qnn.1 spike and a
+later rehearsal with Curve25519 keys; [design.md](design.md), "git-annex libraries: decisions"
+1 to 4):
 
 - **git-remote-gcrypt** for the git side (`git remote add backup gcrypt::<url>`): info files,
   record names, the git-annex branch (every image's hash) and commit messages are all encrypted.
@@ -174,11 +175,43 @@ For a library that should leave the machine only encrypted (tested in the amo-qn
 - **an encrypted git-annex special remote** for the images (`git annex initremote <name>
   type=directory directory=<path> encryption=hybrid keyid=<key>`, on a backup drive say), or a
   `type=gcrypt` special remote on an ssh host or local path holding git and images together.
+  `initremote` ignores a `keyid+=`: add each further key with `git annex enableremote <name>
+  directory=<path> keyid+=<key>`.
 - **One OpenPGP key per machine**, plus an offline backup key, each a recipient of both
   remotes.
 - **Not git-crypt**: `git annex init` writes a `* filter=annex` that outranks a
   `filter=git-crypt` in `.gitattributes`, so info files were pushed in plaintext, silently; and
   git-crypt would leave paths, hashes and commit messages readable anyway.
 
-Keys, adding and removing a machine, and restoring on a new one are machine setup, not amo's:
-the step-by-step runbook lives with the dotfiles that set the machines up.
+Per clone, on the gcrypt git remote (git config is not versioned):
+
+```sh
+git config remote.backup.gcrypt-participants "<key> <key> ..."
+git config remote.backup.gcrypt-publish-participants true  # required with Curve25519 keys
+git config remote.backup.gcrypt-signingkey <this machine's key>
+```
+
+- **Publish the participants.** With hidden recipients (the default for a `gcrypt::` git
+  remote; git-annex publishes them only for a `type=gcrypt` special remote) and two or more
+  Curve25519 keys, gpg exits 2 with `ecdh failed ... Checksum error` though it decrypted, and
+  gcrypt reports `Failed to decrypt manifest`: all but one machine are locked out.
+- **Sign with a participant's key.** gcrypt signs with `gcrypt-signingkey`, else
+  `user.signingkey`, and rejects a manifest signed by a key outside the participants; a global
+  signing key kept elsewhere (a hardware key, say) breaks the remote for every machine.
+
+Syncing: `git annex sync` pushes without `--force`, so with
+`gcrypt.require-explicit-force-push` it cannot push. Instead:
+
+```sh
+git annex pull backup
+git annex push <special remote>
+git push --force backup main git-annex
+```
+
+Push the first time with `--force` as well: a first push without it records a `gcrypt-id` that
+aborts every later push until `git config --unset remote.backup.gcrypt-id`. A push uploads
+about twice the new git data, and once the remote holds more than 25 packs gcrypt repacks and
+uploads the whole repository again (some 40 MB for 2,000 records with thumbnails).
+
+Key management (adding and removing a machine) and restoring on a new one are machine setup,
+outside amo.

@@ -6,6 +6,14 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- [docs/version-control.md](docs/version-control.md), "One tested encrypted setup": what a
+  rehearsal with Curve25519 keys found: publish the gcrypt participants (hidden recipients lock
+  out all but one machine), sign with a participant's key per clone, push with `git annex pull`,
+  `git annex push` and `git push --force` (`git annex sync` cannot push under
+  `gcrypt.require-explicit-force-push`), force the first push, add keys with `enableremote`.
+
 ## [0.9.0] - 2026-11-20
 
 Wallhaven tag categories: `amo fetch` keeps each tag's category, so naming a record from its

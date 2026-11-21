@@ -1442,7 +1442,7 @@ Each library root may be a git-annex repository: info files in git, images annex
 `amo-qnn`; "Roadmap", item 6). Repository and remote setup is git configuration owned by the
 dotfiles, not amontillado config; the layout, locked and unlocked files, the merge driver, the
 hook payload and a short encrypted setup are in [version-control.md](version-control.md)
-(amo-qnn.5), the full key and restore runbook in the dotfiles.
+(amo-qnn.5); key management and restore are machine setup, outside amo.
 
 ### git-annex libraries: decisions
 
@@ -1472,6 +1472,16 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
    special remote with `encryption=hybrid` (a `directory` remote on the drive). The other
    setup, one gcrypt remote holding git and images together (`type=gcrypt` on an ssh host or a
    local or USB path, as tested), is named beside it in version-control.md.
+   Rehearsal findings (2026-11-21: git-annex 10.20260115, git-remote-gcrypt 1.5, gpg 2.4.9,
+   Cv25519 keys, a bare repository as the gcrypt git backend):
+   - **`git annex sync` cannot push** with `gcrypt.require-explicit-force-push` set (it pushes
+     without `--force`). The working routine is `git annex pull <git remote>`, `git annex push
+     <special remote>`, then `git push --force <git remote> <branch> git-annex`.
+   - **The first push must be `--force` too**: one without it records a `gcrypt-id` that makes
+     every later push abort, until `git config --unset remote.<name>.gcrypt-id`.
+   - **Push cost**: a push uploads about twice the new git data, and after more than 25 packs
+     gcrypt repacks and uploads everything again (2,000 records with ~19 KB thumbnails: about
+     40 MB per repack). Acceptable at that scale, so the decision holds.
 3. **One OpenPGP key per machine, Curve25519** (`gpg --quick-gen-key "<name>" default default
    never`: Ed25519 signing, Cv25519 encryption; the data itself is AES-256, chosen by OpenPGP
    and gcrypt, not configured), **plus an offline backup key** as one more recipient, so that
@@ -1482,12 +1492,25 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
      `remote.<name>.gcrypt-participants` and push (the manifest, which holds each pack's key,
      is encrypted to all participants at every push, so the new key reads the whole history; no
      rewrite), and `git annex enableremote <special remote> keyid+=<key>` (re-encrypts the
-     cipher only, not the images). A key never added cannot decrypt (tested).
+     cipher only, not the images; a `directory` remote also needs `directory=<path>` there).
+     A key never added cannot decrypt (tested). `initremote keyid=A keyid+=B` silently ignores
+     the `keyid+=`: create with one key, add the others with `enableremote`.
    - **Removing a machine does not revoke what it holds**: `keyid-=` and dropping it from the
      participants stop it reading what comes later, but it knows the special remote's cipher
      and has every pack it fetched. Real revocation is a new remote and a new upload.
-   - `gcrypt-publish-participants` (git-annex turns it on) stores the recipients' key ids in the
-     remote: it hides no content but shows whose keys open it; off, gpg tries every secret key.
+   - **`gcrypt-publish-participants` is required with Curve25519 keys.** It stores the
+     recipients' key ids in the remote (it hides no content but shows whose keys open it).
+     git-annex turns it on only for a `type=gcrypt` special remote; for a `gcrypt::` git remote
+     it is off unless set by hand (`git config remote.<name>.gcrypt-publish-participants
+     true`). Off, the recipients are hidden, and with two or more Cv25519 recipients gpg logs
+     `ecdh failed in gcry_cipher_decrypt: Checksum error` and exits 2 even though it decrypted,
+     so gcrypt reports `Failed to decrypt manifest`: every participant but one is locked out
+     (with RSA keys gpg exits 0 and hidden recipients work).
+   - **Signing key per remote.** gcrypt signs the manifest with
+     `remote.<name>.gcrypt-signingkey`, else `user.signingkey`, and accepts only manifests
+     signed by a participant. A global signing key that is not a participant (a YubiKey for
+     commits, say) makes every machine reject the remote, so set `gcrypt-signingkey` to the
+     machine's own key in each clone.
 4. **`annex.largefiles` takes one pattern per line** (found in the spike, for every annexed
    root): a gitattributes value cannot contain spaces, so `* annex.largefiles=(include=*.jpg
    or include=*.png)` is cut to `(include=*.jpg` and the images went into git. The layout uses
@@ -1562,8 +1585,8 @@ hook payload and a short encrypted setup are in [version-control.md](version-con
      the hook payload carries everything a targeted commit needs), and line-based patches
      (`git apply --cached`: context lines make unrelated nearby edits conflict, and say nothing
      about which keys belong together).
-   - Encrypted remotes (gcrypt) are documentation only; the full key and restore runbook lives
-     in the dotfiles.
+   - Encrypted remotes (gcrypt) are documentation only; key management and restore are machine
+     setup, outside amo.
 
 ## Grouping (v0.7)
 
