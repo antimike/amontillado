@@ -40,7 +40,9 @@ remote: never add one pointing at this repo. bd-track's daily cleanup timer cove
 
 The current epic's prompt (replace it when an epic closes):
 
-> No release epic is planned. v0.9.0 (amo-301) shipped 2026-11-20. Open: amo-wn0 (grouping
-> research: saved sets/ratings, style measures; design work, plan it with MH first), amo-mdi
-> (`amo list --like --predicate`), amo-tyy (letterboxes the detector misses), and one triage
-> ticket from 2026-11-13 (`/triage`). Ask MH which to plan into the next epic.
+> Epic amo-b1p (v0.10.0): terminal theming under light variants, from chezmoi's 2026-11-21
+> tickets. Children: amo-c0i (vivid template; prior-art check first), amo-wtt (terminal docs,
+> after c0i), amo-7a0 (kitty grey ramp, 16-255 contrast report), amo-4rf (tone design only:
+> plan with MH, build in a later epic), riders amo-2f0 (rofi display label) and amo-9z5
+> (gcrypt docs, no link to the dotfiles). Each built feature ends with a reply ticket to
+> chezmoi. Outside the epic: amo-yol, amo-wn0, amo-mdi, amo-tyy.
