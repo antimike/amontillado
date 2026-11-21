@@ -1063,8 +1063,8 @@ any template copied into `builtin` keeps its copyright notice in `THIRD-PARTY.md
 far).
 
 Initial registry (2026-11-01): `tinted`: kitty and foot (tinted-terminal's base24 templates),
-rofi and rofi-colors (base16-rofi), dunst, waybar (variables), shell (tinted-shell, base24);
-`matugen-themes`: kitty, gtk, css, rofi, dunst, sway, swaybar, hyprland (Lua), hyprland-conf,
+rofi and rofi-colors (base16-rofi), dunst, waybar (variables), shell (tinted-shell, base24),
+vivid (base16-vivid, added in v0.10); `matugen-themes`: kitty, gtk, css, rofi, dunst, sway, swaybar, hyprland (Lua), hyprland-conf,
 mako, foot, tmux, nvim (`nvim-colors.vim`), nvim-lua (`neovim/matugen.lua`, a colourscheme of
 `nvim_set_hl` calls over Material roles; the directory's `init.lua` is example glue and
 `template.lua` needs the `nvim-base16` plugin), zed; `pywal`: kitty, waybar, css, rofi,

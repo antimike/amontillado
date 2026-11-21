@@ -8,6 +8,7 @@ All notable changes to amontillado are documented here. The format follows
 
 ### Added
 
+- Template `vivid` from tinted-theming's base16-vivid (`source: tinted`, `base16-vivid.yml`).
 - `amo list --format rofi` gives each row rofi's display option
   (`\x1fdisplay\x1f<label>`): rofi shows the record's directory name (the file name when the
   record has several files) instead of the full path, and still returns the path.
