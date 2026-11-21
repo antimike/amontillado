@@ -15,6 +15,7 @@ repositories:
   tinted-theming/base16-dunst: {commit: 78b63e1ed7f7a2e60a299e714bc00d6d4d76c2c8}
   tinted-theming/base16-waybar: {commit: cd3a7eb4f269e428e39d36b137c61f9934cc63ba}
   tinted-theming/tinted-shell: {commit: 497c34eacade613cd28fa51e98440d336dcc1f80}
+  tinted-theming/base16-vivid: {commit: 546a9503616dcb0a7c4bd43c9eca759179fd7e69}
   InioX/matugen-themes: {commit: 81dbb64821cd1716371a7590bfab245c0af0d19a}
   eylles/pywal16: {commit: 9767ef685ee8451766d023e33db9d625f3e3d5bb}
 sources:
@@ -31,6 +32,7 @@ sources:
     nvim: {output: palette.lua, complete: false, description: 'a Lua table, for a lush spec'}
     shell: {output: colors.sh, complete: false, description: export AMO_BASE00=... ; source from a shell}
     json: {output: palette.json, complete: false, description: the palette as JSON}
+    vivid: {output: vivid.yml, complete: true, description: 'a vivid theme (LS_COLORS: vivid generate vivid.yml); categories over the accents and brights'}
   tinted:
     kitty: {repository: tinted-theming/tinted-terminal, path: templates/kitty-base24.mustache, output: kitty-theme.conf, complete: true, sha256: d3e544b4b0f10bb9d49878864085919e0c6d0bf4d824997ecf22251d1be9ed2e}
     foot: {repository: tinted-theming/tinted-terminal, path: templates/foot-base24.mustache, output: foot.ini, complete: true, sha256: 97147366d46c14f481b5fcf0ec19559f0eb22a3dcd673f6b66131c06a42e13ab}
@@ -39,6 +41,7 @@ sources:
     dunst: {repository: tinted-theming/base16-dunst, path: templates/default.mustache, output: dunstrc, complete: true, sha256: 664981da2dc32b257313a58ad2cfdc5d4acfdd15b89610aa001178d2004475c8}
     waybar: {repository: tinted-theming/base16-waybar, path: templates/default.mustache, output: waybar-colors.css, complete: false, sha256: 15bb435a8542b366884060423acedae61ea796480f5cd693b8c799accbe3f7db}
     shell: {repository: tinted-theming/tinted-shell, path: templates/base24.mustache, output: tinted-shell.sh, complete: true, sha256: eea2ab702b0fbb9966f6e73f0e9172318a49b6458e498fe40bcea305e7f81fc0}
+    vivid: {repository: tinted-theming/base16-vivid, path: templates/default.mustache, output: base16-vivid.yml, complete: true, sha256: 4ef74e9f02c959a872d448d6e1847700ef58b3503ebad9d919bdb828660457e7}
   matugen-themes:
     kitty: {repository: InioX/matugen-themes, path: templates/kitty-colors.conf, output: kitty-colors.conf, complete: true, sha256: 6c1fe4c5b178ef390dbdf9d9b6f9324d58ba00bc913a431200f73336fa821cb7}
     gtk: {repository: InioX/matugen-themes, path: templates/gtk-colors.css, output: gtk-colors.css, complete: false, sha256: 8f90781ed32707289f52bc4a43163a52901e3eae5ee74d9083a70fccf2dab463}

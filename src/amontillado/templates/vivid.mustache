@@ -1,0 +1,124 @@
+# amontillado {{scheme-slug}} ({{scheme-variant}}): a vivid theme; LS_COLORS="$(vivid generate vivid.yml)".
+#
+# Categories are vivid's own (its filetypes.yml); colours per docs/design.md, "Built-in
+# templates": every foreground is a colour the contrast check holds on base00, and a cell
+# background is an accent under base00 text (the same pair), so `amo palette --check` covers it.
+
+colors:
+  base00: "{{base00-hex}}"
+  base03: "{{base03-hex}}"
+  base05: "{{base05-hex}}"
+  base08: "{{base08-hex}}"
+  base09: "{{base09-hex}}"
+  base0A: "{{base0A-hex}}"
+  base0B: "{{base0B-hex}}"
+  base0C: "{{base0C-hex}}"
+  base0D: "{{base0D-hex}}"
+  base0E: "{{base0E-hex}}"
+  base12: "{{base12-hex}}"
+  base13: "{{base13-hex}}"
+  base14: "{{base14-hex}}"
+  base15: "{{base15-hex}}"
+  base16: "{{base16-hex}}"
+  base17: "{{base17-hex}}"
+
+core:
+  normal_text: {}
+  regular_file: {}
+  reset_to_normal: {}
+  directory:
+    foreground: base0D
+    font-style: bold
+  symlink:
+    foreground: base0C
+  multi_hard_link: {}
+  fifo:
+    foreground: base0A
+  socket:
+    foreground: base0E
+  door:
+    foreground: base0E
+  block_device:
+    foreground: base0A
+    font-style: bold
+  character_device:
+    foreground: base0A
+    font-style: bold
+  broken_symlink:
+    foreground: base00
+    background: base08
+  missing_symlink_target:
+    foreground: base08
+    font-style: bold
+  setuid:
+    foreground: base00
+    background: base08
+  setgid:
+    foreground: base00
+    background: base0A
+  file_with_capability:
+    foreground: base00
+    background: base09
+  sticky_other_writable:
+    foreground: base00
+    background: base0B
+  other_writable:
+    foreground: base00
+    background: base0D
+  sticky:
+    foreground: base00
+    background: base0E
+  executable_file:
+    foreground: base0B
+    font-style: bold
+
+text:
+  special:
+    foreground: base13
+    font-style: bold
+  todo:
+    foreground: base13
+    font-style: bold
+  licenses:
+    foreground: base03
+  configuration:
+    foreground: base0A
+  other:
+    foreground: base05
+
+markup:
+  foreground: base09
+
+programming:
+  source:
+    foreground: base0B
+  tooling:
+    foreground: base14
+    continuous-integration:
+      foreground: base0B
+
+media:
+  image:
+    foreground: base0E
+  audio:
+    foreground: base0C
+  video:
+    foreground: base17
+  fonts:
+    foreground: base15
+  3d:
+    foreground: base16
+
+office:
+  foreground: base12
+
+archives:
+  foreground: base08
+  font-style: bold
+
+executable:
+  foreground: base0B
+  font-style: bold
+
+unimportant:
+  foreground: base03

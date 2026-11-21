@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from amontillado import yamlio
 from amontillado.colour import contrast_ratio
-from amontillado.contrast import adjust
+from amontillado.contrast import PAIRS, adjust
 from amontillado.palette import BASE24_KEYS, ROLES, Palette, complete_variant
 from amontillado.registry import FETCHED, RegistryError, find, parse, registry, text, variables
 from amontillado.render import mustache_view, render_mustache
@@ -36,7 +38,7 @@ def test_every_template_renders(name: str, variant: str) -> None:
 
 
 # Templates that fill a fixed set of names rather than one variable per key and role.
-FIXED_NAME_BUILTINS = ("kitty", "dunst", "libadwaita", "libadwaita-vars")
+FIXED_NAME_BUILTINS = ("kitty", "dunst", "libadwaita", "libadwaita-vars", "vivid")
 
 
 @pytest.mark.parametrize("name", [n for n in BUILTINS if n not in FIXED_NAME_BUILTINS])
@@ -235,6 +237,55 @@ def test_shell_exports(tmp_path: Path) -> None:
         check=True,
     )
     assert result.stdout == f"dark {_palette().variants['dark'].roles['on_accent']}"
+
+
+# Every foreground/background pair the contrast check holds, either way round (WCAG ratios are
+# symmetric).
+CHECKED_PAIRS = {frozenset((foreground, background)) for foreground, background, _ in PAIRS}
+
+
+def _vivid_styles(node: dict, path: str = "") -> list[tuple[str, str, str]]:
+    """(category, foreground, background) for every style in a vivid theme's tree."""
+    styles = []
+    if "foreground" in node or "background" in node:
+        styles.append((path, node.get("foreground", "base05"), node.get("background", "base00")))
+    for key, value in node.items():
+        if isinstance(value, dict):
+            styles.extend(_vivid_styles(value, f"{path}.{key}" if path else key))
+    return styles
+
+
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_vivid_colours_are_contrast_checked(variant: str) -> None:
+    theme = yamlio.load(_render("vivid", variant))
+    colours = theme.pop("colors")
+    view = mustache_view(_palette(), variant)
+    assert colours == {name: view[f"{name}-hex"] for name in colours}
+    styles = _vivid_styles(theme)
+    assert len(styles) > 30
+    for category, foreground, background in styles:
+        assert foreground in colours and background in colours, category
+        # A cell background is an accent under base00 text: the accent's own pair.
+        if background != "base00":
+            assert foreground == "base00", category
+        assert frozenset((foreground, background)) in CHECKED_PAIRS, category
+
+
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_vivid_generates_ls_colors(variant: str, tmp_path: Path) -> None:
+    if shutil.which("vivid") is None:
+        pytest.skip("vivid not on PATH")
+    theme = tmp_path / "vivid.yml"
+    theme.write_text(_render("vivid", variant))
+    result = subprocess.run(
+        ["vivid", "generate", str(theme)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    entries = dict(entry.split("=", 1) for entry in result.stdout.strip().split(":"))
+    blue = mustache_view(_palette(), variant)["base0D-hex"]
+    rgb = ";".join(str(int(blue[i : i + 2], 16)) for i in (0, 2, 4))
+    # Directories: bold base0D, in truecolour.
+    assert entries["di"] == f"1;38;2;{rgb}"
 
 
 def test_builtin_files_match_the_registry() -> None:
