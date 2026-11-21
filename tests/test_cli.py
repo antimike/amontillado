@@ -987,10 +987,24 @@ def test_list_format_rofi(
     capsys.readouterr()
     main(["list", "--format", "rofi", "--dark"])
     black = indexed["black"]
-    assert capsys.readouterr().out == f"{black}\0icon\x1f{black.parent / '.amo/thumbnail.jpg'}\n"
-    # A record without a thumbnail (gone since the last index) is its path alone.
+    thumbnail = black.parent / ".amo/thumbnail.jpg"
+    # rofi shows the record's directory name and returns the path.
+    assert capsys.readouterr().out == f"{black}\0icon\x1f{thumbnail}\x1fdisplay\x1fblack\n"
+    # A record without a thumbnail (gone since the last index) still gets its label.
     main(["list", "--format", "rofi", "--light"])
-    assert capsys.readouterr().out == f"{indexed['white']}\n"
+    assert capsys.readouterr().out == f"{indexed['white']}\0display\x1fwhite\n"
+
+
+def test_list_format_rofi_labels_files_of_a_record_with_several(
+    indexed: dict[str, Path], library: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["crop", str(library / "red"), "1:1"])
+    capsys.readouterr()
+    main(["list", "--format", "rofi", "--hue", "red"])
+    out = capsys.readouterr().out
+    assert out.endswith("\x1fdisplay\x1fred.png\n")
+    main(["list", "--format", "rofi", "--hue", "red", "--aspect", "1:1"])
+    assert capsys.readouterr().out.endswith("\x1fdisplay\x1fred-1x1.png\n")
 
 
 def test_list_no_match_fails(indexed: dict[str, Path]) -> None:

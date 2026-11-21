@@ -652,9 +652,12 @@ first proposal: amo's own incremental commands change mtimes (so they would warn
 `amo add`), and so does the git-annex hook's `git annex add` (files replaced by symlinks)
 after amo has finished.
 
-`--format rofi` follows each path with its record's thumbnail as the icon
-(`PATH\0icon\x1fTHUMBNAIL`, for `rofi -dmenu -show-icons`); a record without one, or whose
-thumbnail is gone, prints its path alone.
+`--format rofi` follows each path with its record's thumbnail as the icon and a display label
+(`PATH\0icon\x1fTHUMBNAIL\x1fdisplay\x1fLABEL`, for `rofi -dmenu -show-icons`; rofi-script(5),
+"Parsing row options"): rofi shows LABEL and still filters on and returns PATH. The label is
+the record's directory name, or the file name when the record has several files (crops). A
+record without a thumbnail, or whose thumbnail is gone, gets `PATH\0display\x1fLABEL`
+(amo-2f0).
 
 `amo shown` takes any PICTURE form under "Lookup" (a file found nowhere in the index is looked
 up by content); one that matches no record, or more than one, exits non-zero before anything is

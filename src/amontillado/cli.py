@@ -362,7 +362,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("path", "rofi"),
         default="path",
         help="path: one path per line. rofi: for rofi -dmenu -show-icons, each path followed "
-        "by its record's thumbnail as the icon (\\0icon\\x1f<thumbnail>), if it has one.",
+        "by its record's thumbnail as the icon (\\0icon\\x1f<thumbnail>), if it has one, and "
+        "a display label (\\x1fdisplay\\x1f<label>): the record's directory name, or the "
+        "file name when the record has several files. rofi shows the label and returns the "
+        "path.",
     )
     list_.set_defaults(func=cmd_list)
 
@@ -1412,10 +1415,16 @@ def cmd_list(args: argparse.Namespace) -> None:
             )
     for row in matches:
         path = paths[row.path]
-        if args.format == "rofi" and row.thumbnail is not None and row.thumbnail.is_file():
-            print(f"{path}\0icon\x1f{row.thumbnail}")
-        else:
+        if args.format != "rofi":
             print(path)
+            continue
+        options = []
+        if row.thumbnail is not None and row.thumbnail.is_file():
+            options += ["icon", str(row.thumbnail)]
+        # A record's directory names it; with several files (crops) each row names its file.
+        several = len(by_record[row.record_id]) > 1 or path != row.path
+        options += ["display", path.name if several else path.parent.name]
+        print(f"{path}\0" + "\x1f".join(options))
 
 
 def cmd_group(args: argparse.Namespace) -> None:
