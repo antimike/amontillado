@@ -6,6 +6,11 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-21
+
+Tone per variant: a gentler soft light (cream paper) and dim dark (charcoal), made from a
+picture's palette at apply time, globally, per app or per run, contrast-checked like any palette.
+
 ### Added
 
 - `amo palette --check FILE --tone VARIANT=TONE` (repeatable): checks a variant in a gentler

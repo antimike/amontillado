@@ -45,7 +45,8 @@ least-shown`, a warning when the index is out of date, and darker bright colours
 themes; v0.7.0 palette-aware grouping: a palette per picture, `amo list --like`, and `amo
 group`, one picture per monitor whose colours go together; v0.8.0 your own predicates for `amo
 group` and letterbox detection with a crop to the picture; v0.9.0 Wallhaven tag categories,
-so names from tags pass over artists and brands ([CHANGELOG.md](CHANGELOG.md)).
+so names from tags pass over artists and brands; v0.10.0 terminal theming under light
+variants; v0.11.0 gentler tones, soft light and dim dark ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
