@@ -1913,8 +1913,8 @@ rejected for a dark middle, one of thin or one-sided bars).
 ## Tone (designed in v0.10)
 
 **Status: agreed with MH 2026-11-21 (amo-4rf)**, from comparison sheets and kitty windows of
-3qz176 in every proposal; the decisions are under "Tone: decisions". Design only in v0.10; the
-build is a later epic (amo-3oa), and its values are *initial*.
+3qz176 in every proposal; the decisions are under "Tone: decisions". Designed in v0.10, built in
+v0.11 (epic amo-k79); its values are *initial*.
 
 Full-contrast dark and light get tiring in a terminal all day. *Tone* is a gentler version of
 a variant: **soft** light (cream paper, darker than white, dark-grey text) and **dim** dark
@@ -2064,7 +2064,11 @@ Agreed with MH, 2026-11-21:
    (the metric is report only).
 5. **Docs: the comparison table above now; swatches with the build.** The build adds a
    swatch sheet of one picture in all four (light full and soft, dark full and dim) to
-   `docs/images/`, made by a `just` recipe from the code rather than by hand.
+   `docs/images/`, made by a `just` recipe from the code rather than by hand. **Built
+   (amo-k79.8):** [tone-swatches.png](images/tone-swatches.png), by `just tone-sheet`
+   (`tools/tone_sheet.py`, the panels as apply renders them), swatches and measured ratios
+   only, never the picture; full colour, since a 256-colour PNG shifted the swatches. Users:
+   [terminal-theming.md](terminal-theming.md), "Tone: soft and dim".
 
 ## Light variants and fixed colours (v0.10)
 
