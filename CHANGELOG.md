@@ -6,6 +6,11 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-21
+
+GTK3 apps recoloured live under adw-gtk3 with `amo hook gtk3-theme`, and readable text on
+adw-gtk3's suggested-action buttons and terminal selections.
+
 ### Added
 
 - `amo hook gtk3-theme`: the libadwaita app's reload for live GTK3 theming under adw-gtk3. It
