@@ -273,3 +273,10 @@ theme:
     # GTK4 only: libadwaita-vars also sets that text and GNOME's palette (--blue-3 ...), for
     # gtk-4.0/gtk.css; libadwaita then serves gtk-3.0 (adw-gtk3) alone:
     # gtk4: {template: libadwaita-vars}
+    #
+    # Or GTK3 apps recoloured live under adw-gtk3 (docs/gtk-theming.md, the whole GTK setup):
+    # the libadwaita reload runs amo hook gtk3-theme and the scheme hook moves to gtk4:
+    # libadwaita: {reload: amo hook gtk3-theme}
+    # gtk4:
+    #   template: libadwaita-vars
+    #   reload: 'gsettings set org.gnome.desktop.interface color-scheme "prefer-$AMO_VARIANT"'
