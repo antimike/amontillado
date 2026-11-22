@@ -40,9 +40,8 @@ remote: never add one pointing at this repo. bd-track's daily cleanup timer cove
 
 The current epic's prompt (replace it when an epic closes):
 
-> Epic amo-b1p (v0.10.0): terminal theming under light variants, from chezmoi's 2026-11-21
-> tickets. Children: amo-c0i (vivid template; prior-art check first), amo-wtt (terminal docs,
-> after c0i), amo-7a0 (kitty grey ramp, 16-255 contrast report), amo-4rf (tone design only:
-> plan with MH, build in a later epic), riders amo-2f0 (rofi display label) and amo-9z5
-> (gcrypt docs, no link to the dotfiles). Each built feature ends with a reply ticket to
-> chezmoi. Outside the epic: amo-yol, amo-wn0, amo-mdi, amo-tyy.
+> Next (no epic yet): amo-3oa, build tone per variant (docs/design.md "Tone: decisions" 1-5,
+> soft L2 / dim D3). First plan a v0.11.0 epic with MH and split 3oa into child beads (config
+> and CLI, toned variant, contrast exception, --check --tone, matugen warning, swatch recipe),
+> confirm before building, then build depth-first. Ends with a reply ticket to chezmoi.
+> amo-yyu (review D3) follows after use. Outside: amo-wn0, amo-mdi, amo-tyy.
