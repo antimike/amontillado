@@ -130,6 +130,8 @@ you configure, never stored by the tool.
 - [docs/terminal-theming.md](docs/terminal-theming.md): terminals and shell tools under a
   palette: fixed colours, LS_COLORS with vivid, prompt hooks, p10k and fast-syntax-highlighting,
   and the soft and dim tones
+- [docs/gtk-theming.md](docs/gtk-theming.md): GTK3 apps recoloured live under adw-gtk3
+  (`amo hook gtk3-theme`) and GTK4 apps through `libadwaita-vars`
 - [CONTRIBUTING.md](CONTRIBUTING.md): development setup, coding standards, commits and releases
 - [CHANGELOG.md](CHANGELOG.md)
 

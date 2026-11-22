@@ -12,6 +12,8 @@ All notable changes to amontillado are documented here. The format follows
   points `gtk-theme` (gsettings) at `amontillado-$AMO_VARIANT`, flipping through Adwaita when
   unchanged, and writes that theme's `gtk.css` when missing. `amo config check` names
   `gsettings` or adw-gtk3 when a reload runs it without them.
+- New page [docs/gtk-theming.md](docs/gtk-theming.md): GTK3 apps recoloured live under
+  adw-gtk3 and GTK4 apps through `libadwaita-vars`, one setup end to end.
 
 ### Fixed
 
