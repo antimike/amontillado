@@ -314,7 +314,8 @@ cannot be rebuilt):
   cache; only when it was measured).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (9); a newer one than the
+  table (from schema 10, the state tables of "Saved looks" too: `current_group`, `history`,
+  `theme_usage`). The database's `PRAGMA user_version` is its schema version (9); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
   thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
   schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`),
@@ -1812,8 +1813,9 @@ amo group --list-predicates
   at random). `amo group --keep-category` is the cheap remedy; style measures (sharpness,
   perhaps a learned embedding) are amo-abc.
 
-**Later** (amo-0k6, not v0.7): saved sets (a set the user liked, kept by name: `amo group
---save NAME`) and ratings of pictures and sets, with ratings feeding the companion order.
+**Later** (amo-0k6, not v0.7): saved sets, now "Saved looks" (a set the user liked
+with its theme, kept by name), and ratings of pictures and sets, with ratings feeding the
+companion order (deferred).
 
 ### Grouping: decisions
 
@@ -2147,6 +2149,237 @@ Decisions:
    1.05:1 under light) needs the tool's own setting, e.g. an ANSI-only theme. A tool's 256-colour
    config (`LS_COLORS` with cube numbers) is better replaced by one built from the palette
    (`vivid`). Lightness-mapping the cube in amo (amo-yol) is left open: `semantic` does it in kitty.
+
+## Saved looks (designed in v0.12)
+
+**Status: agreed with MH 2026-11-22 (amo-0k6), the whole design in one release.** Decisions
+are marked **MH** with their date. Ratings stay deferred (MH 2026-11-21) until there is more use
+of `amo group`. `/project-review` (2026-11-22) recommended shipping only the format, `save` and
+apply, and shelving history, usage, ids, `list` and `preview` until a client existed. MH kept
+them: amontillado's role is exploratory support for MH's theming work in the dotfiles, where a
+feature is evaluated live and then kept or removed, so these ship marked experimental ("Saved
+looks: evaluation"). The review's defects are fixed below (history numbering, the save
+warning, the index invariant, no palette dedupe) and its smaller alternative added to the prior
+art.
+
+A *look* is a set of pictures across monitors that the user liked, together with the theme they
+saw: kept by name and applied again later. **MH (2026-11-21):** it holds the whole look,
+pictures and theme (palette snapshot, variant, tone); pictures by record id; an optional
+description; a YAML file in the library, versioned with it. **MH (2026-11-22):** the file lives
+in the root of its most private picture; monitors by position (primary first) and aspect, not by
+name; the palette embedded in the file, not a path to one.
+
+This replaces the "sensible presets" that computed clusters would have given ("Grouping:
+decisions" 2). The bead called them *saved sets*. The commands sit under `amo theme` (MH
+2026-11-22: `amo theme save`, beside `apply`), not `amo set`, which reads as setting the
+wallpaper ("Grouping: decisions" 3).
+
+### Saved looks: prior art
+
+Checked 2026-11-22: the dotfiles' own glue by reading it, the rest from their docs or wikis (not
+run). The requirements, MH's (2026-11-21 and 11-22, set before this entry was written, as the
+review noted): several monitors with their theme, kept by name; pictures by record id;
+versioned with the library; the SFW roots never naming an NSFW record.
+
+| Candidate | What it does | Fails |
+|---|---|---|
+| pywal: `wal -p NAME` saves the colours to `$XDG_CONFIG_HOME/wal/colorschemes`, `wal --theme NAME` applies, `wal -R` restores the last (pywal16 wiki) | named colour schemes; `-R` restores the last scheme and wallpaper | one wallpaper, by path, and only the last one: a named theme holds no pictures, no monitors and no tone. Its own pipeline (decision 11's reasons). |
+| wpgtk (wiki, "Colorschemes") | a colour scheme stored per wallpaper | one wallpaper per scheme, pywal's pipeline, no monitors. |
+| waypaper (`--restore`, `config.ini`) | restores the last wallpaper state | the last state only, no names, no theme; paths. hyprpaper, awww (`restore`) and wpaperd are the same: last state per output. |
+| HyDE (Hyprland dotfiles framework; FAQ) | a theme is a directory of colours plus its own `wallpapers/` | the pictures are copied into the theme (not library records), one theme engine of its own, and the whole framework replaces the user's dotfiles. |
+| KDE Plasma global themes (look-and-feel packages) | colours, wallpaper and more, by name | Plasma only; MH runs Hyprland. |
+| **No build in amo:** a dotfiles script saving `~/.local/state/wallpaper/group.json` and the profile's `palette.yaml` under a name, restoring with `hyprctl` and `amo theme apply --palette` (the `wallpaper` script's `restore` does half of this today) | the whole look, on MH's machine | three of MH's decisions: group.json holds paths and names, which renames and crops break (ids need amo to resolve); "versioned with the library" means writing into a root, through amo's `on_change` hook, from outside amo; and putting a look in the root of its most private picture needs each record's purity, which only amo knows. Re-fitting a look to other monitors also needs amo's aspect matching and crop offer, which `amo group` has but cannot be given companions. |
+| **A smaller change in amo** (from `/project-review`): record ids in `amo group --format json` (it prints a name today) and a way to pin companions (`--pin MONITOR=RECORD`); the dotfiles keep group files and presets under a name | most of the look, in about 30 lines of dotfiles glue, without the `look` block, placement or state | MH's requirement that looks are versioned with the library (they would live in the dotfiles' state), and the NSFW placement needs purity, which the glue would query from amo per save. |
+| Variety (wallpaper changer; from its docs as recalled, not run) | a history of wallpapers to step back through, favourites | one wallpaper at a time, no theme, its own downloader and library. The history idea is taken (below). |
+
+No candidate keeps named multi-monitor sets of library pictures with their theme, so amontillado
+builds it. The build stays small by reusing what `amo group --apply` and `amo theme apply`
+already do; amo still detects no monitors and sets no wallpaper itself (the setter hook).
+
+### Saved looks: design
+
+**One format: a look is a palette file with pictures** (MH 2026-11-22). A palette file
+("Palette") gains an optional `look` block; a palette without one is a preset, as today. So
+`amo theme apply --palette NAME` applies both, and a look whose pictures are gone is still a
+palette.
+
+```yaml
+version: 1
+id: 5e0c1a7b...                 # uuid4, written once by amo; usage keys off it ("Identity")
+name: blade-and-iss
+source: {picture: c2bb9ad4..., ...}   # as generated; see "Where it lives" for presets
+variants: {dark: {...}, light: {...}}  # the profile's palette.yaml, whole
+look:
+  description: Stellar Blade signs with the ISS morning   # optional
+  saved: 2026-11-22T12:00:00+00:00
+  variant: system               # as the last apply asked (run level)
+  tone: {light: soft, dark: full}
+  monitors:                     # by position: the first is the primary
+    - record: c2bb9ad4...       # the record's id: survives renames and moves
+      file: stellar-blade-playstation-signs-xed63v-21x9.jpg   # the file shown
+      aspect: "21:9"            # the monitor's ratio when saved
+    - record: 627f7597...
+      file: commons-good-morning-iss.jpg
+      aspect: "16:9"
+```
+
+- **The palette** is the profile's `palette.yaml` (full, contrast-checked; `tone: transform`
+  kept for a preset), embedded (MH), so a look applies the same colours after a generator
+  upgrade, a hues recalibration, or when the theme came from a preset.
+- **Pictures by id and file.** The file name pins what was on screen (an edit or a hand-made
+  derived file has the same ratio as the original, so the aspect alone could pick another
+  file). If that file is gone, the monitor's aspect picks one as `--aspect` does, with a
+  warning. Monitors by position and aspect, not name (MH): names are machine-specific.
+- **Variant and tone** are the run's (`--variant`, `--tone`, else the config's), stored (MH);
+  `apply --variant` and `--tone` override them. `theme.yaml` records each app's resolved
+  values today, so it gains the run's `variant` and `tone` at the top level. Per-app settings
+  stay config.
+
+**Where it lives.**
+
+- **With pictures:** `<root>/.amo/palettes/<name>.yaml` in the root of its most private
+  picture (MH): the NSFW root if any of its records is not sfw, else the primary's root. The SFW
+  roots never name an NSFW record. Under `.amo/`, which `amo index` never searches and the
+  version-control layout keeps in git, not the annex. One file per look: two machines saving
+  different looks never touch the same file, and a look is deleted by deleting its file.
+- **Without pictures** (`--palette-only`, or no pictures known): a preset in
+  `$XDG_CONFIG_HOME/amontillado/palettes/`, as today. From a non-sfw picture its `source` is
+  left out (with an info line): it names the picture's file and record, and the config dir is
+  often a public dotfiles repository (MH 2026-11-22).
+- **Lookup** (`--palette NAME`): the library roots' `.amo/palettes/` (the NSFW root's too: an
+  explicit name, as for a picture), then the config's `palettes/`. **The library wins** a name
+  found in both, with a warning naming both paths (MH 2026-11-22): a preset copied into the
+  config, edited and saved again into the library takes over its name. Every apply prints the
+  resolved path; a path instead of NAME picks one file exactly. Saving a name that shadows or is
+  shadowed warns too. A name in two library roots is an error (it cannot be ordered).
+
+**Identity** (MH 2026-11-22). Every palette file amo writes gets a top-level `id` (uuid4, 32
+lowercase hex digits, as a record's), written once and never rewritten: `amo theme save`
+(`--palette-only` too) and `amo palette --from-scheme`. Statistics and history key off it, never
+off the name, so shadowing only decides which file a name resolves to. A hand-written preset
+without an `id` (amo does not edit the user's config files) is keyed by its resolved path
+instead: moving it loses its statistics, and `amo config check` says so, suggesting an `id`
+line. A palette made from a picture at apply time is not a saved theme: its use is the
+picture's, counted as shown. A hand-changed `id` orphans its statistics, as for records
+(amo-n0o).
+
+**Current group, history and usage** (state, `index.sqlite`, kept across rebuilds as `usage`
+is):
+
+- **`current_group`** (one row): the last `amo group --apply`: each monitor's name, ratio,
+  record and file. It is what `amo theme save` saves, and the monitors `apply` uses when no
+  `--monitor` is given. It replaces the dotfiles keeping `amo group`'s output themselves.
+- **`history`**: one row per activated `amo theme apply` (not `--dry-run` or `--no-activate`):
+  time, the theme's id (or path) when a saved theme was applied, the palette applied, the run's
+  variant and tone, and the current group's monitors if its primary is the picture applied
+  (else just that picture). Each row has a number, increasing and never reused, which `list
+  --history` prints and `--history N` takes, so a row keeps its number whatever `--purity`
+  hides. The palette is stored whole in each row (about 2.3 KB; 200 rows under 0.5 MB).
+  `theme.history_size` (default 200,
+  *initial*; 0 keeps none, as zsh's `HISTSIZE`) bounds it, oldest dropped. A group applied
+  without a theme apply (a monitor change regrouping companions) changes `current_group` only.
+- **`theme_usage`**: per saved theme (id, or path for one without), `applied_count` and
+  `last_applied`, as `usage` is per record (MH 2026-11-22). Never trimmed with history, so
+  counts survive `history_size`.
+- **Privacy:** a history row naming a non-sfw record is listed only with `--purity`, as `amo
+  list` does: a history picker is what would otherwise put one on screen during a screen share.
+
+**Commands:**
+
+```text
+amo theme save NAME [--palette-only] [--description TEXT] [--profile P] [--force] [--dry-run]
+amo theme apply --palette NAME|FILE [--monitor NAME=W:H]... [--palette-only] [...as today]
+amo theme apply --history N [--monitor NAME=W:H]... [--palette-only] [...]
+amo theme list [--history] [--purity LIST] [--order name|recent|most-applied|least-applied]
+               [--limit N] [--format tsv|json|rofi]
+amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=W:H]...
+                  [--variant V] [--tone VARIANT=TONE]... [--palette-only] [-o FILE]
+```
+
+- **`save`** writes the profile's palette (default `theme.profile`) with the current group's
+  pictures when that group's primary is the profile's wallpaper; otherwise, or with
+  `--palette-only`, a preset. No prompt. It prints the path written; saving a preset without
+  `--palette-only` warns that the pictures were left out and why (no group applied, or the
+  group's primary is not the profile's wallpaper). A name that exists where it
+  would write is refused without `--force`. A write under a root goes to `on_change` as a
+  `file` change.
+- **`apply` of a look** sets the pictures as well as the palette, by default, interactive or not
+  (MH): the monitors from `--monitor`, else from `current_group`; position *i* gets entry *i*,
+  its saved file if the ratio matches, else the record's file for the monitor's ratio, with
+  `amo group`'s crop offer and fallback. Then as `amo group --apply`: `group.setter` per monitor
+  (none configured: a warning, the palette applied alone), each picture recorded as shown, and
+  the profile's wallpaper link on the primary's file. A record that no longer exists, or absent
+  content, fails the apply naming it; `--palette-only` applies the palette alone. Fewer
+  monitors than the look has: the rest left out, with a warning. **More monitors**: a warning
+  and an offer to fill them with companions of the look's primary, as `amo group` picks them
+  (MH 2026-11-22); without a terminal they are filled. A preset (no `look`) applies as today.
+- **`--history N`** applies history row number N as a look (its palette, variant, tone and
+  pictures). The newest row is the last theme applied, not necessarily what is on screen: a
+  regroup without a theme apply, or a setter run outside amo, changes the pictures without a
+  row.
+- **`list`** (MH 2026-11-22: one list for a picker of every theme) prints the saved looks and
+  presets with their paths (shadowed ones marked), from the SFW roots and the config; with
+  `--purity` asking for sketchy or nsfw, the NSFW root's looks too. `--history` lists the
+  history rows instead, with their numbers, newest first; rows naming a non-sfw record
+  only with `--purity`. `--order` (named as `amo list --order`): `name` (default for saved
+  themes), `recent` (default for history), `most-applied`, `least-applied` from
+  `theme_usage`; json carries the counts. `rofi` rows carry each theme's preview (below).
+- **`preview`** (MH 2026-11-22: for a look at a theme before applying it, and for docs images)
+  draws the preview of a saved theme, a history row, or PICTURE (the palette it would give,
+  beside that picture alone; previewing a whole `amo group` set first is left open). Without
+  `-o` it is shown as `amo crop --interactive` shows its box: the kitty graphics protocol, else
+  `crop.viewer` (`crop.preview` decides); `-o FILE` writes a PNG. The picker's rows and this
+  command use the same function.
+- **Not built:** remove and rename (the file is the look), `amo group --save` (a look is saved
+  after it has been seen), ratings (deferred, MH 2026-11-21).
+
+**The preview** (MH 2026-11-22: one format for every theme):
+
+- **With pictures:** each monitor's thumbnail side by side in monitor order, the primary first,
+  each at its aspect and a common height (*initial* 160 px), so a 21:9 beside a 16:9 looks like
+  the desk; under them a swatch strip.
+- **Without pictures** (a preset, or `--palette-only`): the same card, the strip enlarged to
+  fill it, so presets and looks line up in one picker.
+- **The strip:** `base00`-`base07` then `base08`-`base0F`, one row per variant the theme would
+  apply (dark over light under `system` or `auto`; one for a fixed variant or a one-variant
+  preset), in the colours after tone: what the screen would show.
+- **Cache:** keyed by the hash of what the preview shows. SFW previews in
+  `$XDG_CACHE_HOME/amontillado/previews/`; one showing a non-sfw picture in
+  `$XDG_RUNTIME_DIR/amontillado/previews/` (tmpfs: never backed up, gone at logout), since it
+  copies the picture's pixels out of the NSFW root.
+
+### Saved looks: evaluation
+
+The core (the `look` block, `save`, apply of a look, `current_group`) is the feature. History,
+`theme_usage` and `--order`, `list`, `preview` and the rofi format ship **experimental**:
+named so in `--help`, the CHANGELOG and the user docs, and free to change or go in a minor
+release. After MH has used them in the dotfiles for a week or two, each is kept (the label
+dropped) or removed, and the decision recorded here.
+
+### Saved looks: build beads
+
+Under amo-0k6; one release (MH 2026-11-22).
+
+1. **State:** `current_group`, `history` (numbered rows, `theme.history_size`) and
+   `theme_usage` (index schema 10; kept across rebuilds), written by `amo group --apply` and
+   `amo theme apply`; the run's `variant` and `tone` in `theme.yaml`.
+2. **Format, identity and lookup:** the `id` and `look` keys (validation, round trip; ids
+   written by `--from-scheme`), lookup over the library roots and the config with the library
+   first, the shadowing warning, the resolved path printed, `amo config check`'s hint for a
+   preset without an id.
+3. **`amo theme save`:** placement by purity, `--palette-only`, `source` left out for a non-sfw
+   preset, `--force`, `on_change`. Needs 1, 2.
+4. **`amo theme apply` of a look:** monitors from `--monitor` or state, fitting by position and
+   aspect, the setter, shown, `--palette-only`, failures, extra monitors filled. Needs 1, 2.
+5. **`amo theme preview`:** the preview card, its cache (runtime dir for non-sfw), kitty or
+   viewer display, `-o`. Needs 2. Clients: MH at the terminal, docs images.
+6. **`amo theme list` and `--history N`:** saved themes and history, purity-filtered,
+   `--order` from `theme_usage`, the rofi format with previews. Needs 4, 5. Client: the
+   dotfiles' theme picker (ticket filed 2026-11-22).
+7. **Docs and release:** this section's status, a user doc section with a preview image made
+   by `amo theme preview`, the config template's comments (`theme.history_size`), the
+   experimental labels. Needs 3-6.
+8. **Evaluation** (after the release, MH's use): keep or remove each experimental part.
 
 ## Testing
 
