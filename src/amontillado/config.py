@@ -81,8 +81,21 @@ OLD_PLACEHOLDERS = {
 # Names in a profile directory that amontillado writes itself.
 RESERVED_OUTPUTS = frozenset({"palette.yaml", "theme.yaml", "wallpaper"})
 _THEME_KEYS = frozenset(
-    {"cache", "profile", "generator", "hues", "variant", "tone", "contrast", "wallpaper", "apps"}
+    {
+        "cache",
+        "profile",
+        "generator",
+        "hues",
+        "variant",
+        "tone",
+        "contrast",
+        "wallpaper",
+        "apps",
+        "history_size",
+    }
 )
+# How many theme applies the history keeps (docs/design.md, "Saved looks"); initial.
+DEFAULT_HISTORY_SIZE = 200
 _APP_KEYS = frozenset(
     {
         "source",
@@ -146,6 +159,8 @@ class ThemeConfig:
     contrast: str = "adjust"
     wallpaper_reload: str | None = None
     apps: dict[str, AppConfig] = field(default_factory=dict)
+    # The history rows kept, newest first; 0 keeps none (experimental).
+    history_size: int = DEFAULT_HISTORY_SIZE
 
 
 @dataclass(frozen=True)
@@ -422,7 +437,15 @@ def _theme(value: object) -> ThemeConfig:
         contrast=_choice("theme.contrast", _off(theme.get("contrast", "adjust")), CONTRAST_CHOICES),
         wallpaper_reload=shell_command("theme.wallpaper.reload", wallpaper.get("reload")),
         apps=parsed,
+        history_size=_history_size(theme.get("history_size", DEFAULT_HISTORY_SIZE)),
     )
+
+
+def _history_size(value: object) -> int:
+    # bool is an int subclass, and never a count.
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ConfigError(f"theme.history_size: {value!r} is not a count (0 or more)")
+    return value
 
 
 def _crop(value: object) -> CropConfig:

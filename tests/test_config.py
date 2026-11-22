@@ -346,6 +346,19 @@ def test_group_block(home: Path) -> None:
     assert ("group.predicates.same.cmd", 'test -n "$AMO_PRIMARY"') in commands(config)
 
 
+def test_history_size(home: Path) -> None:
+    assert load_config().theme.history_size == 200
+    write_config(home, "theme: {history_size: 0}\n")
+    assert load_config().theme.history_size == 0
+
+
+@pytest.mark.parametrize("value", ["-1", "true", "1.5", "lots"])
+def test_history_size_errors(home: Path, value: str) -> None:
+    write_config(home, f"theme: {{history_size: {value}}}\n")
+    with pytest.raises(ConfigError, match=r"theme\.history_size: .* is not a count"):
+        load_config()
+
+
 @pytest.mark.parametrize(
     ("text", "error"),
     [
