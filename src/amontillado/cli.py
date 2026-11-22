@@ -37,7 +37,7 @@ from rich.logging import RichHandler
 from rich.progress import track
 from rich_argparse import RawDescriptionRichHelpFormatter
 
-from amontillado import __version__, changes, infomerge, yamlio
+from amontillado import __version__, changes, gtk3, infomerge, yamlio
 from amontillado.accents import score as accent_score
 from amontillado.classes import CLASSES, Look, classify, has_aspect
 from amontillado.config import (
@@ -146,8 +146,10 @@ from amontillado.registry import variables as template_variables
 from amontillado.sources import check as sources_check
 from amontillado.sources import check_apps
 from amontillado.sources import needed as sources_needed
+from amontillado.sources import resolve as resolve_template
 from amontillado.sources import sync as sources_sync
 from amontillado.theme import (
+    CURRENT,
     RELOAD_TIMEOUT,
     Reload,
     ThemeError,
@@ -1129,9 +1131,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     hook = commands.add_parser(
         "hook",
-        help="Hooks to set as on_change.",
-        description="Commands to run as the on_change hook (a config key): each reads the "
-        "changes amo made under one root, as JSON on stdin.",
+        help="Commands to set as on_change or as an app's reload.",
+        description="Commands for amo's hooks: git-commit as the on_change hook (it reads the "
+        "changes amo made under one root, as JSON on stdin), gtk3-theme as the libadwaita "
+        "app's reload (theme.apps.libadwaita.reload).",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(hook, argparse.SUPPRESS)
@@ -1151,6 +1154,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_loglevel(git_commit, argparse.SUPPRESS)
     git_commit.set_defaults(func=cmd_hook_git_commit)
+    gtk3_theme = hook_commands.add_parser(
+        "gtk3-theme",
+        help="Recolour running GTK3 apps (the libadwaita app's reload).",
+        description="Set `theme.apps.libadwaita.reload: amo hook gtk3-theme` to recolour "
+        "running GTK3 apps on amo theme apply: it points gsettings org.gnome.desktop.interface "
+        "gtk-theme at amontillado-$AMO_VARIANT (through Adwaita when already set, since an "
+        "unchanged value notifies no one: one brief flash). That theme's gtk.css, written when "
+        "missing under $XDG_DATA_HOME/themes/amontillado-<variant>/gtk-3.0/, imports adw-gtk3 "
+        "and the applied libadwaita.css through the cache's current link; an existing one is "
+        "never overwritten. Exits 1, changing nothing, when gsettings or adw-gtk3 is missing. "
+        "Setup-specific: needs gsettings, adw-gtk3 (Fedora adw-gtk3-theme), and a session whose "
+        "GTK3 apps follow that setting (GNOME, or a Wayland compositor with "
+        "xdg-desktop-portal-gtk or gsd-xsettings; X11 without them needs xsettingsd). "
+        "libadwaita (GTK4) apps ignore gtk-theme. docs/gtk-theming.md has the setup.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(gtk3_theme, argparse.SUPPRESS)
+    gtk3_theme.add_argument(
+        "--app",
+        default="libadwaita",
+        help="The app (theme.apps key) whose output the theme imports.",
+    )
+    gtk3_theme.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be written and set, and change nothing.",
+    )
+    gtk3_theme.set_defaults(func=cmd_hook_gtk3_theme)
 
     config = commands.add_parser(
         "config",
@@ -2207,6 +2238,33 @@ def cmd_hook_git_commit(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: hook git-commit: {exc}")
 
 
+def cmd_hook_gtk3_theme(args: argparse.Namespace) -> None:
+    variant = os.environ.get("AMO_VARIANT")
+    if not variant:
+        sys.exit(
+            "amontillado: hook gtk3-theme: AMO_VARIANT is not set: run it as "
+            f"theme.apps.{args.app}.reload"
+        )
+    config = _load_config()
+    app = config.theme.apps.get(args.app)
+    if app is None:
+        sys.exit(f"amontillado: hook gtk3-theme: theme.apps.{args.app} is not configured")
+    try:
+        output = resolve_template(args.app, app).output
+    except RegistryError as exc:
+        sys.exit(f"amontillado: hook gtk3-theme: {exc}")
+    try:
+        reload = gtk3.plan(variant, config.theme.cache / CURRENT / output)
+        if args.dry_run:
+            if reload.write:
+                print(f"would write {reload.css}:\n{reload.text}", end="")
+            print(f"would set {gtk3.SCHEMA} {gtk3.KEY} {reload.theme}")
+            return
+        gtk3.run(reload)
+    except gtk3.Gtk3Error as exc:
+        sys.exit(f"amontillado: hook gtk3-theme: {exc}")
+
+
 def cmd_config_check(args: argparse.Namespace) -> None:
     path = config_path() if args.file is None else args.file
     if not path.is_file():
@@ -2223,6 +2281,7 @@ def cmd_config_check(args: argparse.Namespace) -> None:
         config_logger.removeHandler(collect)
     problems = check_apps(config) + _check_commands(config, shellcheck_too=args.shellcheck)
     problems += _check_on_change(config)
+    problems += _check_gtk3_theme(config)
     for name, app in config.theme.apps.items():
         warning = matugen_tone_warning(name, app, config.theme.tone)
         if warning is not None:
@@ -2251,6 +2310,21 @@ def _check_on_change(config: Config) -> list[str]:
             if annex_repository(root)
         ]
     return []
+
+
+def _check_gtk3_theme(config: Config) -> list[str]:
+    """amo hook gtk3-theme's needs, for each reload that runs it: gsettings and adw-gtk3."""
+    problems = []
+    for name, app in config.theme.apps.items():
+        if not (app.reload and "amo hook gtk3-theme" in app.reload):
+            continue
+        where = f"theme.apps.{name}.reload: amo hook gtk3-theme needs"
+        if shutil.which("gsettings") is None:
+            problems.append(f"{where} gsettings, which is not on PATH")
+        for variant in gtk3.ADW_GTK3:
+            if gtk3.find_adw_gtk3(variant) is None:
+                problems.append(f"{where} {gtk3.ADW_GTK3[variant]}, which is not installed")
+    return problems
 
 
 def _check_commands(config: Config, *, shellcheck_too: bool) -> list[str]:

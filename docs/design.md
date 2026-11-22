@@ -585,6 +585,7 @@ amo name --from-tags [--force] [PICTURE...] [--no-rename-directory] [--dry-run] 
 amo info diff OLD NEW [--json]       the key paths that differ between two info files
 amo info merge BASE OURS THEIRS [--name PATH] [--stdout]   three-way merge (a git merge driver)
 amo hook git-commit                  as on_change: commit amo's changes to the root's git repository
+amo hook gtk3-theme [--app NAME] [--dry-run]   as libadwaita's reload: recolour running GTK3 apps
 ```
 
 `amo index` fails (non-zero exit, after indexing everything it could) when images cannot be read,
