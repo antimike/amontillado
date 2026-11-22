@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `libadwaita` and `libadwaita-vars`: suggested-action buttons and terminal selections take
+  `accent_fg_color` instead of adw-gtk3 6.4's hard-coded white, which was unreadable on a dark
+  variant's light accent.
+
 ## [0.11.0] - 2026-11-21
 
 Tone per variant: a gentler soft light (cream paper) and dim dark (charcoal), made from a

@@ -1,5 +1,5 @@
 /* amontillado {{scheme-slug}} ({{scheme-variant}}): libadwaita's named colours, for gtk-4.0/gtk.css and gtk-3.0/gtk.css (adw-gtk3). */
-/* @define-color only: GTK3 rejects a :root block. libadwaita >= 1.6 reads its CSS variables from these names, except the standalone accent_color, destructive_color, success_color, warning_color and error_color, which it derives from the *_bg_color. */
+/* @define-color and plain rules only: GTK3 rejects a :root block. libadwaita >= 1.6 reads its CSS variables from these names, except the standalone accent_color, destructive_color, success_color, warning_color and error_color, which it derives from the *_bg_color. */
 
 @define-color accent_bg_color #{{accent-hex}};
 @define-color accent_fg_color #{{on_accent-hex}};
@@ -76,3 +76,13 @@
 @define-color card_shade_color rgba(0, 0, 0, 0.07);
 @define-color popover_shade_color rgba(0, 0, 0, 0.07);
 {{/scheme-is-light-variant}}
+
+/* adw-gtk3 (6.4) paints white text on these accent backgrounds; with a light accent (a dark variant's) it is unreadable. Harmless under libadwaita, which uses the same colour. */
+button.suggested-action,
+button.suggested-action:hover,
+button.suggested-action:active,
+button.suggested-action:checked,
+.terminal selection,
+.terminal text selection {
+  color: @accent_fg_color;
+}

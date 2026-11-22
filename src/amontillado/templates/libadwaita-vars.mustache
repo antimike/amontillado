@@ -77,6 +77,16 @@
 @define-color popover_shade_color rgba(0, 0, 0, 0.07);
 {{/scheme-is-light-variant}}
 
+/* adw-gtk3 (6.4) paints white text on these accent backgrounds; with a light accent (a dark variant's) it is unreadable. Harmless under libadwaita, which uses the same colour. */
+button.suggested-action,
+button.suggested-action:hover,
+button.suggested-action:active,
+button.suggested-action:checked,
+.terminal selection,
+.terminal text selection {
+  color: @accent_fg_color;
+}
+
 /* The standalone colours, set rather than derived from the *_bg_color by the colour scheme. */
 :root {
   --accent-color: #{{accent-hex}};
