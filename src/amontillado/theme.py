@@ -22,7 +22,14 @@ from pathlib import Path
 
 from amontillado import yamlio
 from amontillado.classes import LIGHT_MIN
-from amontillado.config import AppConfig, Config, ThemeConfig, shell_status, xdg_dir
+from amontillado.config import (
+    AppConfig,
+    Config,
+    ThemeConfig,
+    matugen_tone_warning,
+    shell_status,
+    xdg_dir,
+)
 from amontillado.contrast import adjust, apply_contrast, check
 from amontillado.desktop import desktop_variant
 from amontillado.generators import GeneratorError, matugen_render
@@ -269,6 +276,11 @@ def plan(
             "tones it)",
             palette.name,
         )
+    if toning:
+        for name, app in by_matugen.items():
+            warning = matugen_tone_warning(name, app, tones)
+            if warning is not None:
+                logger.warning("%s", warning)
     cache: dict[tuple[str, str], Palette] = {}
 
     def render(name: str, app: AppConfig) -> Rendered:

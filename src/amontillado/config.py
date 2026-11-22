@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from logging import getLogger
 from pathlib import Path
@@ -531,6 +532,22 @@ def _app(where: str, value: object) -> AppConfig:
         variant=_choice(f"{where}.variant", app.get("variant"), VARIANT_CHOICES),
         tone=tone_setting(f"{where}.tone", app.get("tone")),
         render_with=render_with,
+    )
+
+
+def matugen_tone_warning(name: str, app: AppConfig, tones: Mapping[str, str]) -> str | None:
+    """Why `app` (named `name`) with render_with: matugen cannot take the tones asked of it
+    (`tones`: theme.tone with --tone over it; the app's own over both), or None. matugen
+    renders its own colours, so the app gets full (docs/design.md, "Tone: decisions" 3)."""
+    if app.render_with != "matugen":
+        return None
+    asked = {variant: tone for variant, tone in {**tones, **app.tone}.items() if tone != "full"}
+    if not asked:
+        return None
+    named = ", ".join(f"{variant} {tone}" for variant, tone in sorted(asked.items()))
+    return (
+        f"theme.apps.{name}: render_with: matugen renders matugen's own colours, so it stays "
+        f"full instead of {named}; theme.apps.{name}.tone: full silences this"
     )
 
 

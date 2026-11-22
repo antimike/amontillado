@@ -16,7 +16,9 @@ All notable changes to amontillado are documented here. The format follows
   `theme.apps.<app>.tone`, per run `amo theme apply --tone VARIANT=TONE`. A palette from a
   picture is toned at apply time (the profile's `palette.yaml` stays full); templates see
   `{{scheme-tone}}`, reload commands `AMO_TONE`, and `theme.yaml` records each app's tone.
-  A preset palette is applied as it is unless its file sets `tone: transform`.
+  A preset palette is applied as it is unless its file sets `tone: transform`. An app with
+  `render_with: matugen` stays full (matugen renders its own colours), with a warning from
+  `amo config check` and `amo theme apply` that `theme.apps.<app>.tone: full` silences.
 
 ## [0.10.0] - 2026-11-21
 

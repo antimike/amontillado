@@ -138,6 +138,26 @@ def _check(home: Path, text: str) -> None:
     main(["config", "check", str(path)])
 
 
+def test_config_check_warns_when_matugen_would_be_toned(
+    home: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    template = home / "zed.json"
+    template.write_text("{{colors.primary.default.hex}}\n")
+    app = (
+        f"{{source: path, path: {template}, format: matugen, output: zed.json, "
+        "render_with: matugen}"
+    )
+    _check(home, f"theme:\n  tone: {{dark: dim}}\n  apps:\n    zed: {app}\n")
+    assert (
+        "theme.apps.zed: render_with: matugen renders matugen's own colours, so it stays full "
+        "instead of dark dim; theme.apps.zed.tone: full silences this" in caplog.text
+    )
+    caplog.clear()
+    silenced = app.replace("}", ", tone: full}")
+    _check(home, f"theme:\n  tone: {{dark: dim}}\n  apps:\n    zed: {silenced}\n")
+    assert "render_with: matugen renders" not in caplog.text
+
+
 def test_config_check_passes_a_good_config(home: Path, caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.INFO):
         _check(home, "theme:\n  apps:\n    kitty: {}\n    nvim: {}\n")

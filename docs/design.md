@@ -2049,7 +2049,9 @@ Agreed with MH, 2026-11-21:
    palette, decision 2 of the theme engine). No CLI flag. An app with `render_with: matugen`,
    whose colours are matugen's own (its `--contrast` does not dim the background, "Tone: prior
    art"), gets `full` with a warning from `amo config check` and `amo theme apply`;
-   `apps.<app>.tone: full` silences it. Every other app, `libadwaita` and `libadwaita-vars`
+   `apps.<app>.tone: full` silences it (built in amo-k79.7: a warning, never a failing problem;
+   it names the variants asked for, from `theme.tone` and at apply time `--tone`, and apply
+   warns only for a palette that takes a tone). Every other app, `libadwaita` and `libadwaita-vars`
    included, renders from the toned palette.
 4. **The toned variant is checked with the same pairs and minimums, one exception.** Under
    `dim`, blue serves as a background instead of as text: `base05` on `base0D` at 3:1

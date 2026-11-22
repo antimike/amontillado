@@ -53,6 +53,7 @@ from amontillado.config import (
     commands,
     config_path,
     load_config,
+    matugen_tone_warning,
     shell_status,
     shellcheck,
     syntax_error,
@@ -2222,6 +2223,10 @@ def cmd_config_check(args: argparse.Namespace) -> None:
         config_logger.removeHandler(collect)
     problems = check_apps(config) + _check_commands(config, shellcheck_too=args.shellcheck)
     problems += _check_on_change(config)
+    for name, app in config.theme.apps.items():
+        warning = matugen_tone_warning(name, app, config.theme.tone)
+        if warning is not None:
+            logger.warning("%s", warning)
     for problem in problems:
         logger.error("%s", problem)
     count = len(problems) + len(collect.messages)
