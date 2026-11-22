@@ -2041,6 +2041,7 @@ Agreed with MH, 2026-11-21:
 ## Light variants and fixed colours (v0.10)
 
 **Status: agreed with MH 2026-11-21 (amo-7a0)**, from kitty windows of 3qz176 side by side.
+For users: [terminal-theming.md](terminal-theming.md).
 
 A palette sets ANSI colours 0-15, which every terminal tool's 16-colour output follows. Tools
 that name a 256-colour slot (`38;5;252`) or a truecolour value get xterm's fixed table, made for
