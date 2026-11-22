@@ -556,3 +556,33 @@ def test_dim_keeps_blue_as_a_background_when_adjusting() -> None:
     assert adjusted.base24["base0D"] == made.base24["base0D"]
     assert "base0D" not in adjusted.adjusted
     assert toned_palette(palette, "dark", "full", "adjust") is palette
+
+
+def test_an_apps_own_tone_applies_without_a_global_one(tmp_path: Path) -> None:
+    config = _config(tmp_path, kitty=AppConfig(tone={"dark": "dim"}))
+    built = plan(config, _picture_palette(), profile="default", variant="dark", contrast="off")
+    assert built.rendered[0].record["tone"] == "dim"
+    assert built.tone == "full"
+
+
+def test_a_preset_with_tone_transform_is_toned(tmp_path: Path) -> None:
+    config = _config(tmp_path, kitty=AppConfig())
+    config = replace(config, theme=replace(config.theme, tone={"dark": "dim"}))
+    preset = replace(_palette(), tone_transform=True)
+    built = plan(config, preset, profile="default", variant="dark", contrast="off")
+    assert built.rendered[0].record["tone"] == "dim" and built.tone == "dim"
+
+
+def test_a_preset_says_once_that_it_takes_no_tone(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = _config(tmp_path, kitty=AppConfig(), nvim=AppConfig())
+    config = replace(config, theme=replace(config.theme, tone={"dark": "dim"}))
+    with caplog.at_level(logging.INFO):
+        plan(config, _palette(), profile="default", variant="dark", contrast="off")
+    assert caplog.text.count("palette p is a preset: applied as it is") == 1
+    caplog.clear()
+    config = replace(config, theme=replace(config.theme, tone={}))
+    with caplog.at_level(logging.INFO):
+        plan(config, _palette(), profile="default", variant="dark", contrast="off")
+    assert "is a preset" not in caplog.text

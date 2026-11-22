@@ -754,6 +754,7 @@ source:                         # informational
   generator: matugen 4.2.0
   hues: amontillado             # who assigned base08-base0F ("Generators")
   generated: 2026-10-29T18:00:00+00:00
+tone: transform                 # optional (v0.11): a preset opts in to tone ("Tone: decisions" 3)
 variants:
   dark:
     base24:                     # base00-base17, "#rrggbb"
@@ -2041,7 +2042,9 @@ Agreed with MH, 2026-11-21:
    `theme.yaml` records each app's tone.
 3. **Palettes from pictures take a tone; presets opt in; matugen cannot.** A palette from a
    picture is toned. A preset (or a palette from `--from-scheme`) is applied as it is, with
-   one info line, unless its file sets `tone: transform`: a scheme is a chosen look, and
+   one info line, unless its file sets `tone: transform` (built in amo-k79.6: the key's only
+   value, kept in the profile's `palette.yaml`; the info line comes once per apply, only when a
+   tone other than `full` was asked for): a scheme is a chosen look, and
    families such as gruvbox ship their own soft scheme (as amontillado never inverts a
    palette, decision 2 of the theme engine). No CLI flag. An app with `render_with: matugen`,
    whose colours are matugen's own (its `--contrast` does not dim the background, "Tone: prior

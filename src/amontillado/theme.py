@@ -257,12 +257,23 @@ def plan(
     if by_matugen:
         matugen_apps = render_with_matugen(by_matugen, palette, variant, picture)
         from_matugen = {item.app: item for item in matugen_apps}
-    tones = {**theme.tone, **(tone or {})} if takes_tone(palette) else {}
+    tones = {**theme.tone, **(tone or {})}
+    toning = takes_tone(palette)
+    if not toning and any(
+        value != FULL
+        for mapping in (tones, *(app.tone for app in apps_config.values()))
+        for value in mapping.values()
+    ):
+        logger.info(
+            "palette %s is a preset: applied as it is, in no tone (tone: transform in its file "
+            "tones it)",
+            palette.name,
+        )
     cache: dict[tuple[str, str], Palette] = {}
 
     def render(name: str, app: AppConfig) -> Rendered:
         app_variant = choose_variant(palette, app.variant or variant)
-        app_tone = {**tones, **app.tone}.get(app_variant, FULL) if tones else FULL
+        app_tone = {**tones, **app.tone}.get(app_variant, FULL) if toning else FULL
         if (app_variant, app_tone) not in cache:
             cache[app_variant, app_tone] = toned_palette(palette, app_variant, app_tone, contrast)
         toned_ = cache[app_variant, app_tone]
@@ -279,7 +290,14 @@ def plan(
         wallpaper = None  # the copy keeps its link
     resolved = choose_variant(palette, variant)
     return Plan(
-        profile, palette, rendered, apps, copy_from, wallpaper, resolved, tones.get(resolved, FULL)
+        profile,
+        palette,
+        rendered,
+        apps,
+        copy_from,
+        wallpaper,
+        resolved,
+        tones.get(resolved, FULL) if toning else FULL,
     )
 
 
