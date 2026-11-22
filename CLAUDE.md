@@ -40,8 +40,6 @@ remote: never add one pointing at this repo. bd-track's daily cleanup timer cove
 
 The current epic's prompt (replace it when an epic closes):
 
-> Next (no epic yet): GTK3 live theming is merged on main, unreleased (amo-inx template fix,
-> amo-lfk `amo hook gtk3-theme`, amo-itr docs/gtk-theming.md; chezmoi reply ticket filed and
-> waiting on a tag). First ask MH about releasing it (v0.12.0: a new command) and pushing.
-> amo-yyu (review dim's blue, D3) is due after 1-2 weeks of MH using dim (from about
+> Next (no epic yet): v0.12.0 shipped GTK3 live theming (amo-inx, amo-lfk `amo hook
+> gtk3-theme`, amo-itr docs/gtk-theming.md); chezmoi has a ticket to pin it. amo-yyu (review dim's blue, D3) is due after 1-2 weeks of MH using dim (from about
 > 2026-12-05). Outside: amo-wn0, amo-mdi, amo-tyy, amo-dvv (P4, design open).
