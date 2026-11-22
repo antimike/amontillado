@@ -3,6 +3,8 @@
 How to keep the desktop's dark/light colour scheme in step with the variant amontillado
 applies, with a reload command and its `AMO_VARIANT` variable. amontillado never sets the
 scheme itself; this page is about the one line you add to your config if you want it to follow.
+The whole GTK setup (GTK3 live under adw-gtk3, GTK4 through `libadwaita-vars`) is in
+[gtk-theming.md](gtk-theming.md).
 
 ## Why a GTK theme needs it
 
@@ -86,7 +88,9 @@ for a preset palette (design.md, "Tone: decisions"). The colour scheme stays bin
 hook keeps using `AMO_VARIANT`.
 
 Put the hook on the libadwaita app, so the scheme follows the variant of the file GTK actually
-reads, even when that app has its own `variant`. `amo theme apply --dry-run` prints the commands
+reads, even when that app has its own `variant`. With GTK3 live theming, whose
+`amo hook gtk3-theme` is the libadwaita app's reload, put it on the `libadwaita-vars` app instead
+([gtk-theming.md](gtk-theming.md)). `amo theme apply --dry-run` prints the commands
 with their variables, so you can check one before it runs:
 
 ```text

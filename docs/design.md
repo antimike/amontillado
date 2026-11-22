@@ -1192,6 +1192,15 @@ overview pair 4.5:1, and on every surface the active toggle 1.15:1 against the t
 Adwaita's own on its white view) with its text at 4.5:1, on gruvbox after the contrast check.
 Checked live (`tools/libadwaita-live-test.sh`): screenshots with gruvbox and Lumina Polaire
 (2026-11-06), and MH's visual check with Catppuccin Mocha and Latte (2026-11-07).
+GTK3 apps follow live through `amo hook gtk3-theme` (amo-lfk, decision 12 under "Theme engine:
+decisions"), the `libadwaita` app's reload: it sets `org.gnome.desktop.interface gtk-theme` to
+`amontillado-$AMO_VARIANT`, through `Adwaita` when the value is already set (an unchanged value
+notifies no one), and writes that theme's `gtk-3.0/gtk.css` under `$XDG_DATA_HOME/themes` when
+missing, never over an existing one: an `@import` of adw-gtk3 (`adw-gtk3-dark` for dark, found
+under `$XDG_DATA_HOME` or `$XDG_DATA_DIRS`), then of `<cache>/current/libadwaita.css`, both as
+absolute `file://` URLs (a relative one resolves against the theme's path; `current` so a reload
+reads the swapped-in profile). It exits 1 without touching `gtk-theme` when `gsettings` or
+adw-gtk3 is missing. The user setup, GTK3 and GTK4 together: [gtk-theming.md](gtk-theming.md).
 Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose parser rejects
 `_` (rofi 2.0): there roles are hyphenated (`on-accent`). The hyprland and hyprlock colours are
 `rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);
@@ -1497,6 +1506,16 @@ Agreed with MH, 2026-10-30:
     generator. `hues: generator` keeps the generator's own colours as an option, a palette-level
     key beside `theme.generator` rather than an app: it changes the palette every app gets.
     matugen's `blend` harmonization was rejected (neighbouring hues collapse). wallust stays.
+12. **amontillado ships the GTK3 live reload** (`amo hook gtk3-theme`; MH, 2026-11-21, from a
+    dotfiles request to document the setup): a helper, not only docs, so dotfiles drop their own
+    script. MH confirmed before the build: it sits under `amo hook` (whose description now
+    covers reload commands as well as `on_change`), and it **writes the two theme
+    directories' `gtk.css` when missing** rather than only checking them. Prior art, each failing
+    a requirement: adw-gtk3 alone (fixed colours; it is the base the theme imports), wpgtk (its
+    own pywal pipeline, not amontillado's palette), base16-gtk-flatcolor (hand-patched, legacy),
+    Gradience (archived 2024), Themix/oomox (a sassc rebuild per apply), a user
+    `gtk-3.0/gtk.css` (read at app start: not live). Machine-specific setup (installing
+    adw-gtk3, X11's xsettingsd) stays with the user.
 
 ## git-annex libraries (v0.4)
 
