@@ -20,6 +20,11 @@ just libadwaita-live-test --screenshot DIR --hidden  # captured on a headless ou
 just libadwaita-live-test -S SCHEME [-S SCHEME] | -P PICTURE  # another palette than gruvbox
 ```
 
+`amo hook gtk3-theme` is setup-specific: it needs `gsettings`, adw-gtk3 and a session whose GTK3
+apps follow `org.gnome.desktop.interface gtk-theme` (GNOME, or a Wayland compositor with
+xdg-desktop-portal-gtk or gsd-xsettings). Its tests (`tests/test_gtk3.py`) use a fake
+`gsettings` on PATH and never reach a session bus.
+
 ## Coding standards
 
 Tooling enforces what it can (ruff's rule set and line length are in `pyproject.toml`); the rest
