@@ -181,11 +181,11 @@ def _move(colour: str, other: str, minimum: float) -> str | None:
     away = 1.0 if lightness >= other_lightness else 0.0
     for start, end in ((lightness, away), (other_lightness, 1.0 - away)):
         if contrast_ratio(oklch_to_hex(end, chroma, hue), other) >= minimum:
-            return _nearest_passing(start, end, chroma, hue, other, minimum)
+            return nearest_passing(start, end, chroma, hue, other, minimum)
     return None
 
 
-def _nearest_passing(
+def nearest_passing(
     failing: float, passing: float, chroma: float, hue: float, other: str, minimum: float
 ) -> str:
     """Bisect on lightness between `failing` and `passing` (which passes)."""

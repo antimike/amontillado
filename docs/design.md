@@ -2010,7 +2010,13 @@ Agreed with MH, 2026-11-21:
      80 % of the way down to 4.7 (muted, as everforest); blue (`base0D`) at 3:1 under `base05`
      (decision 4).
    - In the build, retune the ramp so that `base04` on `base01` passes without the adjustment
-     both tones needed.
+     both tones needed. **Built (amo-k79.1):** `base04` at tone 41 for soft (4.69:1 over the 13
+     pictures) and 65 for dim (4.57-4.63:1), the smallest steps that pass. The ramp's hue and
+     chroma for dim are the full variant's `base02`'s, so the transform needs only the palette
+     file (any generator, or a preset). Each accent keeps its own hue and chroma (not the
+     named hues'), so `hues: generator` palettes and presets tone the same way; `accent` and
+     `secondary` are toned like the accents, the other roles derived. Under dim, bright blue
+     `base16` is derived from blue before blue is fitted as a background, so it stays text.
 2. **Set per variant, globally, per app and per run.** `theme.tone: {light: soft, dark: dim}`
    (each key optional, default `full`); `apps.<app>.tone` with the same shape, winning over
    the global one as `apps.<app>.variant` does; `--tone VARIANT=TONE` on `amo theme apply`
