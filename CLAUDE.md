@@ -5,6 +5,13 @@ A local wallpaper library (Python, uv, pipx). Read [README.md](README.md) for th
 [CONTRIBUTING.md](CONTRIBUTING.md) holds the coding standards, commit and release rules, and
 is the source of truth for them in this repo.
 
+**Role (MH 2026-11-22):** exploratory support for MH's theming work in the dotfiles. MH tries an
+idea live and then keeps or drops it, so features MH approves are built in full and quickly.
+Extras ship marked *experimental* (`--help`, CHANGELOG, docs), with a bead to keep or remove
+each after use. The D81 gates still run, as input to MH's decision rather than a veto.
+Infrastructure nobody asked for still gets pushback. Publishing it as a portfolio piece is a
+later goal.
+
 - **Public repository.** No secrets, API keys, client or employer names. gitleaks runs as a
   pre-commit hook; on MH's machine also run `~/.local/share/chezmoi/tools/public-scan/public-scan`
   before each commit.
@@ -40,8 +47,9 @@ remote: never add one pointing at this repo. bd-track's daily cleanup timer cove
 
 The current epic's prompt (replace it when an epic closes):
 
-> Next: design amo-0k6 (saved sets: the whole look, pictures by record id + embedded palette;
-> MH's decisions are on the bead), under epic amo-wn0; prior-art entry first, `/project-review`
-> before acceptance; amo-abc stays parked. Small fix any time: amo-0jw (fetch indexes records
-> without their name; workaround `amo index`), a v0.12.1 candidate. amo-yyu (review dim's blue, D3) is due after 1-2 weeks of MH using dim (from about
-> 2026-12-05). Outside: amo-wn0, amo-mdi, amo-tyy, amo-dvv (P4, design open).
+> Next: build amo-0k6 (saved looks, accepted in full 2026-11-22: docs/design.md "Saved looks"),
+> beads amo-0k6.1-.7 in dependency order (`bd ready`; Opus for .1 and .4), extras marked
+> experimental; amo-0k6.8 evaluates them after MH's use. Fix amo-0jw (fetch indexes records
+> without their name) first. amo-n0o (hand-changed record ids) is a v0.12.x candidate. amo-yyu
+> (review dim's blue, D3) is due after 1-2 weeks of MH using dim (from about 2026-12-05).
+> amo-abc stays parked. Outside: amo-mdi, amo-tyy, amo-dvv (P4, design open).
