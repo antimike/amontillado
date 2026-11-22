@@ -219,10 +219,10 @@ theme:
 
     # A command run last after each apply, by sh -c with AMO_WALLPAPER (the picture; unset, and the
     # command skipped if it names it, when the theme has none), AMO_PROFILE, AMO_DIR (the profile's
-    # directory) and AMO_VARIANT (dark or light: the variant of an app without its own) in its
-    # environment. Quote them ("$AMO_WALLPAPER"). Setting the wallpaper stays your command:
-    # amontillado only knows which picture belongs to the theme. The example is hyprpaper's (>=
-    # 0.8): no monitor before the comma sets every monitor.
+    # directory), AMO_VARIANT (dark or light: the variant of an app without its own) and AMO_TONE
+    # (its tone: full, soft or dim) in its environment. Quote them ("$AMO_WALLPAPER"). Setting the
+    # wallpaper stays your command: amontillado only knows which picture belongs to the theme. The
+    # example is hyprpaper's (>= 0.8): no monitor before the comma sets every monitor.
     # reload: 'hyprctl hyprpaper wallpaper ",$AMO_WALLPAPER,cover"'
 
   # The apps to theme, one entry per app by name; each renders one file into the profile, which the
@@ -246,8 +246,8 @@ theme:
     #   path: For source path: your template file. Not resolved, so a symlink you swap is followed.
     #   output: The file name in the profile directory. Default: the registry's; required for url
     #       and path.
-    #   reload: A command run after the swap, as theme.wallpaper.reload, but AMO_VARIANT is this
-    #       app's. A failure warns: the app may not be running.
+    #   reload: A command run after the swap, as theme.wallpaper.reload, but AMO_VARIANT and
+    #       AMO_TONE are this app's. A failure warns: the app may not be running.
     #   variant: This app's variant, over theme.variant and --variant.
     #   tone: This app's tone per variant, over --tone and theme.tone, key by key ({light: full}
     #       leaves its dark to them); full for both. An app with render_with: matugen gets full, and
