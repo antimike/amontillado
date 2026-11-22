@@ -16,9 +16,17 @@ All notable changes to amontillado are documented here. The format follows
 - `amo list --format rofi` gives each row rofi's display option
   (`\x1fdisplay\x1f<label>`): rofi shows the record's directory name (the file name when the
   record has several files) instead of the full path, and still returns the path.
+- Built-in template `kitty-fixed`: the `kitty` template without `palette_generate`, for kitty
+  before 0.47 or to keep xterm's fixed colours 22-255 (`apps.kitty.template: kitty-fixed`).
+- `amo palette --check` reports, per variant, how many of xterm's fixed colours 16-255 fall below
+  4.5:1 on `base00`, and the ratio of grey 252. A report only: it never fails the check.
 
 ### Changed
 
+- The built-in `kitty` template sets `palette_generate semantic` (kitty 0.47): kitty derives
+  colours 22-255 from the palette, so tools using the 256-colour cube or grey ramp stay readable
+  under a light variant (grey 252 on 3qz176's light background: 1.5:1 before, 10.9:1 after).
+  Older kitty warns about the key and ignores it; `kitty-fixed` leaves it out.
 - [docs/version-control.md](docs/version-control.md), "One tested encrypted setup": what a
   rehearsal with Curve25519 keys found: publish the gcrypt participants (hidden recipients lock
   out all but one machine), sign with a participant's key per clone, push with `git annex pull`,

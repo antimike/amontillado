@@ -878,7 +878,8 @@ the colour that passed; a role a palette file sets apart is a foreground like an
 middle lightness, which neither black nor white reaches) stays as it is, with a warning. `--no-adjust` turns `adjust` into `report`; it does not turn checking back on under
 `off`. `amo palette --check FILE` prints the accent metrics (below) and each failing pair
 (`dark: base03 on base00: 2.52, needs 3`) on stdout and exits non-zero if there are any; it
-never adjusts. (A first run on gruvbox,
+never adjusts. It also reports, per variant and never as a failure, how xterm's fixed colours
+16-255 read on `base00` ("Light variants and fixed colours"). (A first run on gruvbox,
 2026-10-30: dark needed five moves, light twelve, mostly its accents on `base01`; the light
 variant's brightened `base12`-`base17` came back down to about their base colours.)
 **Bright step, calibrated** (amo-50c.4, MH 2026-11-13): over the 13 pictures of MH's library
@@ -1078,7 +1079,8 @@ has the user clone and patch by hand to import them; nothing for libadwaita: the
 
 **Built-in templates** (variables-only, every role included, initial set from the chezmoi plan's
 app table): `kitty` (`color0`-`color15`, background, foreground, cursor, selection; an `include`
-file), `gtk` (`@define-color` for every key: imported by waybar, swaync and wlogout styles, and by
+file; with `palette_generate semantic`, so kitty derives colours 22-255 from them: "Light variants
+and fixed colours") and `kitty-fixed` (the same without it, for kitty before 0.47), `gtk` (`@define-color` for every key: imported by waybar, swaync and wlogout styles, and by
 GTK3 `gtk.css` and libadwaita's `gtk-4.0/gtk.css`), `rofi` (a `* { ... }` block of variables),
 `hyprland` (a Lua table, D62), `hyprlock` (hyprlang `$variables`), `sway` (`set $variable`),
 `dunst` (a `dunstrc.d` drop-in with the urgency colours: dunst has no variables, so this one is a
@@ -1185,7 +1187,8 @@ Variables keep the palette's names (`base0A`, `on_accent`) except in rofi, whose
 `rrggbb` without `#`, so a config can add alpha (`"rgba(" .. c.accent .. "ee)"`, `rgb($accent)`);
 the others are `#rrggbb`. kitty's file sets `color0`-`color21` (the ANSI table under "Formats and
 views", then base16-shell's extras `base09`, `base0F`, `base01`, `base02`, `base04`, `base06`),
-the tab, border, selection and URL colours. Headers name the palette by its slug, never its
+the tab, border, selection and URL colours, and `palette_generate semantic` (`kitty-fixed`: not).
+Headers name the palette by its slug, never its
 name, so no quote in a name can break a Lua, shell or JSON file. Default output files: `kitty.conf`,
 `colors.css`, `colors.rasi`, `hyprland.lua`, `hyprlock.conf`, `sway`, `dunst.conf`,
 `libadwaita.css`, `libadwaita-vars.css`, `palette.lua`, `colors.sh`, `palette.json`.
@@ -2034,6 +2037,56 @@ Agreed with MH, 2026-11-21:
 5. **Docs: the comparison table above now; swatches with the build.** The build adds a
    swatch sheet of one picture in all four (light full and soft, dark full and dim) to
    `docs/images/`, made by a `just` recipe from the code rather than by hand.
+
+## Light variants and fixed colours (v0.10)
+
+**Status: agreed with MH 2026-11-21 (amo-7a0)**, from kitty windows of 3qz176 side by side.
+
+A palette sets ANSI colours 0-15, which every terminal tool's 16-colour output follows. Tools
+that name a 256-colour slot (`38;5;252`) or a truecolour value get xterm's fixed table, made for
+a dark background: under a light variant they are unreadable (`bd show` draws notes in 252,
+`#d0d0d0`, at 1.5:1 on 3qz176's `#f8f9fb`; trapd00r's `LS_COLORS` names `*.md` 184 at 1.5:1).
+
+**Prior art.** kitty 0.47 has `palette_generate` (`fixed`, the default; `semantic`; `legacy`):
+it fills every slot from 16 to 255 that the config leaves unset from colours 0-15, background
+and foreground, by jake-stewart's algorithm
+(<https://gist.github.com/jake-stewart/0a8ea46159a7da2c808e5be2177e1783>). `semantic` puts 232
+near the background and 255 near the foreground, and maps the cube the same way: under light,
+what a tool meant as "dim but readable on dark" stays readable. Tested on kitty 0.47.1
+(2026-11-21): it keeps colours set explicitly (amo's 16-21), works from an included file, and
+a SIGUSR1 reload switches it both ways. foot has `0`-`255` keys but no generator. So the plan in
+the bead (amo computes a grey ramp 232-255 per variant) was dropped: it would duplicate kitty's
+feature and cover the ramp only.
+
+Measured on 3qz176 (slots below 4.5:1 on the background, from kitty's own colour table):
+
+| | cube 22-231 | ramp 232-255 | 252 | 245 | 184 |
+|---|---|---|---|---|---|
+| light, `fixed` | 174/210 | 13/24 | 1.5 | 3.3 | 1.5 |
+| light, `semantic` | 61/210 | 14/24 | 10.9 | 4.5 | 5.0 |
+| dark, `fixed` | 47/210 | 12/24 | 12.3 | 5.5 | 12.3 |
+| dark, `semantic` | 33/210 | 12/24 | 11.3 | 5.1 | 10.0 |
+
+The cost of `semantic`: the cube's darkest steps (22-24, 52-54, ...) now sit near the
+background, as 232-240 do, so a tool using them as dark-on-light text gets faint text.
+
+Decisions:
+
+1. **The built-in `kitty` template sets `palette_generate semantic` in both variants** (MH
+   preferred dark semantic slightly, tinted toward the palette). kitty before 0.47 warns about
+   the unknown key and ignores it.
+2. **`kitty-fixed`** is the same template without it (`apps.kitty.template: kitty-fixed`): xterm's
+   colours 22-255, or kitty before 0.47 without the warning. A test keeps the two files equal
+   but for that line.
+3. **A report, not a check.** `amo palette --check` prints, per variant, how many of xterm's
+   fixed colours fall below 4.5:1 on `base00` and the ratio of 252 (`light: xterm's fixed
+   colours below 4.5:1 on base00: cube 174/216, grey ramp 13/24 (252 at 1.5:1)`). It never
+   fails, and `amo theme apply` does not warn: amo cannot see whether the terminal generates its
+   palette, and the answer is the same for every light background.
+4. **Not fixable by a theme:** truecolour output (Claude Code's diff context `#f8f8f2` at
+   1.05:1 under light) needs the tool's own setting, e.g. an ANSI-only theme. A tool's 256-colour
+   config (`LS_COLORS` with cube numbers) is better replaced by one built from the palette
+   (`vivid`). Lightness-mapping the cube in amo (amo-yol) is left open: `semantic` does it in kitty.
 
 ## Testing
 
