@@ -108,6 +108,47 @@ def test_palette_check_reports_accents_without_failing(
     assert capsys.readouterr().out.splitlines()[0] == "dark: hues 5/6, distinct 0.8"
 
 
+def test_palette_check_tone_checks_the_toned_variant(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _palette_file(tmp_path / "p.yaml", "#707070")
+    main(["palette", "--check", str(path), "--tone", "dark=dim"])
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("dark (dim): hues 6/6, distinct ")
+    assert lines[1].startswith("dark (dim): xterm's fixed colours")
+    # dim's blue is a background: no blue text pair fails.
+    assert len(lines) == 2
+
+
+def test_palette_check_tone_full_is_the_plain_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _palette_file(tmp_path / "p.yaml", "#707070")
+    main(["palette", "--check", str(path), "--tone", "dark=full"])
+    assert capsys.readouterr().out.splitlines()[0] == "dark: hues 6/6, distinct 13.3"
+
+
+@pytest.mark.parametrize("value", ["dark=soft", "light=dim", "dusk=dim", "dark"])
+def test_palette_tone_refuses_what_a_variant_does_not_take(
+    tmp_path: Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _palette_file(tmp_path / "p.yaml", "#707070")
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", "--check", str(path), "--tone", value])
+    assert exc.value.code == 2
+    assert "--tone" in capsys.readouterr().err
+
+
+def test_palette_tone_needs_the_variant_and_check(tmp_path: Path) -> None:
+    path = _palette_file(tmp_path / "p.yaml", "#707070")
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", "--check", str(path), "--tone", "light=soft"])
+    assert exc.value.code == f"amontillado: --tone: {path} has no light variant"
+    with pytest.raises(SystemExit) as exc:
+        main(["palette", "--from-scheme", str(path), "--tone", "dark=dim"])
+    assert str(exc.value.code).startswith("amontillado: --tone needs --check")
+
+
 def _scheme_file(path: Path, base03: str) -> Path:
     palette = yamlio.load(_palette_file(path, base03).read_text())
     colours = palette["variants"]["dark"]["base24"]

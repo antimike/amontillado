@@ -1985,6 +1985,15 @@ accents score distinct 4.5, hues 5/6. MH chose L2 and D3. Over the 13 pictures:
 | soft (L2) | `#f1e7d7` | 9.4 | 4.7-8.1 | 5.2-5.3 / 4.8-4.9 | 1.8 | 6/6 | 8.5-9.2 | `base04` |
 | dim (D3) | `#2a2d2e` | 8.9-9.0 | 6.0-7.9 (blue 2.6-2.7) | 3.0 / 2.6-2.7 | 3.0 | 6/6 | 6.2-7.5 | `base04`, `base0D` |
 
+**Built (amo-k79.3, 2026-11-21)**, the same 13 palettes through `amo palette --check --tone`
+(accents: `base08`-`base0E` and the brights on `base01`, blue apart). Every pair passes with no
+adjustment; MH confirmed the `base04` retune on kitty windows of 3qz176:
+
+| 13 pictures | base00 | fg/bg | base04/base01 | accents on base01 | blue text on base00 / base01 | base05 on blue | hues | distinct | adjusted |
+|---|---|---|---|---|---|---|---|---|---|
+| soft | `#f1e7d7` | 9.4 | 4.69 | 4.70-8.07 | 5.24-5.27 / 4.81-4.85 | 1.8 | 6/6 | 8.5-9.3 | none |
+| dim | `#2a2d2e` | 8.9-9.0 | 4.57-4.63 | 5.08-7.97 | 2.94-2.99 / 2.61-2.65 | 3.0 | 6/6 | 6.1-7.4 | none |
+
 **Fixed colours are not tone.** The first round's light windows had yellow and green file
 names that were hard to read in every tone. They came from MH's `LS_COLORS`
 (trapd00r/LS_COLORS, `*.md=38;5;184`, read by lsd as well), which names 256-colour cube
