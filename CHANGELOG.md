@@ -23,6 +23,10 @@ All notable changes to amontillado are documented here. The format follows
 
 ### Changed
 
+- New page [docs/terminal-theming.md](docs/terminal-theming.md): which terminal colours follow
+  the palette and which do not, `LS_COLORS` from the `vivid` template, a prompt hook that
+  picks up a new theme in running shells, powerlevel10k and fast-syntax-highlighting reloads,
+  and keeping the terminal dark under a light desktop.
 - The built-in `kitty` template sets `palette_generate semantic` (kitty 0.47): kitty derives
   colours 22-255 from the palette, so tools using the 256-colour cube or grey ramp stay readable
   under a light variant (grey 252 on 3qz176's light background: 1.5:1 before, 10.9:1 after).

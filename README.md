@@ -125,6 +125,8 @@ you configure, never stored by the tool.
   on_change hook, merging info files, an encrypted setup
 - [docs/colour-scheme-hooks.md](docs/colour-scheme-hooks.md): keeping the desktop's dark/light
   scheme in step with the theme (libadwaita needs it)
+- [docs/terminal-theming.md](docs/terminal-theming.md): terminals and shell tools under a
+  palette: fixed colours, LS_COLORS with vivid, prompt hooks, p10k and fast-syntax-highlighting
 - [CONTRIBUTING.md](CONTRIBUTING.md): development setup, coding standards, commits and releases
 - [CHANGELOG.md](CHANGELOG.md)
 
