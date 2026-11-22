@@ -4,7 +4,9 @@ docs/design.md, "Index and usage". The `records` and `files` tables hold nothing
 an info file (or implied by where a record lives), so `rebuild` drops and recreates them: a
 schema change to them needs no migration. The `usage` table, keyed by record id, cannot be
 rebuilt and is never dropped, except once when upgrading from schema 1, whose usage rows were
-keyed by content hash. Each file's size and mtime are kept beside its hash, so that the next
+keyed by content hash; nor are the state tables of "Saved looks" (schema 10): `current_group`
+(the last `amo group --apply`), `history` (each activated `amo theme apply`) and `theme_usage`
+(per saved theme). Each file's size and mtime are kept beside its hash, so that the next
 `amo index` need not hash it again (`known_hashes`). Each record's info file is also kept whole,
 as JSON (`records.info`), and the `pictures` view flattens what `amo list --where` filters on
 (`matching_records`). The `directories` table is the snapshot of the record directories and
@@ -28,7 +30,7 @@ from amontillado.record import ID_PATTERN, sha256_file
 
 logger = getLogger(__name__)
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 # `->` and `->>` came in SQLite 3.38; json_extract works before.
 JSON_ARROWS = (3, 38, 0)
 
@@ -105,6 +107,46 @@ CREATE TABLE IF NOT EXISTS usage (
 _RECORD_SHOWN = """
 INSERT INTO usage (id, shown_count, last_shown) VALUES (?, 1, ?)
 ON CONFLICT (id) DO UPDATE SET shown_count = shown_count + 1, last_shown = excluded.last_shown
+"""
+# The state of "Saved looks" (schema 10): like usage, never dropped by a rebuild.
+# The last `amo group --apply`, one row per monitor, the primary at position 0.
+_CREATE_CURRENT_GROUP = """
+CREATE TABLE IF NOT EXISTS current_group (
+    position INTEGER PRIMARY KEY,
+    monitor TEXT NOT NULL,
+    aspect TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    path TEXT NOT NULL
+)
+"""
+# One row per activated `amo theme apply`; AUTOINCREMENT, so a number is never reused, even
+# after the oldest rows are dropped.
+_CREATE_HISTORY = """
+CREATE TABLE IF NOT EXISTS history (
+    number INTEGER PRIMARY KEY AUTOINCREMENT,
+    applied TEXT NOT NULL,
+    theme TEXT,
+    palette TEXT NOT NULL,
+    variant TEXT NOT NULL,
+    tone TEXT NOT NULL,
+    monitors TEXT NOT NULL
+)
+"""
+# Per saved theme: its id, or its path when it has none.
+_CREATE_THEME_USAGE = """
+CREATE TABLE IF NOT EXISTS theme_usage (
+    theme TEXT PRIMARY KEY,
+    applied_count INTEGER NOT NULL,
+    last_applied TEXT NOT NULL
+)
+"""
+_THEME_APPLIED = """
+INSERT INTO theme_usage (theme, applied_count, last_applied) VALUES (?, 1, ?)
+ON CONFLICT (theme) DO UPDATE SET
+    applied_count = applied_count + 1, last_applied = excluded.last_applied
+"""
+_TRIM_HISTORY = """
+DELETE FROM history WHERE number NOT IN (SELECT number FROM history ORDER BY number DESC LIMIT ?)
 """
 _INSERT_RECORD = """
 INSERT INTO records VALUES (
@@ -200,6 +242,10 @@ def connect(path: Path) -> sqlite3.Connection:
             _create_tables(conn)
             conn.execute(_CREATE_DIRECTORIES)
         conn.execute(_CREATE_USAGE)
+        # New in schema 10; created empty by an upgrade.
+        conn.execute(_CREATE_CURRENT_GROUP)
+        conn.execute(_CREATE_HISTORY)
+        conn.execute(_CREATE_THEME_USAGE)
         conn.execute(_CREATE_PICTURES)
         # PRAGMA takes no parameters; the value is a constant.
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -643,3 +689,123 @@ def record_shown(conn: sqlite3.Connection, record_id: str, when: datetime | None
     except BaseException:
         conn.execute("ROLLBACK")
         raise
+
+
+@dataclass(frozen=True)
+class GroupMonitor:
+    """One monitor of the current group: its name, its ratio as given (`21:9`), and the
+    record and file set on it."""
+
+    monitor: str
+    aspect: str
+    record_id: str
+    path: Path
+
+
+def current_group(conn: sqlite3.Connection) -> list[GroupMonitor]:
+    """The last `amo group --apply`, the primary first; empty if none is known."""
+    rows = conn.execute(
+        "SELECT monitor, aspect, record_id, path FROM current_group ORDER BY position"
+    )
+    return [
+        GroupMonitor(monitor, aspect, record_id, Path(path))
+        for monitor, aspect, record_id, path in rows
+    ]
+
+
+def set_current_group(conn: sqlite3.Connection, monitors: Iterable[GroupMonitor]) -> None:
+    """Replace the current group with `monitors`, the primary first, in one transaction."""
+    rows = [
+        (position, item.monitor, item.aspect, item.record_id, str(item.path))
+        for position, item in enumerate(monitors)
+    ]
+    conn.execute("BEGIN")
+    try:
+        conn.execute("DELETE FROM current_group")
+        conn.executemany("INSERT INTO current_group VALUES (?, ?, ?, ?, ?)", rows)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+@dataclass(frozen=True)
+class Applied:
+    """One activated `amo theme apply`, as history keeps it."""
+
+    # The palette applied, whole (palette.yaml's text).
+    palette: str
+    # The run's variant and tone per variant, as asked (system and auto unresolved).
+    variant: str
+    tone: dict[str, str]
+    # The pictures, the primary first: dicts with `record` and `file` (a path), and `monitor`
+    # and `aspect` when they came from the current group.
+    monitors: list[dict[str, str]]
+    # The saved theme applied (its id, or its path when it has none); None for a palette made
+    # from a picture, or the profile's own re-rendered.
+    theme: str | None = None
+
+
+@dataclass(frozen=True)
+class HistoryRow:
+    """A history row: its number (never reused) and when it was applied."""
+
+    number: int
+    applied: str
+    entry: Applied
+
+
+def record_applied(
+    conn: sqlite3.Connection, entry: Applied, *, keep: int, when: datetime | None = None
+) -> int | None:
+    """Add `entry` to the history, keeping the newest `keep` rows (0: none), and count the
+    saved theme it names as applied, at `when` (default now, UTC), in one transaction. Returns
+    the new row's number, or None when `keep` is 0."""
+    stamp = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+    number = None
+    conn.execute("BEGIN")
+    try:
+        if keep > 0:
+            cursor = conn.execute(
+                "INSERT INTO history (applied, theme, palette, variant, tone, monitors) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    stamp,
+                    entry.theme,
+                    entry.palette,
+                    entry.variant,
+                    json.dumps(entry.tone),
+                    json.dumps(entry.monitors),
+                ),
+            )
+            number = cursor.lastrowid
+        conn.execute(_TRIM_HISTORY, (keep,))
+        if entry.theme is not None:
+            conn.execute(_THEME_APPLIED, (entry.theme, stamp))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return number
+
+
+def history(conn: sqlite3.Connection) -> list[HistoryRow]:
+    """The history, newest first."""
+    rows = conn.execute(
+        "SELECT number, applied, theme, palette, variant, tone, monitors FROM history "
+        "ORDER BY number DESC"
+    )
+    return [
+        HistoryRow(
+            number,
+            applied,
+            Applied(palette, variant, json.loads(tone), json.loads(monitors), theme),
+        )
+        for number, applied, theme, palette, variant, tone, monitors in rows
+    ]
+
+
+def theme_usage(conn: sqlite3.Connection) -> dict[str, tuple[int, str]]:
+    """Each applied saved theme's `(applied_count, last_applied)`, by id or path."""
+    rows = conn.execute("SELECT theme, applied_count, last_applied FROM theme_usage")
+    return {theme: (count, last) for theme, count, last in rows}

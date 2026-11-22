@@ -315,7 +315,7 @@ cannot be rebuilt):
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
   table (from schema 10, the state tables of "Saved looks" too: `current_group`, `history`,
-  `theme_usage`). The database's `PRAGMA user_version` is its schema version (9); a newer one than the
+  `theme_usage`; an upgrade from schema 9 creates them empty). The database's `PRAGMA user_version` is its schema version (10); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
   thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
   schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`),

@@ -13,18 +13,25 @@ from amontillado.config import Config
 from amontillado.index import (
     NOT_COLUMNS,
     SCHEMA_VERSION,
+    Applied,
+    GroupMonitor,
     IndexDatabaseError,
     LookupFailed,
     QueryError,
     RecordFilter,
     connect,
+    current_group,
     files,
     find_record,
+    history,
     known_hashes,
     matching_records,
     rebuild,
+    record_applied,
     record_shown,
     saved_snapshot,
+    set_current_group,
+    theme_usage,
     usage,
 )
 from amontillado.index import add as add_to_index
@@ -191,6 +198,9 @@ def test_metric_columns_follow_the_dataclass(config: Config) -> None:
 def _as_schema(conn: sqlite3.Connection, version: int) -> None:
     """Make the index look as schema `version` left it: no view, fewer columns."""
     conn.execute("DROP VIEW pictures")
+    if version <= 9:
+        for table in ("current_group", "history", "theme_usage"):
+            conn.execute(f"DROP TABLE {table}")
     if version <= 7:
         conn.execute("DROP TABLE IF EXISTS directories")
     dropped: dict[str, list[str]] = {"records": [], "files": []}
@@ -443,3 +453,81 @@ def test_arrows_on_an_old_sqlite_name_the_version(
     monkeypatch.setattr(sqlite3, "sqlite_version", "3.37.2")
     with pytest.raises(QueryError, match=r"this SQLite is 3\.37\.2; -> and ->> need 3\.38"):
         matching_records(conn, RecordFilter(where="info ->> "))
+
+
+def _group(*names: str) -> list[GroupMonitor]:
+    return [GroupMonitor(name, "16:9", f"{name}-id", Path(f"/w/{name}.jpg")) for name in names]
+
+
+def test_current_group_is_replaced_whole(config: Config) -> None:
+    conn = connect(config.index_path)
+    assert current_group(conn) == []
+    set_current_group(conn, _group("DP-1", "HDMI-A-1"))
+    assert [item.monitor for item in current_group(conn)] == ["DP-1", "HDMI-A-1"]
+    set_current_group(conn, _group("eDP-1"))
+    assert current_group(conn) == _group("eDP-1")
+
+
+def _applied(theme: str | None = None) -> Applied:
+    return Applied("version: 1\n", "system", {"light": "soft", "dark": "full"}, [], theme)
+
+
+def test_history_numbers_are_never_reused(config: Config) -> None:
+    conn = connect(config.index_path)
+    numbers = [record_applied(conn, _applied(), keep=2) for _ in range(3)]
+    assert numbers == [1, 2, 3]
+    assert [row.number for row in history(conn)] == [3, 2]  # newest first, the oldest dropped
+    for _ in range(2):
+        record_applied(conn, _applied(), keep=2)
+    conn.close()
+    # Not even after the newest rows went: a reconnect does not reset the sequence.
+    conn = connect(config.index_path)
+    record_applied(conn, _applied(), keep=0)
+    assert history(conn) == []
+    assert record_applied(conn, _applied(), keep=5) == 6
+
+
+def test_history_keeps_the_whole_entry(config: Config) -> None:
+    conn = connect(config.index_path)
+    monitors = [{"monitor": "DP-1", "aspect": "21:9", "record": "aa", "file": "/w/a.jpg"}]
+    entry = Applied("version: 1\nname: x\n", "auto", {"dark": "dim"}, monitors, "5e0c")
+    record_applied(conn, entry, keep=10, when=datetime(2026, 11, 22, 12, 0, tzinfo=UTC))
+    [row] = history(conn)
+    assert row.applied == "2026-11-22T12:00:00+00:00"
+    assert row.entry == entry
+
+
+def test_theme_usage_counts_saved_themes_whatever_history_keeps(config: Config) -> None:
+    conn = connect(config.index_path)
+    record_applied(conn, _applied("5e0c"), keep=0, when=datetime(2026, 11, 21, tzinfo=UTC))
+    record_applied(conn, _applied("5e0c"), keep=0, when=datetime(2026, 11, 22, tzinfo=UTC))
+    record_applied(conn, _applied(), keep=0)  # a picture's palette: no saved theme
+    assert theme_usage(conn) == {"5e0c": (2, "2026-11-22T00:00:00+00:00")}
+
+
+def test_state_survives_rebuild(config: Config, save_image: SaveImage) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    conn = connect(config.index_path)
+    set_current_group(conn, _group("DP-1"))
+    record_applied(conn, _applied("5e0c"), keep=10)
+    rebuild(conn, heal_library(config).entries)
+    conn.close()
+    conn = connect(config.index_path)
+    assert current_group(conn) == _group("DP-1")
+    assert len(history(conn)) == 1
+    assert list(theme_usage(conn)) == ["5e0c"]
+
+
+def test_schema_9_gains_the_state_tables(config: Config, save_image: SaveImage) -> None:
+    save_image(mark_record(config.library_roots[0] / "r").parent / "a.png")
+    conn = connect(config.index_path)
+    rebuild(conn, heal_library(config).entries)
+    record_shown(conn, "aa")
+    _as_schema(conn, 9)
+    conn.close()
+    conn = connect(config.index_path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert len(files(conn)) == 1
+    assert len(_usage(conn)) == 1
+    assert current_group(conn) == []
+    assert history(conn) == []
