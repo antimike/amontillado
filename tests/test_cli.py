@@ -20,7 +20,7 @@ from rich.console import Console
 
 from amontillado import __version__, cli, yamlio
 from amontillado import library as library_module
-from amontillado.cli import get_cli_arguments, main
+from amontillado.cli import build_parser, get_cli_arguments, main
 from amontillado.index import connect, record_shown, usage
 from amontillado.wallhaven import API, Client
 
@@ -147,6 +147,16 @@ def test_palette_tone_needs_the_variant_and_check(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["palette", "--from-scheme", str(path), "--tone", "dark=dim"])
     assert str(exc.value.code).startswith("amontillado: --tone needs --check")
+
+
+def test_theme_apply_tone_is_repeatable_and_checked(capsys: pytest.CaptureFixture[str]) -> None:
+    args = build_parser().parse_args(
+        ["theme", "apply", "--tone", "light=soft", "--tone", "dark=dim"]
+    )
+    assert args.tone == [("light", "soft"), ("dark", "dim")]
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["theme", "apply", "--tone", "light=dim"])
+    assert "light takes tone full or soft, not dim" in capsys.readouterr().err
 
 
 def _scheme_file(path: Path, base03: str) -> Path:

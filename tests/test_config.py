@@ -228,6 +228,11 @@ def _app(line: str) -> str:
         ("theme: {hues: picture}\n", "theme.hues: 'picture' is not one of amontillado, generator"),
         ("theme: {variant: dusk}\n", "theme.variant"),
         ("theme: {contrast: strict}\n", "theme.contrast"),
+        ("theme: {tone: soft}\n", "theme.tone: 'soft' is not full or a mapping"),
+        ("theme: {tone: {dark: soft}}\n", "theme.tone.dark: 'soft' is not one of full, dim"),
+        ("theme: {tone: {light: dim}}\n", "theme.tone.light: 'dim' is not one of full, soft"),
+        ("theme: {tone: {dusk: dim}}\n", "theme.tone: 'dusk' is not a variant"),
+        (_app("{tone: dim}"), "theme.apps.a.tone: 'dim' is not full or a mapping"),
         ("theme: {wallpaper: swaybg}\n", "theme.wallpaper must be a mapping"),
         ("theme: {wallpaper: {reload: [a, b]}}\n", "theme.wallpaper.reload must be a command"),
         (
@@ -264,6 +269,27 @@ def test_bad_theme(home: Path, text: str, message: str) -> None:
     write_config(home, text)
     with pytest.raises(ConfigError, match=re.escape(message)):
         load_config()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("{light: soft, dark: dim}", {"light": "soft", "dark": "dim"}),
+        ("{dark: dim}", {"dark": "dim"}),
+        ("full", {"light": "full", "dark": "full"}),
+    ],
+)
+def test_tone(home: Path, value: str, expected: dict[str, str]) -> None:
+    write_config(home, f"theme:\n  tone: {value}\n  apps:\n    a: {{tone: {value}}}\n")
+    theme = load_config().theme
+    assert theme.tone == expected
+    assert theme.apps["a"].tone == expected
+
+
+def test_tone_unset_is_empty(home: Path) -> None:
+    write_config(home, _app("{}"))
+    theme = load_config().theme
+    assert theme.tone == {} and theme.apps["a"].tone == {}
 
 
 def test_render_with_matugen_for_a_matugen_path_template(home: Path) -> None:

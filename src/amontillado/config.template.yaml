@@ -200,6 +200,14 @@ theme:
   # nothing is inverted. Default: auto.
   # variant: auto
 
+  # A gentler tone per variant, made from the palette's full variant at apply time: light soft
+  # (cream paper, dark-grey text, about 9:1) and dark dim (charcoal; blue becomes a background
+  # colour under the text, 3:1, rather than text). full, the default, is the palette as made. A
+  # mapping with either key, or full for both. Under variant system or auto each variant keeps its
+  # own. Palettes from pictures are toned; a preset only if its file sets tone: transform. An app's
+  # own tone wins, then --tone. Default: full.
+  # tone: {light: soft, dark: dim}
+
   # What happens to a colour pair below its WCAG contrast minimum: adjust (move the foreground, then
   # the accent as a last resort, in lightness; each change logged and listed under adjusted), report
   # (log the pair, change nothing) or off. adjust keeps text readable at the cost of colours a
@@ -241,6 +249,9 @@ theme:
     #   reload: A command run after the swap, as theme.wallpaper.reload, but AMO_VARIANT is this
     #       app's. A failure warns: the app may not be running.
     #   variant: This app's variant, over theme.variant and --variant.
+    #   tone: This app's tone per variant, over --tone and theme.tone, key by key ({light: full}
+    #       leaves its dark to them); full for both. An app with render_with: matugen gets full, and
+    #       full here silences the warning.
     #   render_with: Who renders a matugen-format template: amontillado or matugen. matugen renders
     #       from the picture with its own colours, not the palette's: the app misses the contrast
     #       adjustments and the named hues, and with a preset palette gets colours of the same

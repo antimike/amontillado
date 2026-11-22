@@ -1019,6 +1019,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=flag_help("theme.variant", "The variant for every app without its own"),
     )
     apply.add_argument(
+        "--tone",
+        type=_tone,
+        action="append",
+        default=[],
+        metavar="VARIANT=TONE",
+        help=flag_help(
+            "theme.tone",
+            "VARIANT's tone for every app without its own for it: light=soft, dark=dim or "
+            "VARIANT=full; repeatable",
+        ),
+    )
+    apply.add_argument(
         "--app",
         action="append",
         default=[],

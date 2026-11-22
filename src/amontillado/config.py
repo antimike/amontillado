@@ -53,6 +53,8 @@ SOURCES = ("builtin", "tinted", "matugen-themes", "pywal", "url", "path")
 FORMATS = ("mustache", "matugen", "pywal")
 GENERATORS = ("matugen", "wallust")
 VARIANT_CHOICES = ("auto", "dark", "light", "system")
+# The tones each variant takes (docs/design.md, "Tone: decisions"); full is the palette as made.
+TONE_CHOICES = {"light": ("full", "soft"), "dark": ("full", "dim")}
 CONTRAST_CHOICES = ("adjust", "report", "off")
 HUES_CHOICES = ("amontillado", "generator")
 RENDERERS = ("amontillado", "matugen")
@@ -78,7 +80,7 @@ OLD_PLACEHOLDERS = {
 # Names in a profile directory that amontillado writes itself.
 RESERVED_OUTPUTS = frozenset({"palette.yaml", "theme.yaml", "wallpaper"})
 _THEME_KEYS = frozenset(
-    {"cache", "profile", "generator", "hues", "variant", "contrast", "wallpaper", "apps"}
+    {"cache", "profile", "generator", "hues", "variant", "tone", "contrast", "wallpaper", "apps"}
 )
 _APP_KEYS = frozenset(
     {
@@ -91,6 +93,7 @@ _APP_KEYS = frozenset(
         "output",
         "reload",
         "variant",
+        "tone",
         "render_with",
     }
 )
@@ -121,6 +124,8 @@ class AppConfig:
     # A command line for `sh -c`, with AMO_WALLPAPER, AMO_PROFILE, AMO_DIR and AMO_VARIANT.
     reload: str | None = None
     variant: str | None = None
+    # Per variant, over --tone and theme.tone; a variant left out falls through to them.
+    tone: dict[str, str] = field(default_factory=dict)
     render_with: str = "amontillado"
 
 
@@ -135,6 +140,8 @@ class ThemeConfig:
     # Who assigns base08-base0F of a picture palette.
     hues: str = "amontillado"
     variant: str = "auto"
+    # Per variant; a variant left out is full.
+    tone: dict[str, str] = field(default_factory=dict)
     contrast: str = "adjust"
     wallpaper_reload: str | None = None
     apps: dict[str, AppConfig] = field(default_factory=dict)
@@ -410,6 +417,7 @@ def _theme(value: object) -> ThemeConfig:
         generator=_choice("theme.generator", theme.get("generator"), GENERATORS),
         hues=_choice("theme.hues", theme.get("hues", "amontillado"), HUES_CHOICES),
         variant=_choice("theme.variant", theme.get("variant", "auto"), VARIANT_CHOICES),
+        tone=tone_setting("theme.tone", theme.get("tone")),
         contrast=_choice("theme.contrast", _off(theme.get("contrast", "adjust")), CONTRAST_CHOICES),
         wallpaper_reload=shell_command("theme.wallpaper.reload", wallpaper.get("reload")),
         apps=parsed,
@@ -521,8 +529,30 @@ def _app(where: str, value: object) -> AppConfig:
         output=output,
         reload=shell_command(f"{where}.reload", app.get("reload")),
         variant=_choice(f"{where}.variant", app.get("variant"), VARIANT_CHOICES),
+        tone=tone_setting(f"{where}.tone", app.get("tone")),
         render_with=render_with,
     )
+
+
+def tone_setting(key: str, value: object) -> dict[str, str]:
+    """A tone setting: unset ({}), `full` (both variants), or a mapping of variant to tone.
+    Raises ConfigError naming `key`."""
+    if value is None:
+        return {}
+    if value == "full":
+        return dict.fromkeys(TONE_CHOICES, "full")
+    if not isinstance(value, dict):
+        raise ConfigError(
+            f"{key}: {value!r} is not full or a mapping such as {{light: soft, dark: dim}}"
+        )
+    for variant, tone in value.items():
+        if variant not in TONE_CHOICES:
+            raise ConfigError(f"{key}: {variant!r} is not a variant (dark or light)")
+        if tone not in TONE_CHOICES[variant]:
+            raise ConfigError(
+                f"{key}.{variant}: {tone!r} is not one of {', '.join(TONE_CHOICES[variant])}"
+            )
+    return dict(value)
 
 
 def _settings_mapping(where: str, value: object, known: frozenset[str] | set[str] | None) -> dict:
