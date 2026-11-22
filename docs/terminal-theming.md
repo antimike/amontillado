@@ -158,6 +158,32 @@ or render a whole theme file with a template of your own (`source: path`, `forma
 an `.ini` in fast-syntax-highlighting's theme format) and load it once with `fast-theme PATH`,
 which stores it; run it again when the file changes.
 
+## Tone: soft and dim
+
+Full contrast (text about 16:1 on near-white or near-black) gets tiring in a terminal all day.
+A *tone* is a gentler version of a variant, made from the palette at apply time: **soft** light
+(cream paper, dark-grey text, about 9:1) and **dim** dark (charcoal, about 9:1). Every pair the
+contrast check holds still passes; under dim, blue becomes a background colour under the text
+(3:1, as in fast-syntax-highlighting's paired brackets and less's prompt) and is a dim 3:1 as
+text, while bright blue stays readable text.
+
+![One palette in light full and soft, dark full and dim](images/tone-swatches.png)
+
+```yaml
+theme:
+  variant: system
+  tone: {light: soft, dark: dim}    # or one of them; full is the default
+  apps:
+    waybar: {tone: full}            # this app keeps full contrast; key by key: {dark: full}
+```
+
+`amo theme apply --tone dark=dim` tries a tone for one run. An app's own `tone` wins, then
+`--tone`, then `theme.tone`. Templates see `{{scheme-tone}}` and reload commands `AMO_TONE`
+(`full`, `soft` or `dim`), so a prompt hook can follow it as it follows `AMO_VARIANT`. A preset
+palette keeps its own look unless its file sets `tone: transform`; an app with `render_with:
+matugen` stays full, with a warning. `amo palette --check FILE --tone dark=dim` shows the
+contrast and accent metrics of a palette in a tone before you apply it.
+
 ## The fallback: a dark terminal under a light desktop
 
 If the tools you use cannot be fixed, keep the terminal dark while the rest of the desktop

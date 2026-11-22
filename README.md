@@ -88,6 +88,7 @@ amo config init                            # a commented config: every key, its 
 amo palette forest                         # a picture's palette, both variants, as YAML
 amo theme sync                             # fetch the pinned templates the config uses
 amo theme apply forest                     # theme every configured app from it, reload them
+amo theme apply --tone dark=dim            # the same, gentler: charcoal instead of near-black
 ```
 
 `amo COMMAND --help` documents every option. The class thresholds (what counts as dark, busy,
@@ -126,7 +127,8 @@ you configure, never stored by the tool.
 - [docs/colour-scheme-hooks.md](docs/colour-scheme-hooks.md): keeping the desktop's dark/light
   scheme in step with the theme (libadwaita needs it)
 - [docs/terminal-theming.md](docs/terminal-theming.md): terminals and shell tools under a
-  palette: fixed colours, LS_COLORS with vivid, prompt hooks, p10k and fast-syntax-highlighting
+  palette: fixed colours, LS_COLORS with vivid, prompt hooks, p10k and fast-syntax-highlighting,
+  and the soft and dim tones
 - [CONTRIBUTING.md](CONTRIBUTING.md): development setup, coding standards, commits and releases
 - [CHANGELOG.md](CHANGELOG.md)
 
