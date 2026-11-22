@@ -3,16 +3,16 @@ from __future__ import annotations
 import pytest
 
 from amontillado.colour import contrast_ratio, hex_to_oklch, hue_distance, oklch_to_hex
-from amontillado.contrast import check
+from amontillado.contrast import BLUE_BACKGROUND, check
 from amontillado.generators import tone_lightness
 from amontillado.hues import named_hues
 from amontillado.palette import BASE16_KEYS, Variant, complete_variant
 from amontillado.tone import (
     ACCENT_FLOOR,
-    BLUE_BACKGROUND,
     SPECS,
     ToneError,
     check_tone,
+    checked_pairs,
     fit,
     toned,
 )
@@ -104,6 +104,16 @@ def test_dim_blue_is_a_background_and_only_its_text_pairs_fail() -> None:
     ]
     # Bright blue stays text.
     assert contrast_ratio(dim.base24["base16"], dim.base24["base01"]) >= 4.5
+
+
+def test_dim_passes_with_its_own_pairs() -> None:
+    assert check(toned("dark", _full("dark"), "dim"), checked_pairs("dim")) == []
+
+
+@pytest.mark.parametrize("tone", ["full", "soft"])
+def test_other_tones_check_the_usual_pairs(tone: str) -> None:
+    assert checked_pairs(tone) == checked_pairs("full")
+    assert ("base0D", "base00", 4.5) in checked_pairs(tone)
 
 
 def test_roles_are_toned_and_derived(variant: str) -> None:

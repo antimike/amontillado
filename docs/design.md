@@ -2035,7 +2035,8 @@ Agreed with MH, 2026-11-21:
 4. **The toned variant is checked with the same pairs and minimums, one exception.** Under
    `dim`, blue serves as a background instead of as text: `base05` on `base0D` at 3:1
    replaces `base0D` on `base00` and `base01` at 4.5:1 (blue text 3.0:1 and 2.6-2.7:1;
-   bright blue `base16` keeps 4.5:1). MH chose this over 4.5:1 blue text (D2), seen side by
+   bright blue `base16` keeps 4.5:1; built in amo-k79.2: the pair sits where blue's text
+   pairs were, and adjusting it moves blue, never `base05`). MH chose this over 4.5:1 blue text (D2), seen side by
    side on tree, fd, bat and `git branch -vv` output, **to review after a week or two of use**
    (amo-yyu). `amo palette --check FILE --tone VARIANT=TONE` checks and reports the accent metrics per
    tone; distinct under `dim` (6.2-7.5) is below 8, accepted as the cost of muted accents

@@ -5,7 +5,8 @@ cream paper with dark-grey text; `dim` is the dark variant on charcoal. The ramp
 is re-derived at the tone's Material tones (CIELAB L*), each accent keeps its hue and chroma and
 takes the lightness whose contrast on the new `base01` sits part of the way from its full
 contrast down to the floor, and the rest (brights, backgrounds, roles) is derived as for any
-palette. The contrast check then runs on the result as on any variant.
+palette. The contrast check then runs on the result as on any variant, with the pairs of
+`checked_pairs`.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from amontillado.colour import contrast_ratio, hex_to_oklch, oklch_to_hex
-from amontillado.contrast import nearest_passing
+from amontillado.contrast import BLUE_BACKGROUND, nearest_passing, pairs
 from amontillado.generators import tone_lightness
 from amontillado.palette import BASE16_KEYS, Variant, complete_variant
 
@@ -23,8 +24,6 @@ FULL = "full"
 TONES = {"light": (FULL, "soft"), "dark": (FULL, "dim")}
 # Lowest contrast an accent is moved to on base01: the check's 4.5 plus a margin.
 ACCENT_FLOOR = 4.7
-# Under dim, blue is a background under base05 (decision 4) instead of text.
-BLUE_BACKGROUND = 3.0
 
 
 @dataclass(frozen=True)
@@ -69,6 +68,11 @@ def check_tone(variant: str, tone: str) -> None:
     """Raise ToneError unless `variant` (dark or light) takes `tone`."""
     if tone not in TONES[variant]:
         raise ToneError(f"{variant} takes tone {' or '.join(TONES[variant])}, not {tone}")
+
+
+def checked_pairs(tone: str) -> tuple[tuple[str, str, float], ...]:
+    """The contrast check's pairs for a variant in `tone` (dim's blue exception)."""
+    return pairs(blue_background=tone != FULL and SPECS[tone].blue_background)
 
 
 def toned(variant: str, full: Variant, tone: str) -> Variant:
