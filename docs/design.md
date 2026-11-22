@@ -1812,8 +1812,9 @@ amo group --list-predicates
   at random). `amo group --keep-category` is the cheap remedy; style measures (sharpness,
   perhaps a learned embedding) are amo-abc.
 
-**Later** (amo-0k6, not v0.7): saved sets (a set the user liked, kept by name: `amo group
---save NAME`) and ratings of pictures and sets, with ratings feeding the companion order.
+**Later** (amo-0k6, not v0.7): saved sets, now "Saved looks (proposed)" (a set the user liked
+with its theme, kept by name), and ratings of pictures and sets, with ratings feeding the
+companion order (deferred).
 
 ### Grouping: decisions
 
@@ -2147,6 +2148,136 @@ Decisions:
    1.05:1 under light) needs the tool's own setting, e.g. an ANSI-only theme. A tool's 256-colour
    config (`LS_COLORS` with cube numbers) is better replaced by one built from the palette
    (`vivid`). Lightness-mapping the cube in amo (amo-yol) is left open: `semantic` does it in kitty.
+
+## Saved looks (proposed)
+
+**Status: proposed 2026-11-22 (amo-0k6), not agreed.** MH's decisions so far are marked
+**MH**; everything else is a proposal, and the questions at the end need answers before the
+design goes to `/project-review` (D81) and then to build beads. Ratings stay deferred (MH
+2026-11-21) until there is more use of `amo group`.
+
+A *look* is a set of pictures across monitors that the user liked, together with the theme they
+saw: kept by name and applied again later. **MH (2026-11-21):** it holds the whole look,
+pictures and theme (palette snapshot, variant, tone); pictures by record id; an optional
+description; a YAML file in the library, versioned with it. **MH (2026-11-22):** the file lives
+in the root of its most private picture; monitors by position (primary first) and aspect, not by
+name; the palette embedded in the file, not a path to one.
+
+This replaces the "sensible presets" that computed clusters would have given ("Grouping:
+decisions" 2). The bead called them *saved sets*; "set" is avoided in the command name for the
+reason decision 3 gives (`amo set` reads as setting the wallpaper).
+
+### Saved looks: prior art
+
+Checked 2026-11-22: the dotfiles' own glue by reading it, the rest from their docs or wikis (not
+run).
+
+| Candidate | What it does | Fails |
+|---|---|---|
+| pywal: `wal -p NAME` saves the colours to `$XDG_CONFIG_HOME/wal/colorschemes`, `wal --theme NAME` applies, `wal -R` restores the last (pywal16 wiki) | named colour schemes; `-R` restores the last scheme and wallpaper | one wallpaper, by path, and only the last one: a named theme holds no pictures, no monitors and no tone. Its own pipeline (decision 11's reasons). |
+| wpgtk (wiki, "Colorschemes") | a colour scheme stored per wallpaper | one wallpaper per scheme, pywal's pipeline, no monitors. |
+| waypaper (`--restore`, `config.ini`) | restores the last wallpaper state | the last state only, no names, no theme; paths. hyprpaper, awww (`restore`) and wpaperd are the same: last state per output. |
+| HyDE (Hyprland dotfiles framework; FAQ) | a theme is a directory of colours plus its own `wallpapers/` | the pictures are copied into the theme (not library records), one theme engine of its own, and the whole framework replaces the user's dotfiles. |
+| KDE Plasma global themes (look-and-feel packages) | colours, wallpaper and more, by name | Plasma only; MH runs Hyprland. |
+| **No build in amo:** a dotfiles script saving `~/.local/state/wallpaper/group.json` and the profile's `palette.yaml` under a name, restoring with `hyprctl` and `amo theme apply --palette` (the `wallpaper` script's `restore` does half of this today) | the whole look, on MH's machine | three of MH's decisions: group.json holds paths and names, which renames and crops break (ids need amo to resolve); "versioned with the library" means writing into a root, through amo's `on_change` hook, from outside amo; and putting a look in the root of its most private picture needs each record's purity, which only amo knows. Re-fitting a look to other monitors also needs amo's aspect matching and crop offer, which `amo group` has but cannot be given companions. |
+
+No candidate keeps named multi-monitor sets of library pictures with their theme, so amontillado
+builds it. The build stays small by reusing what `amo group --apply` and `amo theme apply`
+already do; amo still detects no monitors and sets no wallpaper itself (the setter hook).
+
+### Saved looks: proposal
+
+**The file.** `<root>/.amo/looks/<name>.yaml`, one file per look. One file each, so two machines
+saving different looks never touch the same file (no merge driver needed) and a look is deleted by
+deleting its file. Under `.amo/` because `amo index` never searches hidden directories under a
+root (records are unaffected), and the version-control layout already keeps `**/.amo/**` in git
+rather than the annex. Names follow record names (`[a-z0-9][a-z0-9._-]*`) and are unique across
+all roots.
+
+```yaml
+version: 1
+name: blade-and-iss
+description: Stellar Blade signs with the ISS morning   # optional
+saved: 2026-11-22T12:00:00+00:00
+monitors:                       # by position: the first is the primary
+  - record: c2bb9ad4...         # the record's id: survives renames and moves
+    file: stellar-blade-playstation-signs-xed63v-21x9.jpg   # the file shown
+    aspect: "21:9"              # the monitor's ratio when saved
+  - record: 627f7597...
+    file: commons-good-morning-iss.jpg
+    aspect: "16:9"
+theme:
+  variant: system               # as asked at save time
+  tone: {light: soft, dark: full}
+  palette:                      # the profile's palette.yaml, whole ("Palette")
+    version: 1
+    name: wallhaven-xed63v
+    source: {picture: c2bb9ad4..., ...}
+    variants: {dark: {...}, light: {...}}
+```
+
+- **Pictures by id and file.** The file name pins what was on screen (an edit or a hand-made
+  derived file has the same ratio as the original, so the aspect alone could pick another file).
+  If that file is gone (renamed by per-file re-pairing, a crop replaced and renamed), the
+  monitor's aspect picks the file as `--aspect` does, with a warning. A record that no longer
+  exists is an error naming it; an absent file one naming `git annex get`.
+- **Where it lives** (MH): the NSFW root if any of its records is not sfw (purity, or under the
+  NSFW root); else the primary's root. The SFW roots never name an NSFW record. Saving finds the
+  root from the index, so a record whose purity changed later can leave a look in the wrong root:
+  `amo look list` and `apply` warn about it (moving it is the user's `mv`).
+- **The palette** is the profile's `palette.yaml` (full, contrast-checked, `tone: transform`
+  kept for a preset), so a look applies the same colours after a generator upgrade, a hues
+  recalibration, or when the theme came from a preset rather than the primary's picture.
+- **Variant and tone** are the ones the last apply asked for (run level: `--variant`, `--tone`,
+  else the config's). `theme.yaml` records each app's resolved values today, not the run's, so
+  it gains top-level `variant` and `tone`. Per-app settings (`apps.<app>.variant`, `.tone`) stay
+  config, not look.
+
+**Commands** (a new `amo look` group):
+
+```text
+amo look save NAME PICTURE... [--description TEXT] [--profile P] [--force] [--dry-run]
+amo look apply NAME --monitor NAME=W:H... [--variant V] [--tone VARIANT=TONE]...
+               [--profile P] [--format tsv|json] [--non-interactive] [--dry-run]
+amo look list [--purity LIST] [--format tsv|json]
+amo look show NAME
+```
+
+- **`save`** takes the pictures in monitor order, primary first (each any form under "Lookup";
+  a path names the file, anything else the record's default file), and the theme from the
+  profile (default `theme.profile`). The monitors' ratios come from the files, so the dotfiles
+  pass what they already keep: `amo look save NAME $(jq -r '.monitors[].path' group.json)`. amo
+  keeps no record of the last group: the dotfiles already do. A name that exists is refused
+  without `--force`, which replaces it. The write is reported to `on_change` as a `file` change.
+  A primary whose palette is not the profile's (the theme came from elsewhere) is fine: the look
+  keeps what was on screen.
+- **`apply`** fits the look to the monitors given (`--monitor` as `amo group`): position *i* gets
+  entry *i*, its saved file if the ratio matches, else the record's file for the monitor's ratio,
+  with `amo group`'s crop offer and fallback. Then, as `amo group --apply`: `group.setter` per
+  monitor, each picture recorded as shown, the same tsv or json output (so the dotfiles' group.json
+  keeps working); then the theme as `amo theme apply` with the embedded palette, the profile's
+  wallpaper link on the primary's file, and the look's variant and tone unless `--variant` or
+  `--tone` is given. Fewer monitors than entries: the rest are left out, with a warning. More
+  monitors than entries: see question 3.
+- **`list`** prints the looks of the SFW roots, and of the NSFW root when `--purity` asks for
+  sketchy or nsfw, as `amo list` does; `show` prints one. An explicit NAME is found in any root,
+  as an explicit picture is.
+- **Not built:** `remove` and `rename` (delete or edit the file; no amo command deletes under a
+  root, and the hook payload has no delete change), `amo group --save` (the bead's first idea: a
+  look is saved after it has been seen, so `save` takes the pictures shown), ratings.
+
+### Saved looks: questions for MH
+
+1. **Command name**: `amo look` (recommended: it is what MH called it, and it is not `set`);
+   alternatives `amo saved` or `amo preset`.
+2. **Variant**: keep the variant asked at save time and let `apply --variant` override it
+   (recommended: "the whole look", and lossless since a picture's palette holds both variants;
+   MH's `wallpaper` script would pass the current one, as it does to `amo theme apply`), or store
+   no variant and always follow the config.
+3. **More monitors than the look has**: an error (recommended for the first build), or fill the
+   extra monitors with companions of the look's primary as `amo group` would.
+4. **Save input**: pictures as arguments (recommended, no new amo state), or amo recording the
+   last `amo group --apply` itself so `amo look save NAME` needs nothing else.
 
 ## Testing
 
