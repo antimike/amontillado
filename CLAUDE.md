@@ -40,8 +40,6 @@ remote: never add one pointing at this repo. bd-track's daily cleanup timer cove
 
 The current epic's prompt (replace it when an epic closes):
 
-> Next (no epic yet): amo-3oa, build tone per variant (docs/design.md "Tone: decisions" 1-5,
-> soft L2 / dim D3). First plan a v0.11.0 epic with MH and split 3oa into child beads (config
-> and CLI, toned variant, contrast exception, --check --tone, matugen warning, swatch recipe),
-> confirm before building, then build depth-first. Ends with a reply ticket to chezmoi.
-> amo-yyu (review D3) follows after use. Outside: amo-wn0, amo-mdi, amo-tyy.
+> Next (no epic yet): v0.11.0 shipped tone (epic amo-k79). First `/triage` the open inbox
+> ticket (chezmoi's GTK3 live-theming docs, 2026-11-21). amo-yyu (review dim's blue, D3) is due
+> after 1-2 weeks of MH using dim (from about 2026-12-05). Outside: amo-wn0, amo-mdi, amo-tyy.
