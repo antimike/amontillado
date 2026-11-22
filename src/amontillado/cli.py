@@ -160,6 +160,7 @@ from amontillado.theme import apply as apply_theme
 from amontillado.theme import describe as describe_theme
 from amontillado.theme import plan as theme_plan
 from amontillado.theme import write as write_theme
+from amontillado.tone import FULL, TONES, ToneError, check_tone, checked_pairs, toned
 from amontillado.wallhaven import (
     CATEGORY_FLAGS,
     USER_AGENT,
@@ -921,6 +922,15 @@ def build_parser() -> argparse.ArgumentParser:
         "minimum, and fail if any pair is; change nothing.",
     )
     palette.add_argument(
+        "--tone",
+        type=_tone,
+        action="append",
+        default=[],
+        metavar="VARIANT=TONE",
+        help="With --check: check VARIANT in TONE instead of full (light=soft, dark=dim), as "
+        "amo theme apply would make it, presets included. Repeatable.",
+    )
+    palette.add_argument(
         "--no-adjust",
         action="store_true",
         help=flag_help("theme.contrast", "Report failing pairs instead of adjusting them"),
@@ -1188,6 +1198,18 @@ def _add_look(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--hue", choices=HUE_NAMES, metavar="NAME", help=f"Dominant hue: {', '.join(HUE_NAMES)}."
     )
+
+
+def _tone(value: str) -> tuple[str, str]:
+    """`VARIANT=TONE` as (variant, tone)."""
+    variant, _, tone = value.partition("=")
+    if variant not in TONES:
+        raise argparse.ArgumentTypeError(f"{value!r}: VARIANT=TONE, VARIANT dark or light")
+    try:
+        check_tone(variant, tone)
+    except ToneError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    return variant, tone
 
 
 def _purities(value: str) -> frozenset[str]:
@@ -1870,8 +1892,10 @@ def cmd_shown(args: argparse.Namespace) -> None:
 
 def cmd_palette(args: argparse.Namespace) -> None:
     if args.check is not None:
-        _check_palette(args.check)
+        _check_palette(args.check, dict(args.tone))
         return
+    if args.tone:
+        sys.exit("amontillado: --tone needs --check (a palette file holds full variants only)")
     config = _load_config()
     mode = config.theme.contrast
     if args.no_adjust and mode == "adjust":
@@ -1945,20 +1969,27 @@ def _picture_palette(
     return palette, picture
 
 
-def _check_palette(path: Path) -> None:
+def _check_palette(path: Path, tones: dict[str, str]) -> None:
+    """`amo palette --check`: each variant, in its tone from `tones` (default full)."""
     try:
         palette = load_palette(path)
     except PaletteError as exc:
         sys.exit(f"amontillado: {exc}")
+    missing = [variant for variant in tones if variant not in palette.variants]
+    if missing:
+        sys.exit(f"amontillado: --tone: {path} has no {' or '.join(missing)} variant")
     failed = 0
-    for name, variant in palette.variants.items():
-        print(f"{name}: {accent_score(variant.base24)}")
-        print(f"{name}: {fixed_colours(variant)}")
-        failures = check(variant)
+    for name, full in palette.variants.items():
+        tone = tones.get(name, FULL)
+        variant = toned(name, full, tone)
+        label = name if tone == FULL else f"{name} ({tone})"
+        print(f"{label}: {accent_score(variant.base24)}")
+        print(f"{label}: {fixed_colours(variant)}")
+        failures = check(variant, checked_pairs(tone))
         for failure in failures:
-            print(f"{name}: {failure}")
+            print(f"{label}: {failure}")
         if not failures:
-            logger.info("%s: every pair passes", name)
+            logger.info("%s: every pair passes", label)
         failed += len(failures)
     if failed:
         sys.exit(f"amontillado: {_count(failed, 'pair')} below the contrast minimum")

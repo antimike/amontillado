@@ -6,6 +6,13 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `amo palette --check FILE --tone VARIANT=TONE` (repeatable): checks a variant in a gentler
+  tone, `light=soft` (cream paper, dark-grey text) or `dark=dim` (charcoal), as made from the
+  palette's full variant, with the accent metrics and fixed-colour report. Under `dim`, blue is
+  checked as a background under `base05` (3:1) instead of as text.
+
 ## [0.10.0] - 2026-11-21
 
 Terminal theming under light variants: kitty derives its 256 colours from the palette, a
