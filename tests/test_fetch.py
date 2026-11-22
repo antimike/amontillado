@@ -86,6 +86,8 @@ def test_keeps_a_matching_wallpaper_as_a_record(
     assert (entry["width"], entry["height"]) == (128, 72)
     assert entry["metrics"]["lightness"] < 0.1
     assert [row.path for row in files(conn)] == report.kept
+    # Indexed under its name at once, not only after `amo index` (amo-0jw).
+    assert conn.execute("SELECT name FROM records").fetchall() == [("night-sky-aaa111",)]
     # One search page, one thumbnail, the image, its tags: nothing for the others.
     assert len(web.requests) == 4
 
