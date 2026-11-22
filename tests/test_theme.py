@@ -586,3 +586,14 @@ def test_a_preset_says_once_that_it_takes_no_tone(
     with caplog.at_level(logging.INFO):
         plan(config, _palette(), profile="default", variant="dark", contrast="off")
     assert "is a preset" not in caplog.text
+
+
+def test_render_with_matugen_stays_full_and_warns(
+    matugen_renderer: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = _config(tmp_path, a=_by_matugen(tmp_path, "a"), kitty=AppConfig())
+    config = replace(config, theme=replace(config.theme, tone={"dark": "dim"}))
+    built = plan(config, _picture_palette(), profile="default", variant="dark", contrast="off")
+    assert [item.record["tone"] for item in built.rendered] == ["full", "dim"]
+    assert "theme.apps.a: render_with: matugen renders matugen's own colours" in caplog.text
+    assert "theme.apps.kitty" not in caplog.text
