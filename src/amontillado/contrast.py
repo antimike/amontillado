@@ -85,6 +85,47 @@ def check(variant: Variant) -> list[Failure]:
     return failures
 
 
+# xterm's colour cube steps (slots 16-231) and its grey ramp (232-255: 8, 18, ... 238).
+_CUBE_STEPS = (0, 95, 135, 175, 215, 255)
+
+
+def xterm_colour(slot: int) -> str:
+    """xterm's fixed colour for `slot` 16-255, the default every terminal copies."""
+    if slot >= 232:
+        grey = 8 + 10 * (slot - 232)
+        return f"#{grey:02x}{grey:02x}{grey:02x}"
+    index = slot - 16
+    red, green, blue = (_CUBE_STEPS[digit] for digit in (index // 36, index // 6 % 6, index % 6))
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
+@dataclass(frozen=True)
+class FixedColours:
+    """How xterm's fixed colours 16-255 read on a variant's background: a report, never a
+    failure (docs/design.md, "Light variants and fixed colours")."""
+
+    cube: int  # slots 16-231 below _UI
+    ramp: int  # slots 232-255 below _UI
+    grey_252: float  # the ratio of 252, a common "dim text" grey
+
+    def __str__(self) -> str:
+        return (
+            f"xterm's fixed colours below {_UI:g}:1 on base00: cube {self.cube}/216, "
+            f"grey ramp {self.ramp}/24 (252 at {self.grey_252:.1f}:1)"
+        )
+
+
+def fixed_colours(variant: Variant) -> FixedColours:
+    """xterm's fixed colours 16-255 measured on `variant`'s base00."""
+    background = variant.base24["base00"]
+    ratios = {slot: contrast_ratio(xterm_colour(slot), background) for slot in range(16, 256)}
+    return FixedColours(
+        cube=sum(ratios[slot] < _UI for slot in range(16, 232)),
+        ramp=sum(ratios[slot] < _UI for slot in range(232, 256)),
+        grey_252=ratios[252],
+    )
+
+
 def adjust(variant: Variant, label: str) -> tuple[Variant, list[Failure]]:
     """`variant` with failing pairs fixed where the rules allow, and the pairs still failing.
     Each change is logged (under `label`, the variant's name) and listed in `adjusted`."""

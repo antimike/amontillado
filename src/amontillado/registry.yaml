@@ -20,7 +20,8 @@ repositories:
   eylles/pywal16: {commit: 9767ef685ee8451766d023e33db9d625f3e3d5bb}
 sources:
   builtin:
-    kitty: {output: kitty.conf, complete: false, description: colour options; include from kitty.conf}
+    kitty: {output: kitty.conf, complete: false, description: 'colour options, 22-255 generated (palette_generate semantic, kitty >= 0.47); include from kitty.conf'}
+    kitty-fixed: {output: kitty.conf, complete: false, description: "colour options, 22-255 left at xterm's fixed colours (kitty < 0.47); include from kitty.conf"}
     gtk: {output: colors.css, complete: false, description: '@define-color per colour; @import from waybar, swaync, wlogout, gtk.css'}
     rofi: {output: colors.rasi, complete: false, description: 'a * { } block (roles hyphenated: on-accent)'}
     hyprland: {output: hyprland.lua, complete: false, description: 'a Lua table of "rrggbb", for dofile()'}

@@ -58,7 +58,7 @@ from amontillado.config import (
     syntax_error,
 )
 from amontillado.config_keys import flag_help
-from amontillado.contrast import apply_contrast, check
+from amontillado.contrast import apply_contrast, check, fixed_colours
 from amontillado.cropper import chooser
 from amontillado.edit import EditError, plan_edit, run_edit
 from amontillado.fetch import SITE, TEST_SET, FetchError, fetch, name_from_tags, refresh_tags
@@ -915,9 +915,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--check",
         type=Path,
         metavar="FILE",
-        help="Print each variant's accent metrics (hues on their ANSI name, distinctness) and "
-        "the pairs of a palette file below their contrast minimum, and fail if any pair is; "
-        "change nothing.",
+        help="Print each variant's accent metrics (hues on their ANSI name, distinctness), how "
+        "xterm's fixed colours 16-255 read on its background (a report: kitty's built-in "
+        "template replaces them), and the pairs of a palette file below their contrast "
+        "minimum, and fail if any pair is; change nothing.",
     )
     palette.add_argument(
         "--no-adjust",
@@ -1952,6 +1953,7 @@ def _check_palette(path: Path) -> None:
     failed = 0
     for name, variant in palette.variants.items():
         print(f"{name}: {accent_score(variant.base24)}")
+        print(f"{name}: {fixed_colours(variant)}")
         failures = check(variant)
         for failure in failures:
             print(f"{name}: {failure}")
