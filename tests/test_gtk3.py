@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -162,3 +163,20 @@ def test_dry_run_changes_nothing(
     assert f"would set {SCHEMA_KEY} amontillado-dark" in out
     assert not _theme_css(home).exists()
     assert gsettings.read_text() == ""
+
+
+def test_config_check_names_what_the_hook_needs(
+    home: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _config(home, {"libadwaita": {"reload": "amo hook gtk3-theme"}})
+    # sh (config check runs sh -n on each command), no gsettings.
+    only_sh = home / "only-sh"
+    only_sh.mkdir()
+    (only_sh / "sh").symlink_to(shutil.which("sh") or "/bin/sh")
+    monkeypatch.setenv("PATH", str(only_sh))
+    monkeypatch.setenv("XDG_DATA_DIRS", str(home / "empty"))
+    with pytest.raises(SystemExit, match="3 problems"):
+        main(["config", "check"])
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("needs gsettings" in m for m in messages)
+    assert any("needs adw-gtk3-dark" in m for m in messages)

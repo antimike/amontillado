@@ -2281,6 +2281,7 @@ def cmd_config_check(args: argparse.Namespace) -> None:
         config_logger.removeHandler(collect)
     problems = check_apps(config) + _check_commands(config, shellcheck_too=args.shellcheck)
     problems += _check_on_change(config)
+    problems += _check_gtk3_theme(config)
     for name, app in config.theme.apps.items():
         warning = matugen_tone_warning(name, app, config.theme.tone)
         if warning is not None:
@@ -2309,6 +2310,21 @@ def _check_on_change(config: Config) -> list[str]:
             if annex_repository(root)
         ]
     return []
+
+
+def _check_gtk3_theme(config: Config) -> list[str]:
+    """amo hook gtk3-theme's needs, for each reload that runs it: gsettings and adw-gtk3."""
+    problems = []
+    for name, app in config.theme.apps.items():
+        if not (app.reload and "amo hook gtk3-theme" in app.reload):
+            continue
+        where = f"theme.apps.{name}.reload: amo hook gtk3-theme needs"
+        if shutil.which("gsettings") is None:
+            problems.append(f"{where} gsettings, which is not on PATH")
+        for variant in gtk3.ADW_GTK3:
+            if gtk3.find_adw_gtk3(variant) is None:
+                problems.append(f"{where} {gtk3.ADW_GTK3[variant]}, which is not installed")
+    return problems
 
 
 def _check_commands(config: Config, *, shellcheck_too: bool) -> list[str]:

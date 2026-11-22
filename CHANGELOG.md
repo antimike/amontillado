@@ -10,7 +10,8 @@ All notable changes to amontillado are documented here. The format follows
 
 - `amo hook gtk3-theme`: the libadwaita app's reload for live GTK3 theming under adw-gtk3. It
   points `gtk-theme` (gsettings) at `amontillado-$AMO_VARIANT`, flipping through Adwaita when
-  unchanged, and writes that theme's `gtk.css` when missing.
+  unchanged, and writes that theme's `gtk.css` when missing. `amo config check` names
+  `gsettings` or adw-gtk3 when a reload runs it without them.
 
 ### Fixed
 
