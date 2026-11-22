@@ -6,7 +6,15 @@ import logging
 import pytest
 
 from amontillado.colour import contrast_ratio, hex_to_oklch, hue_distance
-from amontillado.contrast import FIXED, PAIRS, adjust, apply_contrast, check
+from amontillado.contrast import (
+    FIXED,
+    PAIRS,
+    adjust,
+    apply_contrast,
+    check,
+    fixed_colours,
+    xterm_colour,
+)
 from amontillado.palette import Palette, Variant, complete_variant
 
 GOOD = {
@@ -169,3 +177,24 @@ def test_earlier_adjustments_are_kept() -> None:
     variant = dataclasses.replace(_variant(base03="#202020"), adjusted=("base05",))
     after, _ = adjust(variant, "dark")
     assert after.adjusted == ("base05", "base03", "border_inactive")
+
+
+@pytest.mark.parametrize(
+    ("slot", "colour"),
+    [(16, "#000000"), (21, "#0000ff"), (130, "#af5f00"), (231, "#ffffff"),
+     (232, "#080808"), (252, "#d0d0d0"), (255, "#eeeeee")],
+)  # fmt: skip
+def test_xterm_colour(slot: int, colour: str) -> None:
+    # xterm's table (checked against kitty 0.47.1's palette_generate fixed, 2026-11-21).
+    assert xterm_colour(slot) == colour
+
+
+def test_fixed_colours_on_light_and_dark() -> None:
+    # The amo-7a0 case: 252 is unreadable on a light background, fine on a dark one.
+    light = fixed_colours(_variant(base00="#f8f9fb"))
+    assert light.grey_252 < 1.6
+    assert light.ramp > 12
+    dark = fixed_colours(_variant())
+    assert dark.grey_252 > 11
+    assert dark.cube < light.cube
+    assert str(light).startswith("xterm's fixed colours below 4.5:1 on base00: cube ")
