@@ -55,6 +55,8 @@ def test_scheme_variables() -> None:
     assert dark["scheme-slug-underscored"] == "gruvbox_dark_hard"
     assert dark["scheme-system"] == "base24"
     assert (dark["scheme-variant"], light["scheme-variant"]) == ("dark", "light")
+    assert dark["scheme-tone"] == "full"
+    assert mustache_view(palette, "dark", "dim")["scheme-tone"] == "dim"
     assert dark["scheme-is-dark-variant"] and not dark["scheme-is-light-variant"]
     assert light["scheme-is-light-variant"] and not light["scheme-is-dark-variant"]
     assert (dark["scheme-author"], light["scheme-author"]) == ("", "someone")

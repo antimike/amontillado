@@ -80,6 +80,11 @@ Every reload command runs under `sh -c` with `AMO_VARIANT` in its environment, `
   replaced by the one it has, as the render does;
 - in the wallpaper hook (`theme.wallpaper.reload`): the same for an app without its own variant.
 
+`AMO_TONE` beside it is that variant's tone, `full`, `soft` (light) or `dim` (dark): the
+variant's tone in `theme.apps.<app>.tone`, else `--tone`, else `theme.tone`, else `full`; `full`
+for a preset palette (design.md, "Tone: decisions"). The colour scheme stays binary: a scheme
+hook keeps using `AMO_VARIANT`.
+
 Put the hook on the libadwaita app, so the scheme follows the variant of the file GTK actually
 reads, even when that app has its own `variant`. `amo theme apply --dry-run` prints the commands
 with their variables, so you can check one before it runs:
@@ -87,7 +92,7 @@ with their variables, so you can check one before it runs:
 ```text
 $ amo theme apply PICTURE --dry-run
 /tmp/amo-theme-k2n4f0x1
-would run: AMO_DIR=/home/me/.cache/theme/default AMO_PROFILE=default AMO_VARIANT=dark sh -c 'gsettings set org.gnome.desktop.interface color-scheme "prefer-$AMO_VARIANT"'
+would run: AMO_DIR=/home/me/.cache/theme/default AMO_PROFILE=default AMO_TONE=full AMO_VARIANT=dark sh -c 'gsettings set org.gnome.desktop.interface color-scheme "prefer-$AMO_VARIANT"'
 ```
 
 Like every reload command, the hook runs after the new profile is swapped in, under `sh -c`

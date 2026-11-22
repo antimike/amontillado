@@ -14,7 +14,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from logging import getLogger
@@ -23,7 +23,7 @@ from pathlib import Path
 from amontillado import yamlio
 from amontillado.classes import LIGHT_MIN
 from amontillado.config import AppConfig, Config, ThemeConfig, shell_status, xdg_dir
-from amontillado.contrast import apply_contrast
+from amontillado.contrast import adjust, apply_contrast, check
 from amontillado.desktop import desktop_variant
 from amontillado.generators import GeneratorError, matugen_render
 from amontillado.matugen import MatugenError, material_view, render_matugen
@@ -38,6 +38,7 @@ from amontillado.render import (
 )
 from amontillado.sources import Template, resolve
 from amontillado.sources import text as template_text
+from amontillado.tone import FULL, checked_pairs, takes_tone, toned
 
 logger = getLogger(__name__)
 
@@ -116,10 +117,17 @@ def choose_variant(palette: Palette, wanted: str) -> str:
 
 
 def render_app(
-    name: str, app: AppConfig, palette: Palette, variant: str, wallpaper: Path | None = None
+    name: str,
+    app: AppConfig,
+    palette: Palette,
+    variant: str,
+    wallpaper: Path | None = None,
+    *,
+    tone: str = FULL,
 ) -> Rendered:
-    """`app` rendered from `palette`. Raises ThemeError for what cannot be rendered (yet), and
-    for a fetched template `amo theme sync` has not kept."""
+    """`app` rendered from `palette`, whose variant is already in `tone` (toned_palette).
+    Raises ThemeError for what cannot be rendered (yet), and for a fetched template `amo theme
+    sync` has not kept."""
     if app.render_with == "matugen":
         (rendered,) = render_with_matugen({name: app}, palette, variant, wallpaper)
         return rendered
@@ -131,10 +139,10 @@ def render_app(
         elif template.format == "matugen":
             text = render_matugen(source_text, material_view(palette, variant, wallpaper))
         else:
-            text = render_mustache(source_text, mustache_view(palette, variant))
+            text = render_mustache(source_text, mustache_view(palette, variant, tone))
     except (RenderError, MatugenError) as exc:
         raise ThemeError(f"theme.apps.{name}: {template.name}: {exc}") from exc
-    return Rendered(name, template.output, text, _record(template, variant, palette))
+    return Rendered(name, template.output, text, _record(template, variant, palette, tone))
 
 
 def render_with_matugen(
@@ -160,7 +168,7 @@ def render_with_matugen(
             raise ThemeError(f"theme.apps.{', '.join(names)}: render_with: {exc}") from exc
         for name in names:
             template = templates[name][0]
-            record = {**_record(template, mode, palette), "renderer": label}
+            record = {**_record(template, mode, palette, FULL), "renderer": label}
             rendered[name] = Rendered(name, template.output, texts[name], record)
     return [rendered[name] for name in apps]
 
@@ -173,13 +181,14 @@ def _template(name: str, app: AppConfig) -> tuple[Template, str]:
         raise ThemeError(str(exc)) from exc
 
 
-def _record(template: Template, variant: str, palette: Palette) -> dict[str, str]:
+def _record(template: Template, variant: str, palette: Palette, tone: str) -> dict[str, str]:
     """What theme.yaml records about one app."""
     record = {
         "source": template.source,
         "template": template.name,
         "output": template.output,
         "variant": variant,
+        "tone": tone,
         "palette": palette.name,
     }
     if template.commit is not None:
@@ -204,6 +213,8 @@ class Plan:
     wallpaper: Path | None
     # The variant of an app without its own (auto resolved): the wallpaper hook's AMO_VARIANT.
     variant: str
+    # That variant's tone for an app without its own: the wallpaper hook's AMO_TONE.
+    tone: str = FULL
 
 
 def plan(
@@ -213,11 +224,13 @@ def plan(
     profile: str,
     variant: str,
     contrast: str,
+    tone: Mapping[str, str] | None = None,
     only: Sequence[str] = (),
     wallpaper: Path | None = None,
 ) -> Plan:
     """Render the apps (all, or `only`) of `config` for `profile`, after the contrast check
     (`contrast`: adjust, report or off). `palette` None re-renders the profile's own palette.
+    `tone` (--tone) is the tone per variant over theme.tone; an app's own wins, key by key.
     `wallpaper` is the picture `palette` was made from, for the profile's wallpaper link.
     Raises ThemeError before anything is written."""
     theme = config.theme
@@ -244,10 +257,18 @@ def plan(
     if by_matugen:
         matugen_apps = render_with_matugen(by_matugen, palette, variant, picture)
         from_matugen = {item.app: item for item in matugen_apps}
-    rendered = [
-        from_matugen.get(name) or render_app(name, app, palette, variant, picture)
-        for name, app in apps_config.items()
-    ]
+    tones = {**theme.tone, **(tone or {})} if takes_tone(palette) else {}
+    cache: dict[tuple[str, str], Palette] = {}
+
+    def render(name: str, app: AppConfig) -> Rendered:
+        app_variant = choose_variant(palette, app.variant or variant)
+        app_tone = {**tones, **app.tone}.get(app_variant, FULL) if tones else FULL
+        if (app_variant, app_tone) not in cache:
+            cache[app_variant, app_tone] = toned_palette(palette, app_variant, app_tone, contrast)
+        toned_ = cache[app_variant, app_tone]
+        return render_app(name, app, toned_, app_variant, picture, tone=app_tone)
+
+    rendered = [from_matugen.get(name) or render(name, app) for name, app in apps_config.items()]
     apps = {} if not only else {k: v for k, v in old_apps.items() if k in theme.apps}
     apps.update({item.app: item.record for item in rendered})
     copy_from = None
@@ -257,7 +278,26 @@ def plan(
         copy_from = existing.resolve()
         wallpaper = None  # the copy keeps its link
     resolved = choose_variant(palette, variant)
-    return Plan(profile, palette, rendered, apps, copy_from, wallpaper, resolved)
+    return Plan(
+        profile, palette, rendered, apps, copy_from, wallpaper, resolved, tones.get(resolved, FULL)
+    )
+
+
+def toned_palette(palette: Palette, variant: str, tone: str, contrast: str) -> Palette:
+    """`palette` with `variant` in `tone`, then checked as `contrast` says with the tone's
+    pairs (dim's blue exception); `full` is `palette` itself, already checked."""
+    if tone == FULL:
+        return palette
+    label = f"{variant} ({tone})"
+    made = toned(variant, palette.variants[variant], tone)
+    pairs = checked_pairs(tone)
+    if contrast == "adjust":
+        made, failures = adjust(made, label, pairs)
+    else:
+        failures = check(made, pairs) if contrast == "report" else []
+    for failure in failures:
+        logger.warning("%s: %s", label, failure)
+    return replace(palette, variants={**palette.variants, variant: made})
 
 
 def _resolve_system(variant: str, apps: dict[str, AppConfig]) -> tuple[str, dict[str, AppConfig]]:
@@ -373,25 +413,28 @@ class Reload:
 def reload_commands(config: Config, plan: Plan, directory: Path) -> list[Reload]:
     """The reload commands to run after `plan`: each rendered app's, then the wallpaper hook.
     `directory` holds the written plan (the wallpaper link); AMO_DIR is always the profile's
-    path, so a dry run prints what a real one would run. AMO_VARIANT is the variant the app was
-    rendered in; for the wallpaper hook, the plan's. With no wallpaper, AMO_WALLPAPER is unset
-    and a command naming it is left out."""
+    path, so a dry run prints what a real one would run. AMO_VARIANT and AMO_TONE are the
+    variant and tone the app was rendered in; for the wallpaper hook, the plan's. With no
+    wallpaper, AMO_WALLPAPER is unset and a command naming it is left out."""
     theme = config.theme
     link = directory / WALLPAPER_LINK
     wallpaper = os.readlink(link) if link.is_symlink() else None
     values = {"AMO_PROFILE": plan.profile, "AMO_DIR": str(profile_dir(theme, plan.profile))}
     if wallpaper is not None:
         values["AMO_WALLPAPER"] = wallpaper
-    commands = [(theme.apps[item.app].reload, item.record["variant"]) for item in plan.rendered]
-    commands.append((theme.wallpaper_reload, plan.variant))
+    commands = [
+        (theme.apps[item.app].reload, item.record["variant"], item.record["tone"])
+        for item in plan.rendered
+    ]
+    commands.append((theme.wallpaper_reload, plan.variant, plan.tone))
     reloads = []
-    for command, variant in commands:
+    for command, variant, tone in commands:
         if command is None:
             continue
         if wallpaper is None and "AMO_WALLPAPER" in command:
             logger.info("no wallpaper: not running %s", command)
             continue
-        reloads.append(Reload(command, {**values, "AMO_VARIANT": variant}))
+        reloads.append(Reload(command, {**values, "AMO_VARIANT": variant, "AMO_TONE": tone}))
     return reloads
 
 

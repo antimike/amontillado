@@ -2080,6 +2080,7 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
             profile=profile,
             variant=args.variant or config.theme.variant,
             contrast=mode,
+            tone=dict(args.tone),
             only=args.app,
             wallpaper=None if picture is None else picture.path,
         )

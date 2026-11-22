@@ -30,8 +30,9 @@ class RenderError(Exception):
     """A template cannot be rendered; the message says why."""
 
 
-def mustache_view(palette: Palette, variant: str) -> dict[str, object]:
-    """The tinted builder variables of `palette`'s `variant`."""
+def mustache_view(palette: Palette, variant: str, tone: str = "full") -> dict[str, object]:
+    """The tinted builder variables of `palette`'s `variant`, plus amontillado's own:
+    `scheme-tone` (full, soft or dim: the variant as given is already in that tone)."""
     colours: Variant = palette.variants[variant]
     view: dict[str, object] = {}
     for name, colour in (*colours.base24.items(), *colours.roles.items()):
@@ -59,6 +60,7 @@ def mustache_view(palette: Palette, variant: str) -> dict[str, object]:
             "scheme-slug-underscored": slug.replace("-", "_"),
             "scheme-system": "base24",
             "scheme-variant": variant,
+            "scheme-tone": tone,
             "scheme-is-dark-variant": variant == "dark",
             "scheme-is-light-variant": variant == "light",
         }

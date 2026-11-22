@@ -299,8 +299,9 @@ KEYS: tuple[Key, ...] = (
         "theme.wallpaper.reload",
         "A command run last after each apply, by sh -c with AMO_WALLPAPER (the picture; "
         "unset, and the command skipped if it names it, when the theme has none), "
-        "AMO_PROFILE, AMO_DIR (the profile's directory) and AMO_VARIANT (dark or light: the "
-        "variant of an app without its own) in its environment. Quote them "
+        "AMO_PROFILE, AMO_DIR (the profile's directory), AMO_VARIANT (dark or light: the "
+        "variant of an app without its own) and AMO_TONE (its tone: full, soft or dim) in its "
+        "environment. Quote them "
         '("$AMO_WALLPAPER"). Setting the wallpaper stays your command: amontillado only '
         "knows which picture belongs to the theme. The example is hyprpaper's (>= 0.8): no "
         "monitor before the comma sets every monitor.",
@@ -352,8 +353,8 @@ KEYS: tuple[Key, ...] = (
     ),
     Key(
         f"theme.apps.{APP}.reload",
-        "A command run after the swap, as theme.wallpaper.reload, but AMO_VARIANT is this "
-        "app's. A failure warns: the app may not be running.",
+        "A command run after the swap, as theme.wallpaper.reload, but AMO_VARIANT and "
+        "AMO_TONE are this app's. A failure warns: the app may not be running.",
     ),
     Key(
         f"theme.apps.{APP}.variant",

@@ -18,7 +18,7 @@ from amontillado.colour import contrast_ratio, hex_to_oklch, oklch_to_hex
 from amontillado.config import TONE_CHOICES
 from amontillado.contrast import BLUE_BACKGROUND, nearest_passing, pairs
 from amontillado.generators import tone_lightness
-from amontillado.palette import BASE16_KEYS, Variant, complete_variant
+from amontillado.palette import BASE16_KEYS, Palette, Variant, complete_variant
 
 FULL = "full"
 # The tones each variant takes; `full` is the variant as the palette holds it.
@@ -69,6 +69,12 @@ def check_tone(variant: str, tone: str) -> None:
     """Raise ToneError unless `variant` (dark or light) takes `tone`."""
     if tone not in TONES[variant]:
         raise ToneError(f"{variant} takes tone {' or '.join(TONES[variant])}, not {tone}")
+
+
+def takes_tone(palette: Palette) -> bool:
+    """Whether `palette` is toned: a palette from a picture is; a preset or a scheme's is
+    applied as it is (decision 3)."""
+    return "generator" in palette.source
 
 
 def checked_pairs(tone: str) -> tuple[tuple[str, str, float], ...]:

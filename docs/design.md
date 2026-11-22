@@ -352,7 +352,8 @@ edit:                                    # amo edit's editors ("Editing")
 
 **Every command in the config runs under `sh -c`**, its inputs as `AMO_*` environment variables,
 never substituted into the text (agreed 2026-11-07, amo-j24.3): `theme.wallpaper.reload` and
-`theme.apps.<app>.reload` get `AMO_WALLPAPER`, `AMO_PROFILE`, `AMO_DIR` and `AMO_VARIANT`;
+`theme.apps.<app>.reload` get `AMO_WALLPAPER`, `AMO_PROFILE`, `AMO_DIR`, `AMO_VARIANT` and
+`AMO_TONE` (v0.11);
 `crop.viewer` gets `AMO_FILE`; `amo edit`'s tools get `AMO_INPUT`, `AMO_OUTPUT` and
 `AMO_WORKDIR`; `group.setter` gets `AMO_MONITOR` and `AMO_WALLPAPER`, and `group.predicates`
 `AMO_PRIMARY`, `AMO_CANDIDATE` and `AMO_MONITOR`; `api_key_command` gets none. So pipelines
@@ -1201,7 +1202,8 @@ Each format gets a *view* of the palette: the variables its templates expect.
   *and every role* the spec's variables (`accent-hex`, `accent-hex-r`, `accent-rgb-r`,
   `accent-rgb16-r`, `accent-dec-r`, `accent-hex-bgr`, ...), and `scheme-name`, `scheme-slug`,
   `scheme-slug-underscored`, `scheme-system` (`base24`), `scheme-variant`,
-  `scheme-is-dark-variant` / `scheme-is-light-variant`; also `scheme-author` (the scheme's, or
+  `scheme-is-dark-variant` / `scheme-is-light-variant`; also `scheme-tone` (`full`, `soft` or
+  `dim`, outside the spec: "Tone: decisions"), `scheme-author` (the scheme's, or
   empty) and `scheme-description` (empty), which template headers name. Outside the spec,
   amontillado adds `gnome-<colour>-hex` for GNOME's palette remapped onto the palette
   (`gnome-blue-1-hex` … `gnome-dark-5-hex`, hex only; `amontillado/gnome.py`): each hue family
@@ -2029,7 +2031,12 @@ Agreed with MH, 2026-11-21:
 2. **Set per variant, globally, per app and per run.** `theme.tone: {light: soft, dark: dim}`
    (each key optional, default `full`); `apps.<app>.tone` with the same shape, winning over
    the global one as `apps.<app>.variant` does; `--tone VARIANT=TONE` on `amo theme apply`
-   (repeatable). Under `variant: system` (or `auto`) each variant keeps its own tone. A
+   (repeatable). **Built (amo-k79.4, .5):** resolved key by key, `apps.<app>.tone` then `--tone`
+   then `theme.tone` then `full`, so `{light: full}` on an app leaves its dark to the others;
+   `full` alone means both variants. `--tone` is per run, as `--variant`: an `--app` re-render
+   tones from the config. Each app renders from a toned copy of the profile's (full,
+   contrast-checked) palette, toned then checked with the tone's pairs; `palette.yaml` stays
+   full. Under `variant: system` (or `auto`) each variant keeps its own tone. A
    template sees `{{scheme-tone}}` (`full`, `soft`, `dim`), a reload command `AMO_TONE`, and
    `theme.yaml` records each app's tone.
 3. **Palettes from pictures take a tone; presets opt in; matugen cannot.** A palette from a

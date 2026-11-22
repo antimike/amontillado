@@ -12,6 +12,10 @@ All notable changes to amontillado are documented here. The format follows
   tone, `light=soft` (cream paper, dark-grey text) or `dark=dim` (charcoal), as made from the
   palette's full variant, with the accent metrics and fixed-colour report. Under `dim`, blue is
   checked as a background under `base05` (3:1) instead of as text.
+- Tone per variant: `theme.tone: {light: soft, dark: dim}` (or `full`), per app
+  `theme.apps.<app>.tone`, per run `amo theme apply --tone VARIANT=TONE`. A palette from a
+  picture is toned at apply time (the profile's `palette.yaml` stays full); templates see
+  `{{scheme-tone}}`, reload commands `AMO_TONE`, and `theme.yaml` records each app's tone.
 
 ## [0.10.0] - 2026-11-21
 

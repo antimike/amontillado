@@ -23,7 +23,9 @@ from amontillado.theme import (
     reload_commands,
     repoint_wallpapers,
     run_reloads,
+    toned_palette,
 )
+from amontillado.tone import toned
 
 RAMP = ["#101010", "#181818", "#303030", "#707070", "#a0a0a0", "#e0e0e0", "#f0f0f0", "#ffffff"]
 ACCENTS = ["#ff8080", "#ffa060", "#ffe080", "#80ff80", "#80ffff", "#80b0ff", "#e0a0ff", "#c08060"]
@@ -61,6 +63,7 @@ def test_apply_writes_a_profile_and_points_current_at_it(tmp_path: Path) -> None
         "template": "kitty",
         "output": "kitty.conf",
         "variant": "dark",
+        "tone": "full",
         "palette": "p",
     }
     assert not (directory / "wallpaper").exists()
@@ -321,7 +324,12 @@ def test_reload_commands(tmp_path: Path) -> None:
     config = replace(config, theme=replace(config.theme, wallpaper_reload='set "$AMO_WALLPAPER"'))
     built = plan(config, _palette(), profile="default", variant="auto", contrast="off")
     directory = tmp_path / "cache" / "default"
-    env = {"AMO_PROFILE": "default", "AMO_DIR": str(directory), "AMO_VARIANT": "dark"}
+    env = {
+        "AMO_PROFILE": "default",
+        "AMO_DIR": str(directory),
+        "AMO_VARIANT": "dark",
+        "AMO_TONE": "full",
+    }
     # No wallpaper: AMO_WALLPAPER is unset and the hook naming it is left out.
     assert reload_commands(config, built, directory) == [
         Reload("pkill -USR1 kitty", env),
@@ -332,7 +340,7 @@ def test_reload_commands(tmp_path: Path) -> None:
     hook = reload_commands(config, built, directory)[-1]
     assert hook == Reload('set "$AMO_WALLPAPER"', {**env, "AMO_WALLPAPER": "/pictures/a b.jpg"})
     assert str(hook) == (
-        f"AMO_DIR={directory} AMO_PROFILE=default AMO_VARIANT=dark "
+        f"AMO_DIR={directory} AMO_PROFILE=default AMO_TONE=full AMO_VARIANT=dark "
         "AMO_WALLPAPER='/pictures/a b.jpg' sh -c 'set \"$AMO_WALLPAPER\"'"
     )
 
@@ -419,7 +427,7 @@ def test_cli_dry_run_changes_nothing(home: Path, capsys: pytest.CaptureFixture[s
     assert (Path(out[0]) / "kitty.conf").is_file()
     directory = home / ".cache" / "theme" / "default"
     assert out[1] == (
-        f"would run: AMO_DIR={directory} AMO_PROFILE=default AMO_VARIANT=dark "
+        f"would run: AMO_DIR={directory} AMO_PROFILE=default AMO_TONE=full AMO_VARIANT=dark "
         'sh -c \'true "$AMO_PROFILE" "$AMO_VARIANT"\''
     )
     assert not (home / ".cache" / "theme").exists()
@@ -441,3 +449,110 @@ def test_cli_variant_system(
     flag = ["--variant", "system"] if where == "flag" else []
     main(["theme", "apply", "--palette", str(palette), "--dry-run", *flag])
     assert "AMO_VARIANT=light" in capsys.readouterr().out
+
+
+def _picture_palette() -> Palette:
+    """A palette from a picture: one that takes a tone."""
+    return _palette("pic", ("dark", "light"), generator="matugen 4.2.0")
+
+
+def _background(directory: Path) -> str:
+    line = next(
+        x
+        for x in (directory / "kitty.conf").read_text().splitlines()
+        if x.startswith("background ")
+    )
+    return line.split()[1]
+
+
+def _dim_base00() -> str:
+    return toned("dark", _picture_palette().variants["dark"], "dim").base24["base00"]
+
+
+def test_each_app_takes_its_own_tone(tmp_path: Path) -> None:
+    hook = 'echo "$AMO_TONE"'
+    config = _config(
+        tmp_path,
+        kitty=AppConfig(reload=hook),
+        nvim=AppConfig(reload=hook, tone={"dark": "full"}),
+    )
+    config = replace(config, theme=replace(config.theme, tone={"dark": "dim", "light": "soft"}))
+    built = plan(config, _picture_palette(), profile="default", variant="dark", contrast="adjust")
+    directory = apply(config, built, activate=True)
+    assert _background(directory) == _dim_base00()
+    full = _picture_palette().variants["dark"].base24["base00"]
+    assert f'base00 = "{full}"' in (directory / "palette.lua").read_text()
+    # The profile's palette stays full: the tone is made at every apply.
+    stored = yamlio.load((directory / "palette.yaml").read_text())
+    assert stored["variants"]["dark"]["base24"]["base00"] == full
+    records = yamlio.load((directory / "theme.yaml").read_text())["apps"]
+    assert (records["kitty"]["tone"], records["nvim"]["tone"]) == ("dim", "full")
+    tones = [r.env["AMO_TONE"] for r in reload_commands(config, built, directory)]
+    assert tones == ["dim", "full"]
+    assert built.tone == "dim"
+
+
+def test_tone_precedence_app_then_flag_then_config(tmp_path: Path) -> None:
+    config = _config(tmp_path, kitty=AppConfig(), nvim=AppConfig(tone={"light": "soft"}))
+    config = replace(config, theme=replace(config.theme, tone={"dark": "full"}))
+    built = plan(
+        config,
+        _picture_palette(),
+        profile="default",
+        variant="dark",
+        contrast="off",
+        tone={"dark": "dim"},
+    )
+    # --tone wins over theme.tone; nvim's own tone names light only, so its dark falls through.
+    assert [item.record["tone"] for item in built.rendered] == ["dim", "dim"]
+    config = replace(
+        config, theme=replace(config.theme, apps={"kitty": AppConfig(tone={"dark": "full"})})
+    )
+    built = plan(
+        config,
+        _picture_palette(),
+        profile="default",
+        variant="dark",
+        contrast="off",
+        tone={"dark": "dim"},
+    )
+    assert built.rendered[0].record["tone"] == "full"
+
+
+def test_each_variant_keeps_its_own_tone(tmp_path: Path) -> None:
+    config = _config(tmp_path, kitty=AppConfig(), nvim=AppConfig(variant="light"))
+    config = replace(config, theme=replace(config.theme, tone={"dark": "dim", "light": "soft"}))
+    built = plan(config, _picture_palette(), profile="default", variant="dark", contrast="off")
+    assert [(i.record["variant"], i.record["tone"]) for i in built.rendered] == [
+        ("dark", "dim"),
+        ("light", "soft"),
+    ]
+
+
+def test_a_preset_is_applied_as_it_is(tmp_path: Path) -> None:
+    config = _config(tmp_path, kitty=AppConfig())
+    config = replace(config, theme=replace(config.theme, tone={"dark": "dim"}))
+    built = plan(config, _palette(), profile="default", variant="dark", contrast="off")
+    assert built.rendered[0].record["tone"] == "full" and built.tone == "full"
+
+
+def test_an_app_re_render_tones_the_stored_palette(tmp_path: Path) -> None:
+    config = _config(tmp_path, kitty=AppConfig(), nvim=AppConfig())
+    config = replace(config, theme=replace(config.theme, tone={"dark": "dim"}))
+    apply(
+        config,
+        plan(config, _picture_palette(), profile="default", variant="dark", contrast="off"),
+        activate=True,
+    )
+    built = plan(config, None, profile="default", variant="dark", contrast="off", only=("kitty",))
+    directory = apply(config, built, activate=True)
+    assert _background(directory) == _dim_base00()
+
+
+def test_dim_keeps_blue_as_a_background_when_adjusting() -> None:
+    palette = _picture_palette()
+    made = toned("dark", palette.variants["dark"], "dim")
+    adjusted = toned_palette(palette, "dark", "dim", "adjust").variants["dark"]
+    assert adjusted.base24["base0D"] == made.base24["base0D"]
+    assert "base0D" not in adjusted.adjusted
+    assert toned_palette(palette, "dark", "full", "adjust") is palette
