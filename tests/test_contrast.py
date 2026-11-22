@@ -7,12 +7,14 @@ import pytest
 
 from amontillado.colour import contrast_ratio, hex_to_oklch, hue_distance
 from amontillado.contrast import (
+    BLUE_BACKGROUND,
     FIXED,
     PAIRS,
     adjust,
     apply_contrast,
     check,
     fixed_colours,
+    pairs,
     xterm_colour,
 )
 from amontillado.palette import Palette, Variant, complete_variant
@@ -198,3 +200,32 @@ def test_fixed_colours_on_light_and_dark() -> None:
     assert dark.grey_252 > 11
     assert dark.cube < light.cube
     assert str(light).startswith("xterm's fixed colours below 4.5:1 on base00: cube ")
+
+
+def test_blue_background_pairs_replace_blue_text_in_place() -> None:
+    usual, dim = pairs(), pairs(blue_background=True)
+    assert usual == PAIRS
+    assert len(dim) == len(PAIRS) - 1
+    assert ("base0D", "base00", 4.5) not in dim and ("base0D", "base01", 4.5) not in dim
+    assert ("base16", "base00", 4.5) in dim and ("base16", "base01", 4.5) in dim
+    index = PAIRS.index(("base0D", "base00", 4.5))
+    assert dim[index] == ("base0D", "base05", BLUE_BACKGROUND)
+
+
+def test_blue_as_a_background_is_checked_instead_of_blue_text() -> None:
+    # Dark blue: 3:1 or more under base05, far below 4.5:1 as text on base00; bright blue
+    # stays text, and so does the accent (toned on its own).
+    variant = _variant({"accent": "#80b0ff"}, base0D="#3050a0", base16="#80b0ff")
+    assert ("base0D", "base00") in [(f.foreground, f.background) for f in check(variant)]
+    assert check(variant, pairs(blue_background=True)) == []
+
+
+def test_adjusting_blue_as_a_background_moves_blue_not_the_text() -> None:
+    # Light blue: too close to base05 to sit under it.
+    before = _variant(base0D="#a0c0ff")
+    after, left = adjust(before, "dark", pairs(blue_background=True))
+    assert left == []
+    assert "base0D" in after.adjusted and "base05" not in after.adjusted
+    assert after.base24["base05"] == before.base24["base05"]
+    assert 3.0 <= _ratio(after, "base05", "base0D") < 3.1
+    assert str(check(before, pairs(blue_background=True))[0]).startswith("base0D on base05: ")

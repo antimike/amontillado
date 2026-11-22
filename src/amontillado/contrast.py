@@ -52,6 +52,22 @@ PAIRS: tuple[tuple[str, str, float], ...] = (
     ("on_selection", "selection", _UI),
     ("border", "base00", _FAINT),
 )
+# Under dim, blue is a background under base05 instead of text (docs/design.md, "Tone:
+# decisions" 4). Contrast is symmetric; blue is listed first so that it is what adjusting moves.
+BLUE_BACKGROUND = _FAINT
+BLUE_TEXT = (("base0D", "base00"), ("base0D", "base01"))
+
+
+def pairs(*, blue_background: bool = False) -> tuple[tuple[str, str, float], ...]:
+    """The checked pairs: PAIRS, or with `blue_background` blue at BLUE_BACKGROUND under
+    base05 in place of blue as text on base00 and base01 (bright blue base16 stays text)."""
+    if not blue_background:
+        return PAIRS
+    index = next(i for i, pair in enumerate(PAIRS) if pair[:2] == BLUE_TEXT[0])
+    kept = tuple(pair for pair in PAIRS if pair[:2] not in BLUE_TEXT)
+    return (*kept[:index], ("base0D", "base05", BLUE_BACKGROUND), *kept[index:])
+
+
 # Never moved: a background sits under every foreground, so moving it changes every pair.
 FIXED = frozenset({"base00", "base01", "base10", "base11"})
 # The palette's link to the picture: moved only when no foreground fixes a pair.
@@ -75,10 +91,10 @@ def _colour(variant: Variant, name: str) -> str:
     return variant.roles[name] if name in variant.roles else variant.base24[name]
 
 
-def check(variant: Variant) -> list[Failure]:
-    """The pairs of `variant` below their minimums, in table order."""
+def check(variant: Variant, checked: tuple[tuple[str, str, float], ...] = PAIRS) -> list[Failure]:
+    """The pairs of `variant` below their minimums, in table order (`checked`: see pairs)."""
     failures = []
-    for foreground, background, minimum in PAIRS:
+    for foreground, background, minimum in checked:
         ratio = contrast_ratio(_colour(variant, foreground), _colour(variant, background))
         if ratio < minimum:
             failures.append(Failure(foreground, background, ratio, minimum))
@@ -126,13 +142,16 @@ def fixed_colours(variant: Variant) -> FixedColours:
     )
 
 
-def adjust(variant: Variant, label: str) -> tuple[Variant, list[Failure]]:
-    """`variant` with failing pairs fixed where the rules allow, and the pairs still failing.
-    Each change is logged (under `label`, the variant's name) and listed in `adjusted`."""
+def adjust(
+    variant: Variant, label: str, checked: tuple[tuple[str, str, float], ...] = PAIRS
+) -> tuple[Variant, list[Failure]]:
+    """`variant` with failing pairs (of `checked`: see pairs) fixed where the rules allow, and
+    the pairs still failing. Each change is logged (under `label`, the variant's name) and
+    listed in `adjusted`."""
     # Each pass makes one move; the bound only guards against moves that undo each other.
-    for _ in range(2 * len(PAIRS)):
+    for _ in range(2 * len(checked)):
         changed = False
-        for failure in check(variant):
+        for failure in check(variant, checked):
             moved = _fix(variant, failure)
             if moved is None:
                 continue
@@ -146,7 +165,7 @@ def adjust(variant: Variant, label: str) -> tuple[Variant, list[Failure]]:
             break
         if not changed:
             break
-    return variant, check(variant)
+    return variant, check(variant, checked)
 
 
 def _fix(variant: Variant, failure: Failure) -> tuple[str, str] | None:
