@@ -1904,6 +1904,137 @@ rejected for a dark middle, one of thin or one-sided bars).
 4. **`amo fetch` skips letterboxed thumbnails, `--keep-letterboxed` keeps them** (MH: an
    opt-in to keep them).
 
+## Tone (designed in v0.10)
+
+**Status: agreed with MH 2026-11-21 (amo-4rf)**, from comparison sheets and kitty windows of
+3qz176 in every proposal; the decisions are under "Tone: decisions". Design only in v0.10; the
+build is a later epic (amo-3oa), and its values are *initial*.
+
+Full-contrast dark and light get tiring in a terminal all day. *Tone* is a gentler version of
+a variant: **soft** light (cream paper, darker than white, dark-grey text) and **dim** dark
+(charcoal, not near-black). It is not a third variant: the desktop's colour scheme (GTK's
+`color-scheme`, the settings portal, `prefers-color-scheme`) is binary, so `variant: system`
+could not pick a third, and `AMO_VARIANT` and `{{scheme-variant}}` stay `dark` or `light`.
+
+### Tone: prior art
+
+Checked 2026-11-21 on 3qz176 (`vocaloid-hatsune-miku-anime-girls-3qz176`) unless marked.
+
+| Candidate | What it does | Fails |
+|---|---|---|
+| matugen 4.2 `--contrast -1` (tested) | Material's contrast level: lowers `on_surface` and the accents (dark `on_surface` `#dee3e6` → `#9ea4a6`, 7.35:1) | the backgrounds: `surface` is `#0f1416` / `#f5fafd` at −1, 0 and 1, and `palettes.neutral` (our ramp) is unchanged. It is less contrast on the same near-black, not a dimmer background. |
+| matugen 4.2 `--type` (tested: tonal-spot, neutral, fidelity, content, monochrome) | Material scheme variants: chroma and hue rules | surfaces stay at Material's tones 6 / 98 in every type (`#111415`-`#131313` dark). |
+| wallust 3.5.1 `softlight16`, `softdark16` (tested) | pastel palettes | background `#c8b5b1` (OKLCH L about 0.77, far below paper), colours in no hue order and no contrast check: decision 11's reasons wallust's own colours are not used. |
+| Scheme families with a hardness axis: gruvbox hard/medium/soft (light soft `#f2e5bc`, dark soft `#32302f`), everforest, solarized light `#fdf6e3` (values from the bead's ticket) | a fixed scheme per tone | serves a preset only, not a palette from a picture. Already usable today: `amo palette --from-scheme` the soft files. The vocabulary comes from here. |
+| nvim colourscheme options (gruvbox-material, everforest `background = "soft"`; from their docs, not tested) | the same axis inside one app | one app; the bar, GTK and kitty stay full. |
+
+No candidate makes a gentler variant of a palette from a picture, so amontillado would build
+it: a transform of a palette's full variant, the same for every app.
+
+### Tone: prototype
+
+A throwaway prototype (not in the repository) made the toned variants from each of the 13
+library pictures' palettes (matugen, `amontillado` hues), then ran the contrast check and the
+accent metrics:
+
+- the ramp `base00`-`base07` re-derived at other Material tones: soft light 92, 89, 84, 55,
+  42, 24, 18, 12 (full: 98, 95, 90, 50, 40, 10, 5, 0); dim dark 18, 22, 30, 55, 68, 86, 90,
+  94 (full: 5, 10, 20, 50, 70, 95, 98, 100). Hue and chroma: the picture's neutral for dim;
+  for soft either the picture's or a cream tint (hue 80°, chroma 0.024 on the backgrounds
+  falling to 0.006 on `base07`);
+- each accent (`base08`-`base0F`, `accent`, `secondary`) keeps hue and chroma (×1.15 for soft,
+  so the accents stay apart) and takes the lightness whose contrast on the new `base01` is
+  its full contrast moved 40 % of the way down to 4.7; brights and `base10`-`base11` derived
+  as for any palette.
+
+| 13 pictures | base00 (3qz176) | fg/bg | base04/base01 | comment | accents on base01 | hues | distinct | base05 on base0D | adjusted |
+|---|---|---|---|---|---|---|---|---|---|
+| light full (today) | `#f8f9fb` | 16.3-16.4 | 5.7 | 4.2-4.3 | 4.6-9.0 | 6/6 | 9.2-9.5 | 3.1 | 0 |
+| light soft, cream | `#f1e7d7` | 9.4 | 4.5 | 3.1 | 4.7-8.1 | 6/6 | 7.5-8.2 | 1.8 | 1 (`base04`) |
+| light soft, neutral | `#e6e8e9` | 9.4-9.5 | 4.5-4.6 | 3.1 | 4.7-8.1 | 6/6 | 7.5-8.0 | 1.8 | 0 |
+| dark full (today) | `#0e1113` | 16.6-16.7 | 7.4-7.5 | 4.2 | 4.8-14.7 | 6/6 | 8.9-11.0 | 3.2 | 0 |
+| dark dim | `#2a2d2e` | 9.6-9.8 | 5.0-5.1 | 3.7 | 4.7-11.2 | 6/6 | 8.4-10.4 | 1.8 | 0 |
+
+Every toned variant passes every pair of "Contrast checks" (one `base04` move in soft cream,
+a ramp tone to retune). Two costs show:
+
+- **Blue as a background.** The dark ramp was set so that `base05` on `base0D` reaches 3:1
+  (fast-syntax-highlighting's paired brackets, less's prompt) while `base0D` reaches 4.5:1 on
+  `base01` ("Generators", named hues). Under dim there is no such blue: with `base01` at tone
+  22 (luminance 0.035) blue needs luminance ≥ 0.33 for 4.5:1, and `base05` at tone 86
+  (0.68) allows at most 0.19 for 3:1. It falls to 1.8:1. (Not a checked pair.)
+- **Accents closer together in soft light.** Darker paper leaves a narrower lightness band
+  between 4.5:1 and the text, so the six ANSI accents sit closer: distinct 7.5-8.2, against the
+  8 under which two are hard to tell apart ("Accent metrics"; report only).
+
+A second round compared proposals for each cost on 3qz176, every kitty window with
+`LS_COLORS` from its own palette through the `vivid` template. Light: cream as above (L1),
+accent chroma ×1.4 (L2), a lighter paper `#f9f0e1` at tones 95/92 (L3). Dark: dim as above
+(D1); *muted* (D2: ramp 18, 22, 30, 52, 64, 83, 88, 92, accents 80 % of the way down to 4.7,
+as everforest keeps its accents at 4.5-6.8:1 under its text's 7.4); D2 with blue kept as a
+background (D3: blue at 3:1 under `base05`, so blue text falls to 3.0:1 on `base00`); and the
+dimmest ramp that keeps a blue window at all (D4: `base00` tone 10, `#191c1d`, with `base05`
+at tone 95; with a dimmer `base05` there is none). For reference, everforest's own six ANSI
+accents score distinct 4.5, hues 5/6. MH chose L2 and D3. Over the 13 pictures:
+
+| 13 pictures | base00 | fg/bg | accents on base01 | blue text on base00 / base01 | base05 on blue | hues | distinct | adjusted |
+|---|---|---|---|---|---|---|---|---|
+| soft (L2) | `#f1e7d7` | 9.4 | 4.7-8.1 | 5.2-5.3 / 4.8-4.9 | 1.8 | 6/6 | 8.5-9.2 | `base04` |
+| dim (D3) | `#2a2d2e` | 8.9-9.0 | 6.0-7.9 (blue 2.6-2.7) | 3.0 / 2.6-2.7 | 3.0 | 6/6 | 6.2-7.5 | `base04`, `base0D` |
+
+**Fixed colours are not tone.** The first round's light windows had yellow and green file
+names that were hard to read in every tone. They came from MH's `LS_COLORS`
+(trapd00r/LS_COLORS, `*.md=38;5;184`, read by lsd as well), which names 256-colour cube
+entries that no palette sets. With `LS_COLORS` from the palette (the `vivid` template) they
+took the palette's colours. That is the terminal docs' fixed-colour rule and the kitty grey
+ramp (amo-wtt, amo-7a0), not a tone.
+
+### Tone: decisions
+
+Agreed with MH, 2026-11-21:
+
+1. **A tone per variant, made by amontillado** (no tool in "Tone: prior art" dims a picture's
+   palette). Light: `full` (default) or `soft`. Dark: `full` (default) or `dim`. A toned
+   variant is made at apply time from the palette's full variant, never stored in the palette
+   file: the ramp `base00`-`base07` at the tone's Material tones, each accent keeping its hue
+   and taking its lightness from a contrast target on the new `base01`, then derived and
+   checked as any palette. *Initial* values, from the comparison:
+   - `soft` (L2): cream paper, ramp tones 92, 89, 84, 55, 42, 24, 18, 12 at hue 80° and chroma
+     0.024 on the backgrounds down to 0.006 on `base07` (the cream is part of `soft`, not a
+     separate setting); accent chroma ×1.4, each accent's contrast on `base01` 40 % of the way
+     from its full contrast down to 4.7.
+   - `dim` (D3): the picture's neutral, ramp tones 18, 22, 30, 52, 64, 83, 88, 92; each accent
+     80 % of the way down to 4.7 (muted, as everforest); blue (`base0D`) at 3:1 under `base05`
+     (decision 4).
+   - In the build, retune the ramp so that `base04` on `base01` passes without the adjustment
+     both tones needed.
+2. **Set per variant, globally, per app and per run.** `theme.tone: {light: soft, dark: dim}`
+   (each key optional, default `full`); `apps.<app>.tone` with the same shape, winning over
+   the global one as `apps.<app>.variant` does; `--tone VARIANT=TONE` on `amo theme apply`
+   (repeatable). Under `variant: system` (or `auto`) each variant keeps its own tone. A
+   template sees `{{scheme-tone}}` (`full`, `soft`, `dim`), a reload command `AMO_TONE`, and
+   `theme.yaml` records each app's tone.
+3. **Palettes from pictures take a tone; presets opt in; matugen cannot.** A palette from a
+   picture is toned. A preset (or a palette from `--from-scheme`) is applied as it is, with
+   one info line, unless its file sets `tone: transform`: a scheme is a chosen look, and
+   families such as gruvbox ship their own soft scheme (as amontillado never inverts a
+   palette, decision 2 of the theme engine). No CLI flag. An app with `render_with: matugen`,
+   whose colours are matugen's own (its `--contrast` does not dim the background, "Tone: prior
+   art"), gets `full` with a warning from `amo config check` and `amo theme apply`;
+   `apps.<app>.tone: full` silences it. Every other app, `libadwaita` and `libadwaita-vars`
+   included, renders from the toned palette.
+4. **The toned variant is checked with the same pairs and minimums, one exception.** Under
+   `dim`, blue serves as a background instead of as text: `base05` on `base0D` at 3:1
+   replaces `base0D` on `base00` and `base01` at 4.5:1 (blue text 3.0:1 and 2.6-2.7:1;
+   bright blue `base16` keeps 4.5:1). MH chose this over 4.5:1 blue text (D2), seen side by
+   side on tree, fd, bat and `git branch -vv` output, **to review after a week or two of use**
+   (amo-yyu). `amo palette --check FILE --tone VARIANT=TONE` checks and reports the accent metrics per
+   tone; distinct under `dim` (6.2-7.5) is below 8, accepted as the cost of muted accents
+   (the metric is report only).
+5. **Docs: the comparison table above now; swatches with the build.** The build adds a
+   swatch sheet of one picture in all four (light full and soft, dark full and dim) to
+   `docs/images/`, made by a `just` recipe from the code rather than by hand.
+
 ## Testing
 
 - No network in tests: the HTTP layer is one small function, replaced by a stub that serves
