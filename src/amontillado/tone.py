@@ -15,13 +15,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from amontillado.colour import contrast_ratio, hex_to_oklch, oklch_to_hex
+from amontillado.config import TONE_CHOICES
 from amontillado.contrast import BLUE_BACKGROUND, nearest_passing, pairs
 from amontillado.generators import tone_lightness
 from amontillado.palette import BASE16_KEYS, Variant, complete_variant
 
 FULL = "full"
 # The tones each variant takes; `full` is the variant as the palette holds it.
-TONES = {"light": (FULL, "soft"), "dark": (FULL, "dim")}
+TONES = TONE_CHOICES
 # Lowest contrast an accent is moved to on base01: the check's 4.5 plus a margin.
 ACCENT_FLOOR = 4.7
 

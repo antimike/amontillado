@@ -274,6 +274,17 @@ KEYS: tuple[Key, ...] = (
         choices=VARIANT_CHOICES,
     ),
     Key(
+        "theme.tone",
+        "A gentler tone per variant, made from the palette's full variant at apply time: "
+        "light soft (cream paper, dark-grey text, about 9:1) and dark dim (charcoal; blue "
+        "becomes a background colour under the text, 3:1, rather than text). full, the "
+        "default, is the palette as made. A mapping with either key, or full for both. Under "
+        "variant system or auto each variant keeps its own. Palettes from pictures are toned; "
+        "a preset only if its file sets tone: transform. An app's own tone wins, then --tone.",
+        "{light: soft, dark: dim}",
+        default="full",
+    ),
+    Key(
         "theme.contrast",
         "What happens to a colour pair below its WCAG contrast minimum: adjust (move the "
         "foreground, then the accent as a last resort, in lightness; each change logged and "
@@ -348,6 +359,12 @@ KEYS: tuple[Key, ...] = (
         f"theme.apps.{APP}.variant",
         "This app's variant, over theme.variant and --variant.",
         choices=VARIANT_CHOICES,
+    ),
+    Key(
+        f"theme.apps.{APP}.tone",
+        "This app's tone per variant, over --tone and theme.tone, key by key ({light: full} "
+        "leaves its dark to them); full for both. An app with render_with: matugen gets "
+        "full, and full here silences the warning.",
     ),
     Key(
         f"theme.apps.{APP}.render_with",
