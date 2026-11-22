@@ -137,6 +137,35 @@ def test_libadwaita_foregrounds_contrast_with_their_backgrounds(variant: str) ->
         assert ratio >= 4.5, (foreground, background, ratio)
 
 
+# adw-gtk3 6.4 hard-codes `color: white` on these selectors, all on the accent background.
+ADW_GTK3_WHITE_ON_ACCENT = (
+    "button.suggested-action",
+    "button.suggested-action:hover",
+    "button.suggested-action:active",
+    "button.suggested-action:checked",
+    ".terminal selection",
+    ".terminal text selection",
+)
+
+
+def _rules(output: str) -> dict[tuple[str, ...], str]:
+    """Plain CSS rules (not :root): their selector lists and bodies."""
+    found = re.findall(r"^([^@/\s:{][^{;]*?)\s*\{([^}]*)\}", output, re.MULTILINE)
+    return {tuple(s.strip() for s in sel.split(",")): body.strip() for sel, body in found}
+
+
+@pytest.mark.parametrize("name", ["libadwaita", "libadwaita-vars"])
+@pytest.mark.parametrize("variant", ["dark", "light"])
+def test_libadwaita_sets_accent_text_where_adw_gtk3_hard_codes_white(
+    name: str, variant: str
+) -> None:
+    output = _gruvbox_render(name, variant)
+    assert _rules(output) == {ADW_GTK3_WHITE_ON_ACCENT: "color: @accent_fg_color;"}
+    names = _define_colours(output)
+    ratio = contrast_ratio(names["accent_fg_color"], names["accent_bg_color"])
+    assert ratio >= 4.5, ratio
+
+
 # libadwaita 1.9's colour variables (the :root blocks of gtk.css in the library's resources),
 # less the accent presets (--accent-blue ... --accent-slate: the system accent's choices, which
 # the stylesheet never reads and the named accent colours override).

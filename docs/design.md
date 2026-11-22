@@ -1144,9 +1144,16 @@ error are `error`, success `success`, warning `warning`, each on `base00` (a con
 the role is derived from `base08`, `base0B`, `base0A`); window and the secondary sidebar are
 `base00`, view `base10` (darker than the window in dark, lighter in light, as in Adwaita);
 headerbar, sidebar, card, dialog, popover and thumbnail `base01`; every foreground `base05`;
-borders `base02`; shadows black at Adwaita's strengths per variant. Only `@define-color`: GTK3
-fails on a `:root` block of CSS variables, and libadwaita 1.9 still reads its variables from
-these names (`--accent-bg-color: @accent_bg_color`). Not the standalone `accent_color`,
+borders `base02`; shadows black at Adwaita's strengths per variant. Only `@define-color`, plus
+one plain rule: GTK3 fails on a `:root` block of CSS variables, and libadwaita 1.9 still reads
+its variables from these names (`--accent-bg-color: @accent_bg_color`). The rule (amo-inx) sets
+`color: @accent_fg_color` on `button.suggested-action` (and its `:hover`, `:active`, `:checked`)
+and `.terminal selection`/`.terminal text selection`, where adw-gtk3 6.4 hard-codes white text
+on the accent: with a dark variant's light accent that text was white on light blue (chezmoi
+measured the fix at 11.72:1 dark, 4.88:1 light). adw-gtk3's other white text sits on its own
+near-black OSD backgrounds, independent of the palette. Under libadwaita the rule restates what
+the stylesheet already does; `libadwaita-vars` carries it too, and a test checks both templates
+hold the same rule and that `accent_fg_color` reaches 4.5:1 on `accent_bg_color`. Not the standalone `accent_color`,
 `destructive_color`, `success_color`, `warning_color`, `error_color`: libadwaita ≥ 1.6 derives
 those from the `*_bg_color` in OKLab by its own colour scheme (lightness at most 0.5 for light,
 at least 0.85 for dark), so the desktop's `color-scheme` (`prefer-dark` for a dark variant)
