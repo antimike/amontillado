@@ -91,6 +91,9 @@ class Palette:
     variants: dict[str, Variant]
     # Informational: where the palette came from.
     source: dict[str, object] = field(default_factory=dict)
+    # A preset's opt-in to tone: True when its file sets `tone: transform` (docs/design.md,
+    # "Tone: decisions" 3). A palette from a picture is toned without it.
+    tone_transform: bool = False
 
 
 def complete_variant(
@@ -167,8 +170,11 @@ def palette_from_data(data: object, where: str) -> Palette:
     if not isinstance(name, str) or not name:
         raise PaletteError(f"{where}: name must be a non-empty string")
     source = _mapping(data.get("source", {}), f"{where}: source")
-    for key in data.keys() - {"version", "name", "source", "variants"}:
+    for key in data.keys() - {"version", "name", "source", "tone", "variants"}:
         logger.warning("%s: unknown key %r ignored", where, key)
+    tone = data.get("tone")
+    if tone not in (None, "transform"):
+        raise PaletteError(f"{where}: tone must be transform, not {tone!r}")
     variants = _mapping(data.get("variants"), f"{where}: variants")
     if not variants:
         raise PaletteError(f"{where}: variants must hold dark, light or both")
@@ -183,6 +189,7 @@ def palette_from_data(data: object, where: str) -> Palette:
             if key in variants
         },
         dict(source),
+        tone_transform=tone == "transform",
     )
 
 
@@ -208,6 +215,8 @@ def palette_to_data(palette: Palette) -> dict[str, object]:
     data: dict[str, object] = {"version": VERSION, "name": palette.name}
     if palette.source:
         data["source"] = palette.source
+    if palette.tone_transform:
+        data["tone"] = "transform"
     variants: dict[str, object] = {}
     for key, variant in palette.variants.items():
         variants[key] = {"base24": dict(variant.base24), "roles": dict(variant.roles)}

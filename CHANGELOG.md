@@ -16,6 +16,7 @@ All notable changes to amontillado are documented here. The format follows
   `theme.apps.<app>.tone`, per run `amo theme apply --tone VARIANT=TONE`. A palette from a
   picture is toned at apply time (the profile's `palette.yaml` stays full); templates see
   `{{scheme-tone}}`, reload commands `AMO_TONE`, and `theme.yaml` records each app's tone.
+  A preset palette is applied as it is unless its file sets `tone: transform`.
 
 ## [0.10.0] - 2026-11-21
 

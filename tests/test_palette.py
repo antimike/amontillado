@@ -153,6 +153,7 @@ def test_adjusted_is_kept() -> None:
         (lambda d: d["variants"]["dark"]["roles"].update(acent="#000000"), "'acent'"),
         (lambda d: d["variants"]["dark"].update(adjusted="base03"), "adjusted must be"),
         (lambda d: d["variants"]["dark"].update(colours={}), "unknown key 'colours'"),
+        (lambda d: d.update(tone="dim"), "tone must be transform, not 'dim'"),
     ],
 )
 def test_invalid_palette(change: object, message: str) -> None:
@@ -165,6 +166,14 @@ def test_invalid_palette(change: object, message: str) -> None:
 def test_unknown_top_level_key_warns(caplog: pytest.LogCaptureFixture) -> None:
     palette_from_data({**_palette_data(), "comment": "x"}, "p")
     assert "unknown key 'comment'" in caplog.text
+
+
+def test_tone_transform_round_trips() -> None:
+    plain = palette_from_data(_palette_data(), "p")
+    assert not plain.tone_transform and "tone" not in yamlio.load(dump_palette(plain))
+    opted = palette_from_data({**_palette_data(), "tone": "transform"}, "p")
+    assert opted.tone_transform
+    assert palette_from_data(yamlio.load(dump_palette(opted)), "p").tone_transform
 
 
 def test_unreadable_palette(tmp_path: Path) -> None:

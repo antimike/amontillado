@@ -72,9 +72,9 @@ def check_tone(variant: str, tone: str) -> None:
 
 
 def takes_tone(palette: Palette) -> bool:
-    """Whether `palette` is toned: a palette from a picture is; a preset or a scheme's is
-    applied as it is (decision 3)."""
-    return "generator" in palette.source
+    """Whether `palette` is toned: a palette from a picture is; a preset or a scheme's only
+    when its file sets `tone: transform` (decision 3)."""
+    return palette.tone_transform or "generator" in palette.source
 
 
 def checked_pairs(tone: str) -> tuple[tuple[str, str, float], ...]:
