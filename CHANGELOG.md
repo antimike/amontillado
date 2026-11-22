@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-21
+
+Terminal theming under light variants: kitty derives its 256 colours from the palette, a
+built-in `vivid` template for `LS_COLORS`, and a page on theming terminals and shell tools. The
+tone design (soft light, dim dark) is in docs/design.md; its build comes in a later release.
+
 ### Added
 
 - Built-in template `vivid` (`vivid.yml`): a [vivid](https://github.com/sharkdp/vivid) theme
