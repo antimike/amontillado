@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `amo fetch` indexes a new record under its name at once. Before, the index had no name for
+  fetched records until the next `amo index`: `amo name --from-tags` failed on them with "named
+  already", lookups by name missed them, and a later fetch or rename could reuse a name.
+
 ## [0.12.0] - 2026-11-21
 
 GTK3 apps recoloured live under adw-gtk3 with `amo hook gtk3-theme`, and readable text on

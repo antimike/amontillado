@@ -461,7 +461,7 @@ def _keep(
         temporary.unlink(missing_ok=True)
     nsfw = directory.resolve().is_relative_to(config.nsfw_root)
     stats = {file.name: file_stat(file)}
-    add_to_index(conn, Entry(directory, root, nsfw, record, (file.name,), file.name, None, stats))
+    add_to_index(conn, Entry(directory, root, nsfw, record, (file.name,), file.name, name, stats))
     if matches:
         logger.info("kept %s (%s)", file, _classes(metrics))
     else:
