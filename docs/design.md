@@ -314,7 +314,8 @@ cannot be rebuilt):
   cache; only when it was measured).
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
-  table. The database's `PRAGMA user_version` is its schema version (9); a newer one than the
+  table (from schema 10, the state tables of "Saved looks" too: `current_group`, `history`,
+  `theme_usage`). The database's `PRAGMA user_version` is its schema version (9); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
   thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
   schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`),
@@ -2151,9 +2152,15 @@ Decisions:
 
 ## Saved looks (designed in v0.12)
 
-**Status: shape agreed with MH 2026-11-22 (amo-0k6); `/project-review` (D81) next, then the
-build beads below.** Decisions are marked **MH** with their date. Ratings stay deferred (MH
-2026-11-21) until there is more use of `amo group`.
+**Status: agreed with MH 2026-11-22 (amo-0k6), the whole design in one release.** Decisions
+are marked **MH** with their date. Ratings stay deferred (MH 2026-11-21) until there is more use
+of `amo group`. `/project-review` (2026-11-22) recommended shipping only the format, `save` and
+apply, and shelving history, usage, ids, `list` and `preview` until a client existed. MH kept
+them: amontillado's role is exploratory support for MH's theming work in the dotfiles, where a
+feature is evaluated live and then kept or removed, so these ship marked experimental ("Saved
+looks: evaluation"). The review's defects are fixed below (history numbering, the save
+warning, the index invariant, no palette dedupe) and its smaller alternative added to the prior
+art.
 
 A *look* is a set of pictures across monitors that the user liked, together with the theme they
 saw: kept by name and applied again later. **MH (2026-11-21):** it holds the whole look,
@@ -2170,7 +2177,9 @@ wallpaper ("Grouping: decisions" 3).
 ### Saved looks: prior art
 
 Checked 2026-11-22: the dotfiles' own glue by reading it, the rest from their docs or wikis (not
-run).
+run). The requirements, MH's (2026-11-21 and 11-22, set before this entry was written, as the
+review noted): several monitors with their theme, kept by name; pictures by record id;
+versioned with the library; the SFW roots never naming an NSFW record.
 
 | Candidate | What it does | Fails |
 |---|---|---|
@@ -2180,6 +2189,7 @@ run).
 | HyDE (Hyprland dotfiles framework; FAQ) | a theme is a directory of colours plus its own `wallpapers/` | the pictures are copied into the theme (not library records), one theme engine of its own, and the whole framework replaces the user's dotfiles. |
 | KDE Plasma global themes (look-and-feel packages) | colours, wallpaper and more, by name | Plasma only; MH runs Hyprland. |
 | **No build in amo:** a dotfiles script saving `~/.local/state/wallpaper/group.json` and the profile's `palette.yaml` under a name, restoring with `hyprctl` and `amo theme apply --palette` (the `wallpaper` script's `restore` does half of this today) | the whole look, on MH's machine | three of MH's decisions: group.json holds paths and names, which renames and crops break (ids need amo to resolve); "versioned with the library" means writing into a root, through amo's `on_change` hook, from outside amo; and putting a look in the root of its most private picture needs each record's purity, which only amo knows. Re-fitting a look to other monitors also needs amo's aspect matching and crop offer, which `amo group` has but cannot be given companions. |
+| **A smaller change in amo** (from `/project-review`): record ids in `amo group --format json` (it prints a name today) and a way to pin companions (`--pin MONITOR=RECORD`); the dotfiles keep group files and presets under a name | most of the look, in about 30 lines of dotfiles glue, without the `look` block, placement or state | MH's requirement that looks are versioned with the library (they would live in the dotfiles' state), and the NSFW placement needs purity, which the glue would query from amo per save. |
 | Variety (wallpaper changer; from its docs as recalled, not run) | a history of wallpapers to step back through, favourites | one wallpaper at a time, no theme, its own downloader and library. The history idea is taken (below). |
 
 No candidate keeps named multi-monitor sets of library pictures with their theme, so amontillado
@@ -2262,8 +2272,10 @@ is):
 - **`history`**: one row per activated `amo theme apply` (not `--dry-run` or `--no-activate`):
   time, the theme's id (or path) when a saved theme was applied, the palette applied, the run's
   variant and tone, and the current group's monitors if its primary is the picture applied
-  (else just that picture). Each distinct palette is stored once, by the hash of its content,
-  and rows point to it, so a long history stays small. `theme.history_size` (default 200,
+  (else just that picture). Each row has a number, increasing and never reused, which `list
+  --history` prints and `--history N` takes, so a row keeps its number whatever `--purity`
+  hides. The palette is stored whole in each row (about 2.3 KB; 200 rows under 0.5 MB).
+  `theme.history_size` (default 200,
   *initial*; 0 keeps none, as zsh's `HISTSIZE`) bounds it, oldest dropped. A group applied
   without a theme apply (a monitor change regrouping companions) changes `current_group` only.
 - **`theme_usage`**: per saved theme (id, or path for one without), `applied_count` and
@@ -2286,7 +2298,9 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
 
 - **`save`** writes the profile's palette (default `theme.profile`) with the current group's
   pictures when that group's primary is the profile's wallpaper; otherwise, or with
-  `--palette-only`, a preset. No prompt. It prints the path written. A name that exists where it
+  `--palette-only`, a preset. No prompt. It prints the path written; saving a preset without
+  `--palette-only` warns that the pictures were left out and why (no group applied, or the
+  group's primary is not the profile's wallpaper). A name that exists where it
   would write is refused without `--force`. A write under a root goes to `on_change` as a
   `file` change.
 - **`apply` of a look** sets the pictures as well as the palette, by default, interactive or not
@@ -2299,13 +2313,14 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
   monitors than the look has: the rest left out, with a warning. **More monitors**: a warning
   and an offer to fill them with companions of the look's primary, as `amo group` picks them
   (MH 2026-11-22); without a terminal they are filled. A preset (no `look`) applies as today.
-- **`--history N`** applies history row N as a look (its palette, variant, tone and pictures),
-  numbered as `amo theme list --history` prints them: 1 the newest (what is on screen), 2 the one
-  before.
+- **`--history N`** applies history row number N as a look (its palette, variant, tone and
+  pictures). The newest row is the last theme applied, not necessarily what is on screen: a
+  regroup without a theme apply, or a setter run outside amo, changes the pictures without a
+  row.
 - **`list`** (MH 2026-11-22: one list for a picker of every theme) prints the saved looks and
   presets with their paths (shadowed ones marked), from the SFW roots and the config; with
   `--purity` asking for sketchy or nsfw, the NSFW root's looks too. `--history` lists the
-  history rows instead, numbered for `--history N`, newest first; rows naming a non-sfw record
+  history rows instead, with their numbers, newest first; rows naming a non-sfw record
   only with `--purity`. `--order` (named as `amo list --order`): `name` (default for saved
   themes), `recent` (default for history), `most-applied`, `least-applied` from
   `theme_usage`; json carries the counts. `rofi` rows carry each theme's preview (below).
@@ -2333,11 +2348,19 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
   `$XDG_RUNTIME_DIR/amontillado/previews/` (tmpfs: never backed up, gone at logout), since it
   copies the picture's pixels out of the NSFW root.
 
-### Saved looks: build beads (proposed)
+### Saved looks: evaluation
 
-Under amo-0k6, after `/project-review`; one release.
+The core (the `look` block, `save`, apply of a look, `current_group`) is the feature. History,
+`theme_usage` and `--order`, `list`, `preview` and the rofi format ship **experimental**:
+named so in `--help`, the CHANGELOG and the user docs, and free to change or go in a minor
+release. After MH has used them in the dotfiles for a week or two, each is kept (the label
+dropped) or removed, and the decision recorded here.
 
-1. **State:** `current_group`, `history` (palettes by hash, `theme.history_size`) and
+### Saved looks: build beads
+
+Under amo-0k6; one release (MH 2026-11-22).
+
+1. **State:** `current_group`, `history` (numbered rows, `theme.history_size`) and
    `theme_usage` (index schema 10; kept across rebuilds), written by `amo group --apply` and
    `amo theme apply`; the run's `variant` and `tone` in `theme.yaml`.
 2. **Format, identity and lookup:** the `id` and `look` keys (validation, round trip; ids
@@ -2354,7 +2377,9 @@ Under amo-0k6, after `/project-review`; one release.
    `--order` from `theme_usage`, the rofi format with previews. Needs 4, 5. Client: the
    dotfiles' theme picker (ticket filed 2026-11-22).
 7. **Docs and release:** this section's status, a user doc section with a preview image made
-   by `amo theme preview`, the config template's comments (`theme.history_size`). Needs 3-6.
+   by `amo theme preview`, the config template's comments (`theme.history_size`), the
+   experimental labels. Needs 3-6.
+8. **Evaluation** (after the release, MH's use): keep or remove each experimental part.
 
 ## Testing
 
