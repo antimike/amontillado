@@ -38,7 +38,7 @@ def test_every_template_renders(name: str, variant: str) -> None:
 
 
 # Templates that fill a fixed set of names rather than one variable per key and role.
-FIXED_NAME_BUILTINS = ("kitty", "dunst", "libadwaita", "libadwaita-vars", "vivid")
+FIXED_NAME_BUILTINS = ("kitty", "kitty-fixed", "dunst", "libadwaita", "libadwaita-vars", "vivid")
 
 
 @pytest.mark.parametrize("name", [n for n in BUILTINS if n not in FIXED_NAME_BUILTINS])
@@ -61,6 +61,14 @@ def test_kitty_colours() -> None:
     assert f"color4 #{view['base0D-hex']}\n" in output
     assert f"active_tab_background #{view['accent-hex']}\n" in output
     assert re.findall(r"^color(\d+) ", output, re.MULTILINE) == [str(i) for i in range(22)]
+    assert "\npalette_generate semantic\n" in output
+
+
+def test_kitty_fixed_is_kitty_without_palette_generate() -> None:
+    # One template in two files: kitty-fixed (kitty < 0.47, or xterm's colours 22-255 wanted)
+    # differs only by the generated palette.
+    lines = [line for line in _render("kitty").splitlines() if "palette_generate" not in line]
+    assert _render("kitty-fixed").splitlines() == lines
 
 
 def test_rofi_names_have_no_underscore() -> None:
