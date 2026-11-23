@@ -6,12 +6,6 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- `amo theme save --force` keeps the top-level keys amo does not know (a hand-added `notes:`)
-  of the file it replaces, naming them, and its `id` even when that file is otherwise invalid;
-  it warns that the file's comments are not kept. Before, it dropped both silently.
-
 ## [0.13.0] - 2026-11-23
 
 Saved looks: `amo theme save` keeps the pictures on screen with their theme, and `amo theme
@@ -46,8 +40,9 @@ experimental. The index moves to schema 10 (upgraded in place).
   tone) with the current group's pictures when its primary is the profile's picture: a look in
   `<root>/.amo/palettes/NAME.yaml` of the root of its most private picture. Otherwise, or with
   `--palette-only`, a preset in the config's `palettes/` (with a warning saying why), without
-  its `source` when that picture is not sfw. `--description`, `--force` (keeps the file's id),
-  `--dry-run`; the path written is printed and goes to `on_change`.
+  its `source` when that picture is not sfw. `--description`, `--force` (keeps the replaced
+  file's id and any top-level keys added by hand, such as `notes:`, naming them; warns that its
+  comments are not kept), `--dry-run`; the path written is printed and goes to `on_change`.
 
 - *Experimental:* `amo theme preview` draws a theme's preview card: a saved look's pictures
   at their monitors' aspects (or `--monitor`'s), a history row's (`--history N`), or PICTURE
