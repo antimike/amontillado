@@ -30,6 +30,13 @@ All notable changes to amontillado are documented here. The format follows
   them). The look's variant and tone apply unless
   `--variant` or `--tone` is given; `--palette-only` applies its palette alone.
 
+- `amo theme save NAME` saves the applied theme (the profile's palette, the run's variant and
+  tone) with the current group's pictures when its primary is the profile's picture: a look in
+  `<root>/.amo/palettes/NAME.yaml` of the root of its most private picture. Otherwise, or with
+  `--palette-only`, a preset in the config's `palettes/` (with a warning saying why), without
+  its `source` when that picture is not sfw. `--description`, `--force` (keeps the file's id),
+  `--dry-run`; the path written is printed and goes to `on_change`.
+
 ### Fixed
 
 - `amo fetch` indexes a new record under its name at once. Before, the index had no name for

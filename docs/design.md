@@ -2304,7 +2304,12 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
   `--palette-only` warns that the pictures were left out and why (no group applied, or the
   group's primary is not the profile's wallpaper). A name that exists where it
   would write is refused without `--force`. A write under a root goes to `on_change` as a
-  `file` change.
+  `file` change. Settled in the build (amo-0k6.3): `--force` keeps the replaced file's `id` (written
+  once); a name saved in another library root is refused, `--force` or not (lookup could not
+  order the two); `--description` for a preset warns and is left out (no `look` to hold it);
+  a preset's `source` is left out when its picture's purity is unknown too; the look's
+  variant and tone are `theme.yaml`'s (the config's for a profile applied before it kept
+  them); `--dry-run` prints the file and logs where it would go.
 - **`apply` of a look** sets the pictures as well as the palette, by default, interactive or not
   (MH): the monitors from `--monitor`, else from `current_group`; position *i* gets entry *i*,
   its saved file if the ratio matches, else the record's file for the monitor's ratio, with
