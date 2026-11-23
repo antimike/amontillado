@@ -2340,6 +2340,15 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
   only with `--purity`. `--order` (named as `amo list --order`): `name` (default for saved
   themes), `recent` (default for history), `most-applied`, `least-applied` from
   `theme_usage`; json carries the counts. `rofi` rows carry each theme's preview (below).
+  Settled in the build (amo-0k6.6): tsv is `NAME<TAB>KIND<TAB>PATH` (`look`, `preset`, or
+  `shadowed` for a preset a library file of its name hides, in any root, as lookup sees it),
+  history `NUMBER<TAB>APPLIED<TAB>PALETTE<TAB>PRIMARY FILE`; a rofi row returns the path (a
+  history row its number), its icon the cached preview card, a look whose pictures are gone
+  drawn as its palette alone; `recent` for saved themes is last applied first, never applied
+  after; a history row naming a record no longer indexed is listed only with `--purity` (its
+  purity is unknown); without an index the saved themes still list, without counts.
+  `apply --history N` (amo-0k6.6): a row without pictures applies its palette alone, with
+  the row's variant and tone; the row's saved theme is counted again.
 - **`preview`** (MH 2026-11-22: for a look at a theme before applying it, and for docs images)
   draws the preview of a saved theme, a history row, or PICTURE (the palette it would give,
   beside that picture alone; previewing a whole `amo group` set first is left open). Without
