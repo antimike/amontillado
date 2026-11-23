@@ -46,8 +46,8 @@ themes; v0.7.0 palette-aware grouping: a palette per picture, `amo list --like`,
 group`, one picture per monitor whose colours go together; v0.8.0 your own predicates for `amo
 group` and letterbox detection with a crop to the picture; v0.9.0 Wallhaven tag categories,
 so names from tags pass over artists and brands; v0.10.0 terminal theming under light
-variants; v0.11.0 gentler tones, soft light and dim dark; v0.12.0 GTK3 apps recoloured live
-([CHANGELOG.md](CHANGELOG.md)).
+variants; v0.11.0 gentler tones, soft light and dim dark; v0.12.0 GTK3 apps recoloured live;
+v0.13.0 saved looks, the pictures on screen kept with their theme ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install

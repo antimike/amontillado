@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-23
+
+Saved looks: `amo theme save` keeps the pictures on screen with their theme, and `amo theme
+apply --palette NAME` brings both back; history, `amo theme list` and `amo theme preview` ship
+experimental. The index moves to schema 10 (upgraded in place).
+
 ### Added
 
 - `amo group --apply` keeps the group it set, when the setter set every monitor, as the
