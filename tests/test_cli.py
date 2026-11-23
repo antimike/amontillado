@@ -2436,3 +2436,40 @@ def test_theme_list_history_by_purity(
     capsys.readouterr()
     main(["theme", "list", "--history", "--format", "rofi"])
     assert capsys.readouterr().out.startswith("1\0icon\x1f")
+
+
+def test_theme_save_force_keeps_hand_added_keys(
+    grouped: dict[str, Path],
+    home: Path,
+    library: Path,
+    fake_matugen: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _group_and_theme(home, grouped["red"], setter={})
+    main(["theme", "save", "sunset"])
+    target = library / ".amo/palettes/sunset.yaml"
+    first = yamlio.load(target.read_text())
+    target.write_text("# mine\nnotes: try it in winter\n" + target.read_text() + "title: Dusk\n")
+    caplog.clear()
+    main(["theme", "save", "sunset", "--force"])
+    again = yamlio.load(target.read_text())
+    assert again["id"] == first["id"]
+    assert (again["notes"], again["title"]) == ("try it in winter", "Dusk")
+    assert "kept hand-added keys: notes, title" in caplog.text
+    assert "its comments are not kept" in caplog.text
+    assert "# mine" not in target.read_text()
+    # A file amo rejects (a nested unknown key) still gives its id and keys.
+    data = yamlio.load(target.read_text())
+    data["look"]["bogus"] = 1
+    target.write_text(yamlio.dump(data))
+    caplog.clear()
+    main(["theme", "save", "sunset", "--force"])
+    again = yamlio.load(target.read_text())
+    assert again["id"] == first["id"] and again["notes"] == "try it in winter"
+    assert "bogus" not in again["look"] and "comments" not in caplog.text
+    # Not YAML at all: nothing kept, a new id.
+    target.write_text("notes: [unclosed\n")
+    main(["theme", "save", "sunset", "--force"])
+    again = yamlio.load(target.read_text())
+    assert "nothing of it is kept" in caplog.text
+    assert again["id"] != first["id"] and "notes" not in again

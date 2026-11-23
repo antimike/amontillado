@@ -140,6 +140,7 @@ from amontillado.library import (
     snapshot_changes,
 )
 from amontillado.metrics import HUE_NAMES, Metrics, measure_file
+from amontillado.palette import TOP_KEYS as PALETTE_TOP_KEYS
 from amontillado.palette import Look as SavedLook
 from amontillado.palette import LookMonitor as SavedLookMonitor
 from amontillado.palette import (
@@ -150,6 +151,7 @@ from amontillado.palette import (
     new_id,
     palette_from_data,
     palette_from_schemes,
+    palette_to_data,
 )
 from amontillado.predicates import Judge, Predicate, PredicateError
 from amontillado.preview import PreviewError
@@ -157,7 +159,7 @@ from amontillado.preview import Shown as PreviewShown
 from amontillado.preview import cached as preview_cached
 from amontillado.preview import card as preview_card
 from amontillado.preview import strip as preview_strip
-from amontillado.record import RecordError, sha256_file, write_text_atomic
+from amontillado.record import ID_PATTERN, RecordError, sha256_file, write_text_atomic
 from amontillado.registry import RegistryError, registry
 from amontillado.registry import text as registry_text
 from amontillado.registry import variables as template_variables
@@ -2617,14 +2619,9 @@ def cmd_theme_save(args: argparse.Namespace) -> None:
             source = {}
     target = directory / file
     _check_save_target(config, target, name, force=args.force)
-    palette_id = None
-    if target.is_file():
-        try:
-            palette_id = load_palette(target).id
-        except PaletteError as exc:
-            logger.warning("%s", exc)
+    palette_id, kept = _replaced(target) if target.is_file() else (None, {})
     saved = replace(palette, name=name, id=palette_id or new_id(), source=source, look=look)
-    text = dump_palette(saved)
+    text = yamlio.dump({**palette_to_data(saved), **kept})
     if args.dry_run:
         logger.info("would write %s", target)
         print(text, end="")
@@ -2636,6 +2633,32 @@ def cmd_theme_save(args: argparse.Namespace) -> None:
         sys.exit(f"amontillado: {exc}")
     changes.file_written(target)
     print(target)
+
+
+def _replaced(target: Path) -> tuple[str | None, dict[str, object]]:
+    """What `amo theme save --force` keeps of the file it replaces, read as plain YAML so that
+    a file amo would reject still gives them: its id, if valid, and the top-level keys amo does
+    not know (a hand-added `notes:`), each named in an info line. Its comments are not kept,
+    with a warning."""
+    try:
+        text = target.read_text()
+        data = yamlio.load(text)
+        commented = yamlio.has_comments(text)
+    except (OSError, yamlio.YAMLError) as exc:
+        logger.warning("%s: not readable (%s): nothing of it is kept", target, exc)
+        return None, {}
+    if not isinstance(data, dict):
+        logger.warning("%s: not a mapping: nothing of it is kept", target)
+        return None, {}
+    palette_id = data.get("id")
+    if not (isinstance(palette_id, str) and ID_PATTERN.fullmatch(palette_id)):
+        palette_id = None
+    kept = {str(key): value for key, value in data.items() if key not in PALETTE_TOP_KEYS}
+    if kept:
+        logger.info("%s: kept hand-added keys: %s", target, ", ".join(kept))
+    if commented:
+        logger.warning("%s: its comments are not kept", target)
+    return palette_id, kept
 
 
 def _save_state(

@@ -6,6 +6,12 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `amo theme save --force` keeps the top-level keys amo does not know (a hand-added `notes:`)
+  of the file it replaces, naming them, and its `id` even when that file is otherwise invalid;
+  it warns that the file's comments are not kept. Before, it dropped both silently.
+
 ## [0.13.0] - 2026-11-23
 
 Saved looks: `amo theme save` keeps the pictures on screen with their theme, and `amo theme

@@ -2306,7 +2306,9 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
   group's primary is not the profile's wallpaper). A name that exists where it
   would write is refused without `--force`. A write under a root goes to `on_change` as a
   `file` change. Settled in the build (amo-0k6.3): `--force` keeps the replaced file's `id` (written
-  once); a name saved in another library root is refused, `--force` or not (lookup could not
+  once) and, read as plain YAML (so a file amo would reject still gives them), its top-level
+  keys amo does not know, named in an info line (amo-0k6.9, MH 2026-11-23); its comments are
+  not kept, with a warning (placing them in a file rebuilt from other data would be guesswork); a name saved in another library root is refused, `--force` or not (lookup could not
   order the two); `--description` for a preset warns and is left out (no `look` to hold it);
   a preset's `source` is left out when its picture's purity is unknown too; the look's
   variant and tone are `theme.yaml`'s (the config's for a profile applied before it kept

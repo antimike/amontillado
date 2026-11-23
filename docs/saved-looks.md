@@ -40,8 +40,10 @@ Where a look goes:
   preset made from a picture that is not sfw is saved without its `source` (the picture's
   name and record).
 
-An existing name is refused without `--force` (which keeps the file's `id`, so its statistics
-follow). A name already saved in another library root is refused outright. With version control
+An existing name is refused without `--force`, which keeps the file's `id` (so its statistics
+follow) and any top-level keys you added by hand (`notes:`, say), but not its comments: it
+warns when there were some. Inside `look` and the variants, an unknown key makes the file
+invalid instead, so a typo there is caught rather than ignored. A name already saved in another library root is refused outright. With version control
 (`on_change`), the new file is reported as a change in its root.
 
 ## Apply it again

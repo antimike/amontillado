@@ -52,3 +52,18 @@ def test_update_text_keeps_untouched_text() -> None:
 def test_update_text_of_a_non_mapping_dumps_fresh() -> None:
     assert yamlio.update_text("", {"a": 1}) == "a: 1\n"
     assert yamlio.update_text("- x\n", {"a": 1}) == "a: 1\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('a: 1\nb:\n  c: "#101010"\n\nd: [1, 2]\n', False),  # a quoted '#' and a blank line
+        ("# head\na: 1\n", True),
+        ("a: 1  # why\n", True),
+        ("a:\n  # inside\n  b: 1\n", True),
+        ("a:\n- 1  # one\n- 2\n", True),
+        ("a: 1\n# tail\n", True),
+    ],
+)
+def test_has_comments(text: str, expected: bool) -> None:
+    assert yamlio.has_comments(text) is expected
