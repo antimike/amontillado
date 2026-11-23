@@ -45,6 +45,9 @@ All notable changes to amontillado are documented here. The format follows
   `$XDG_CACHE_HOME/amontillado/previews/`, one showing a non-sfw picture only in
   `$XDG_RUNTIME_DIR`.
 
+- *Experimental:* `amo theme apply --history N` applies history row N as a look: its palette,
+  variant, tone and pictures (on `--monitor`, else the current group's monitors).
+
 ### Fixed
 
 - `amo fetch` indexes a new record under its name at once. Before, the index had no name for

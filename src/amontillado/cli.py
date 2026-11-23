@@ -1034,6 +1034,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="A record's file, directory, name or id (or prefix).",
     )
     apply_input.add_argument(
+        "--history",
+        type=int,
+        metavar="N",
+        help="Experimental: apply history row N (amo theme list --history) as a look: its "
+        "palette, variant, tone and pictures.",
+    )
+    apply_input.add_argument(
         "--palette",
         metavar="NAME|FILE",
         help="A palette file, or NAME: a look saved in a library root's .amo/palettes/ (the "
@@ -2268,9 +2275,12 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
             logger.info("palette %s: %s", args.palette, path)
             palette = load_palette(path)
             saved = palette.id or str(path.resolve())
+        elif args.history is not None:
+            palette, look, saved = _history_look(config, args.history)
         else:
             palette = None
-        look = palette.look if palette is not None else None
+        if args.history is None:
+            look = palette.look if palette is not None else None
         if args.monitors and look is None:
             sys.exit("amontillado: --monitor places a saved look's pictures; this is no look")
         if look is not None and not args.palette_only:
@@ -2283,9 +2293,14 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
                 logger.info("behind an inactive profile, the look's pictures are not set")
             else:
                 pictures_set = _look_pictures(config, args, look)
-        # The look's variant and tone, unless the run gives its own.
+        # The look's variant and tone (a history row's, pictures or not), unless the run
+        # gives its own.
         variant = args.variant or (look.variant if look is not None else None)
         tone = {**(look.tone if look is not None else {}), **dict(args.tone)}
+        if args.history is not None and look is None:
+            row = _history_row(config, args.history)
+            variant = args.variant or row.variant
+            tone = {**row.tone, **dict(args.tone)}
         wallpaper = None if picture is None else picture.path
         if pictures_set is not None:
             chosen, paths = pictures_set
@@ -2713,6 +2728,16 @@ def _history_row(config: Config, number: int) -> Applied:
     if found is None:
         sys.exit(f"amontillado: no history row {number} (amo theme list --history)")
     return found.entry
+
+
+def _history_look(config: Config, number: int) -> tuple[Palette, SavedLook | None, str | None]:
+    """History row `number` as a saved look: its palette, its pictures with its variant and
+    tone (None when it had no picture), and the saved theme it applied."""
+    row = _history_row(config, number)
+    palette = palette_from_data(yamlio.load(row.palette), f"history {number}")
+    monitors = [_history_monitor(item) for item in row.monitors if item.get("record")]
+    look = SavedLook(tuple(monitors), row.variant, dict(row.tone)) if monitors else None
+    return palette, look, row.theme
 
 
 def _history_monitor(item: Mapping[str, str]) -> SavedLookMonitor:

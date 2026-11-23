@@ -2339,3 +2339,29 @@ def test_theme_preview_of_a_picture_and_history(
         assert card.size == (round(160 * 64 / 36), 160 + 48)
     with pytest.raises(SystemExit, match="no history row 9"):
         main(["theme", "preview", "--history", "9"])
+
+
+def test_theme_apply_a_history_row(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, fake_matugen: Path
+) -> None:
+    red, maroon = grouped["red"], grouped["maroon"]
+    log = tmp_path / "set.log"
+    setter = f'echo "$AMO_MONITOR $(basename "$AMO_WALLPAPER")" >> {log}'
+    _write_config(home, {"group": {"setter": setter, "order": "nearest"}})
+    main(["group", str(red), "--monitor", "A=16:9", "--monitor", "B=16:9", "--apply",
+          "--non-interactive"])  # fmt: skip
+    main(["theme", "apply", _id(red), "--variant", "light", "--tone", "light=soft"])
+    first = (home / ".cache/theme/default/palette.yaml").read_text()
+    main(["theme", "apply", _id(maroon)])
+    log.unlink()
+    # Row 1 as a look: its pictures on the current group's monitors, its variant and tone.
+    main(["theme", "apply", "--history", "1"])
+    assert log.read_text() == "A red.png\nB maroon.png\n"
+    profile = home / ".cache/theme/default"
+    assert (profile / "palette.yaml").read_text() == first
+    theme = yamlio.load((profile / "theme.yaml").read_text())
+    assert (theme["variant"], theme["tone"]["light"]) == ("light", "soft")
+    [newest, *_] = _state(home)[0]
+    assert newest.number == 3 and newest.entry.monitors[0]["record"] == _id(red)
+    with pytest.raises(SystemExit, match="no history row 9"):
+        main(["theme", "apply", "--history", "9"])
