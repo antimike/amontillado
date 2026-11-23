@@ -5,12 +5,19 @@ keys (`base00`-`base17`) and every role; whatever a source leaves out is derived
 base24 keys from base16 in OKLCH, the roles from the base colours (base16 has no accent). A
 tinted-theming scheme (base16 or base24 YAML, the current format or the legacy one) converts
 into a palette; two schemes of one family, a dark and a light, make one palette with both.
+
+A palette file amo writes for keeps (`amo theme save`, `amo palette --from-scheme`) has an `id`,
+written once; a saved look is a palette file with a `look` block: the pictures it was seen with,
+by monitor position, and the run's variant and tone (docs/design.md, "Saved looks").
 """
 
 from __future__ import annotations
 
+import re
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from logging import getLogger
 from pathlib import Path
 
@@ -22,6 +29,8 @@ from amontillado.colour import (
     hue_distance,
     oklch_to_hex,
 )
+from amontillado.config import TONE_CHOICES, VARIANT_CHOICES
+from amontillado.record import ID_PATTERN
 
 logger = getLogger(__name__)
 
@@ -71,8 +80,41 @@ _ROLE_KEYS = {
 }
 
 
+# A monitor's ratio as `amo group --monitor` takes it.
+_ASPECT = re.compile(r"[1-9][0-9]*:[1-9][0-9]*")
+_LOOK_KEYS = frozenset({"description", "saved", "variant", "tone", "monitors"})
+_MONITOR_KEYS = frozenset({"record", "file", "aspect"})
+
+
 class PaletteError(Exception):
     """A palette or scheme cannot be used; the message says why."""
+
+
+def new_id() -> str:
+    """A palette file's id: uuid4, 32 lowercase hex digits, as a record's."""
+    return uuid.uuid4().hex
+
+
+@dataclass(frozen=True)
+class LookMonitor:
+    """One monitor of a saved look: the record shown, the file shown, the monitor's ratio."""
+
+    record: str
+    file: str
+    aspect: str
+
+
+@dataclass(frozen=True)
+class Look:
+    """A palette file's `look` block: the pictures a theme was seen with, the primary first."""
+
+    monitors: tuple[LookMonitor, ...]
+    # The run's variant as asked (system, auto unresolved) and its tone per variant.
+    variant: str = "auto"
+    tone: dict[str, str] = field(default_factory=dict)
+    # When it was saved (ISO 8601).
+    saved: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +136,10 @@ class Palette:
     # A preset's opt-in to tone: True when its file sets `tone: transform` (docs/design.md,
     # "Tone: decisions" 3). A palette from a picture is toned without it.
     tone_transform: bool = False
+    # The file's id: what statistics and history key off (None: a hand-written preset).
+    id: str | None = None
+    # The pictures of a saved look; None for a preset.
+    look: Look | None = None
 
 
 def complete_variant(
@@ -170,8 +216,14 @@ def palette_from_data(data: object, where: str) -> Palette:
     if not isinstance(name, str) or not name:
         raise PaletteError(f"{where}: name must be a non-empty string")
     source = _mapping(data.get("source", {}), f"{where}: source")
-    for key in data.keys() - {"version", "name", "source", "tone", "variants"}:
+    for key in data.keys() - {"version", "id", "name", "source", "tone", "variants", "look"}:
         logger.warning("%s: unknown key %r ignored", where, key)
+    palette_id = data.get("id")
+    if palette_id is not None and not (
+        isinstance(palette_id, str) and ID_PATTERN.fullmatch(palette_id)
+    ):
+        raise PaletteError(f"{where}: id must be 32 lowercase hex digits, not {palette_id!r}")
+    look = None if data.get("look") is None else _look(data["look"], f"{where}: look")
     tone = data.get("tone")
     if tone not in (None, "transform"):
         raise PaletteError(f"{where}: tone must be transform, not {tone!r}")
@@ -190,7 +242,74 @@ def palette_from_data(data: object, where: str) -> Palette:
         },
         dict(source),
         tone_transform=tone == "transform",
+        id=palette_id,
+        look=look,
     )
+
+
+def _look(data: object, where: str) -> Look:
+    data = _mapping(data, where)
+    unknown = data.keys() - _LOOK_KEYS
+    if unknown:
+        raise PaletteError(f"{where}: unknown key {sorted(map(str, unknown))[0]!r}")
+    monitors = data.get("monitors")
+    if not isinstance(monitors, list) or not monitors:
+        raise PaletteError(f"{where}: monitors must list at least one picture")
+    variant = data.get("variant", "auto")
+    if variant not in VARIANT_CHOICES:
+        raise PaletteError(
+            f"{where}: variant must be one of {', '.join(VARIANT_CHOICES)}, not {variant!r}"
+        )
+    tone = _mapping(data.get("tone", {}), f"{where}: tone")
+    for key, value in tone.items():
+        if key not in TONE_CHOICES or value not in TONE_CHOICES[key]:
+            raise PaletteError(f"{where}: tone: {key}: {value!r} is not a tone of that variant")
+    saved = data.get("saved")
+    # YAML reads an unquoted timestamp as a datetime.
+    if isinstance(saved, (datetime, date)):
+        saved = saved.isoformat()
+    description = data.get("description")
+    for key, value in (("saved", saved), ("description", description)):
+        if value is not None and not isinstance(value, str):
+            raise PaletteError(f"{where}: {key} must be a string, not {value!r}")
+    return Look(
+        tuple(_look_monitor(item, f"{where}: monitors[{i}]") for i, item in enumerate(monitors)),
+        str(variant),
+        {str(key): str(value) for key, value in tone.items()},
+        saved,
+        description,
+    )
+
+
+def _look_monitor(data: object, where: str) -> LookMonitor:
+    data = _mapping(data, where)
+    unknown = data.keys() - _MONITOR_KEYS
+    if unknown:
+        raise PaletteError(f"{where}: unknown key {sorted(map(str, unknown))[0]!r}")
+    record, file, aspect = data.get("record"), data.get("file"), data.get("aspect")
+    if not (isinstance(record, str) and ID_PATTERN.fullmatch(record)):
+        raise PaletteError(f"{where}: record must be a record id, not {record!r}")
+    if not (isinstance(file, str) and file and "/" not in file):
+        raise PaletteError(f"{where}: file must be a file name, not {file!r}")
+    if not (isinstance(aspect, str) and _ASPECT.fullmatch(aspect)):
+        raise PaletteError(f'{where}: aspect must be a quoted ratio such as "16:9", not {aspect!r}')
+    return LookMonitor(record, file, aspect)
+
+
+def look_to_data(look: Look) -> dict[str, object]:
+    """A `look` block, in file order."""
+    data: dict[str, object] = {}
+    if look.description is not None:
+        data["description"] = look.description
+    if look.saved is not None:
+        data["saved"] = look.saved
+    data["variant"] = look.variant
+    if look.tone:
+        data["tone"] = dict(look.tone)
+    data["monitors"] = [
+        {"record": item.record, "file": item.file, "aspect": item.aspect} for item in look.monitors
+    ]
+    return data
 
 
 def _variant(data: object, where: str, variant: str) -> Variant:
@@ -212,7 +331,10 @@ def _variant(data: object, where: str, variant: str) -> Variant:
 
 def palette_to_data(palette: Palette) -> dict[str, object]:
     """The palette file's contents, in file order."""
-    data: dict[str, object] = {"version": VERSION, "name": palette.name}
+    data: dict[str, object] = {"version": VERSION}
+    if palette.id is not None:
+        data["id"] = palette.id
+    data["name"] = palette.name
     if palette.source:
         data["source"] = palette.source
     if palette.tone_transform:
@@ -223,6 +345,8 @@ def palette_to_data(palette: Palette) -> dict[str, object]:
         if variant.adjusted:
             variants[key]["adjusted"] = list(variant.adjusted)
     data["variants"] = variants
+    if palette.look is not None:
+        data["look"] = look_to_data(palette.look)
     return data
 
 
