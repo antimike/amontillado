@@ -2230,6 +2230,8 @@ look:
   derived file has the same ratio as the original, so the aspect alone could pick another
   file). If that file is gone, the monitor's aspect picks one as `--aspect` does, with a
   warning. Monitors by position and aspect, not name (MH): names are machine-specific.
+- **The profile's `palette.yaml`** keeps an applied file's `id` but not its `look`: the pictures
+  set are the index's state (`current_group`, `history`).
 - **Variant and tone** are the run's (`--variant`, `--tone`, else the config's), stored (MH);
   `apply --variant` and `--tone` override them. `theme.yaml` records each app's resolved
   values today, so it gains the run's `variant` and `tone` at the top level. Per-app settings

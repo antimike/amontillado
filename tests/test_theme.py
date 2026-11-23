@@ -10,8 +10,8 @@ import pytest
 
 from amontillado import yamlio
 from amontillado.cli import main
-from amontillado.config import AppConfig, Config, ThemeConfig
-from amontillado.palette import Palette, complete_variant, dump_palette
+from amontillado.config import AppConfig, Config, ThemeConfig, load_config
+from amontillado.palette import Look, LookMonitor, Palette, complete_variant, dump_palette
 from amontillado.theme import (
     Reload,
     ThemeError,
@@ -19,6 +19,7 @@ from amontillado.theme import (
     choose_variant,
     describe,
     find_palette,
+    library_palettes_dir,
     plan,
     reload_commands,
     repoint_wallpapers,
@@ -382,13 +383,34 @@ def test_failing_reloads_warn(caplog: pytest.LogCaptureFixture) -> None:
 
 
 def test_find_palette(home: Path) -> None:
+    config = load_config()
     presets = home / ".config" / "amontillado" / "palettes"
     presets.mkdir(parents=True)
     (presets / "gruvbox.yaml").write_text(dump_palette(_palette()))
-    assert find_palette("gruvbox") == presets / "gruvbox.yaml"
-    assert find_palette(str(presets / "gruvbox.yaml")) == presets / "gruvbox.yaml"
-    with pytest.raises(ThemeError, match="no palette file nord and no preset"):
-        find_palette("nord")
+    assert find_palette("gruvbox", config) == presets / "gruvbox.yaml"
+    assert find_palette(str(presets / "gruvbox.yaml"), config) == presets / "gruvbox.yaml"
+    with pytest.raises(ThemeError, match="no palette file nord, no saved look nord and no preset"):
+        find_palette("nord", config)
+    with pytest.raises(ThemeError, match=r"no palette file \.\./gruvbox$"):
+        find_palette("../gruvbox", config)
+
+
+def test_find_palette_in_the_library_first(home: Path, caplog: pytest.LogCaptureFixture) -> None:
+    config = load_config()
+    presets = home / ".config" / "amontillado" / "palettes"
+    nsfw = library_palettes_dir(config.nsfw_root)
+    library = library_palettes_dir(config.library_roots[0])
+    for directory in (presets, nsfw, library):
+        directory.mkdir(parents=True)
+    (presets / "both.yaml").write_text(dump_palette(_palette()))
+    (library / "both.yaml").write_text(dump_palette(_palette()))
+    (nsfw / "private.yaml").write_text(dump_palette(_palette()))
+    assert find_palette("both", config) == library / "both.yaml"
+    assert f"palette both: {library / 'both.yaml'} shadows the preset {presets}" in caplog.text
+    assert find_palette("private", config) == nsfw / "private.yaml"
+    (nsfw / "both.yaml").write_text(dump_palette(_palette()))
+    with pytest.raises(ThemeError, match="saved in more than one library root"):
+        find_palette("both", config)
 
 
 def _cli_setup(home: Path) -> Path:
@@ -618,3 +640,11 @@ def test_theme_yaml_keeps_the_run_as_asked(tmp_path: Path, monkeypatch: pytest.M
     theme = yamlio.load((directory / "theme.yaml").read_text())
     assert theme["variant"] == "system"
     assert theme["tone"] == {"light": "soft", "dark": "full"}
+
+
+def test_a_looks_pictures_stay_out_of_the_profile(tmp_path: Path) -> None:
+    monitor = LookMonitor("ab" * 16, "a.jpg", "16:9")
+    saved = replace(_palette(), id="cd" * 16, look=Look((monitor,)))
+    directory = _apply(_config(tmp_path), saved)
+    data = yamlio.load((directory / "palette.yaml").read_text())
+    assert data["id"] == "cd" * 16 and "look" not in data

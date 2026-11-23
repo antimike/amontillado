@@ -65,6 +65,8 @@ def test_palette_from_scheme(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     main(["palette", "--from-scheme", str(scheme)])
     out = yamlio.load(capsys.readouterr().out)
     assert out["name"] == "S"
+    assert list(out)[:3] == ["version", "id", "name"]  # written for keeps: an id
+    assert len(out["id"]) == 32 and int(out["id"], 16) >= 0
     assert out["variants"]["dark"]["roles"]["accent"] == "#6090e0"
     assert len(out["variants"]["dark"]["base24"]) == 24
     with pytest.raises(SystemExit) as exc:
@@ -1925,6 +1927,13 @@ def test_theme_apply_keeps_a_history(
     assert [r.number for r in rows] == [3, 2, 1]
     assert rows[0].entry.theme == str(preset) and rows[0].entry.monitors == []
     assert list(counts) == [str(preset)] and counts[str(preset)][0] == 1
+    # With an id, the id: the file may move.
+    data = yamlio.load(preset.read_text())
+    preset.write_text(yamlio.dump({"version": 1, "id": "ab" * 16, **data}))
+    main(["theme", "apply", "--palette", str(preset)])
+    rows, counts = _state(home)
+    assert rows[0].entry.theme == "ab" * 16 and counts["ab" * 16][0] == 1
+    assert "id: " + "ab" * 16 in rows[0].entry.palette
 
 
 def test_theme_apply_history_size(indexed: dict[str, Path], home: Path, fake_matugen: Path) -> None:
