@@ -1945,3 +1945,171 @@ def test_theme_apply_history_size(indexed: dict[str, Path], home: Path, fake_mat
     _write_config(home, {"theme": {"hues": "generator", "history_size": 0}})
     main(["theme", "apply"])
     assert _state(home)[0] == []
+
+
+def _save_look(
+    home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monitors: list[dict], **look
+) -> str:
+    """A saved look named `look` in the library root, from a one-scheme preset; its id."""
+    ramp = ["#101010", "#202020", "#303030", "#505050", "#a0a0a0", "#d0d0d0", "#e0e0e0", "#f0f0f0"]
+    accents = ["#e06060", "#e09050", "#e0c050", "#60c060", "#50c0c0", "#6090e0", "#b070e0"]
+    colours = dict(
+        zip([f"base{i:02X}" for i in range(16)], [*ramp, *accents, "#906040"], strict=True)
+    )
+    scheme = tmp_path / "scheme.yaml"
+    scheme.write_text(yamlio.dump({"system": "base16", "name": "S", "palette": colours}))
+    capsys.readouterr()
+    main(["palette", "--from-scheme", str(scheme)])
+    data = yamlio.load(capsys.readouterr().out)
+    data["look"] = {"variant": "dark", "tone": {"dark": "dim"}, **look, "monitors": monitors}
+    directory = home / ".local/share/amontillado/library/.amo/palettes"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "look.yaml").write_text(yamlio.dump(data))
+    return data["id"]
+
+
+def _entry(image: Path, aspect: str = "16:9") -> dict[str, str]:
+    return {"record": _id(image), "file": image.name, "aspect": aspect}
+
+
+@pytest.fixture
+def look_setup(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> tuple[Path, str]:
+    """A setter and a wallpaper hook logging to the returned file, and a saved look `look` of
+    red and maroon; its id."""
+    log = tmp_path / "set.log"
+    _write_config(
+        home,
+        {
+            "group": {"setter": f'echo "$AMO_MONITOR $(basename "$AMO_WALLPAPER")" >> {log}'},
+            "theme": {
+                "wallpaper": {"reload": f'echo "hook $(basename "$AMO_WALLPAPER")" >> {log}'}
+            },
+        },
+    )
+    look_id = _save_look(
+        home, tmp_path, capsys, [_entry(grouped["red"]), _entry(grouped["maroon"])]
+    )
+    return log, look_id
+
+
+def test_theme_apply_a_look_sets_its_pictures(
+    look_setup: tuple[Path, str], grouped: dict[str, Path], home: Path
+) -> None:
+    log, look_id = look_setup
+    red, maroon = grouped["red"], grouped["maroon"]
+    main(["theme", "apply", "--palette", "look", "--monitor", "A=16:9", "--monitor", "B=16:9"])
+    # The setter after the wallpaper hook: a hook setting every monitor does not undo it.
+    assert log.read_text() == "hook red.png\nA red.png\nB maroon.png\n"
+    profile = home / ".cache/theme/default"
+    assert Path(profile / "wallpaper").readlink() == red
+    theme = yamlio.load((profile / "theme.yaml").read_text())
+    assert (theme["variant"], theme["tone"]) == ("dark", {"light": "full", "dark": "dim"})
+    assert _shown_counts(home) == {_id(red): 1, _id(maroon): 1}
+    [row], counts = _state(home)
+    assert row.entry.theme == look_id and counts[look_id][0] == 1
+    assert [m["monitor"] for m in row.entry.monitors] == ["A", "B"]
+    # Again, the monitors from the current group; --variant over the look's.
+    log.unlink()
+    main(["theme", "apply", "--palette", "look", "--variant", "light"])
+    assert log.read_text() == "hook red.png\nA red.png\nB maroon.png\n"
+    assert yamlio.load((profile / "theme.yaml").read_text())["variant"] == "light"
+
+
+def test_theme_apply_a_look_on_fewer_or_more_monitors(
+    look_setup: tuple[Path, str],
+    grouped: dict[str, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    log, _ = look_setup
+    main(["theme", "apply", "--palette", "look", "--monitor", "A=16:9"])
+    assert log.read_text() == "hook red.png\nA red.png\n"
+    assert "the look has 2 pictures for 1 monitor: the last 1 left out" in caplog.text
+    log.unlink()
+    monitors = ["--monitor", "A=16:9", "--monitor", "B=16:9", "--monitor", "C=16:9"]
+    main(["theme", "apply", "--palette", "look", *monitors, "--non-interactive"])
+    lines = log.read_text().splitlines()
+    assert lines[:3] == ["hook red.png", "A red.png", "B maroon.png"]
+    # A companion of red, never the look's own maroon again.
+    assert lines[3].startswith("C ") and lines[3] not in ("C red.png", "C maroon.png")
+
+
+def test_theme_apply_a_look_whose_file_is_gone(
+    grouped: dict[str, Path],
+    home: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    log = tmp_path / "set.log"
+    _setter(home, f'echo "$AMO_MONITOR $(basename "$AMO_WALLPAPER")" >> {log}')
+    gone = {**_entry(grouped["red"]), "file": "red-edited.png"}
+    _save_look(home, tmp_path, capsys, [gone])
+    main(["theme", "apply", "--palette", "look", "--monitor", "A=16:9"])
+    assert log.read_text() == "A red.png\n"
+    assert "red-edited.png is gone; taking its file for 16:9" in caplog.text
+
+
+def test_theme_apply_a_look_fails_without_its_record(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _setter(home, ': "$AMO_WALLPAPER"')
+    missing = {"record": "ef" * 16, "file": "x.png", "aspect": "16:9"}
+    _save_look(home, tmp_path, capsys, [missing])
+    args = ["theme", "apply", "--palette", "look", "--monitor", "A=16:9"]
+    with pytest.raises(SystemExit, match=r"not in the index \(--palette-only applies"):
+        main(args)
+    assert not (home / ".cache/theme/default").exists()  # nothing changed
+    main([*args, "--palette-only"])
+    assert (home / ".cache/theme/default/palette.yaml").is_file()
+
+
+def test_theme_apply_a_look_palette_alone(
+    look_setup: tuple[Path, str],
+    grouped: dict[str, Path],
+    home: Path,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log, _ = look_setup
+    # No monitor known: no --monitor, no amo group --apply yet.
+    main(["theme", "apply", "--palette", "look"])
+    assert "no monitors known" in caplog.text
+    # No picture: the wallpaper hook is skipped too.
+    assert not log.exists()
+    main(["theme", "apply", "--palette", "look", "--monitor", "A=16:9", "--palette-only"])
+    assert not log.exists()
+    # A dry run prints the setter's runs and sets nothing.
+    capsys.readouterr()
+    main(["theme", "apply", "--palette", "look", "--monitor", "A=16:9", "--dry-run"])
+    out = capsys.readouterr().out
+    assert f"would run: AMO_MONITOR=A AMO_WALLPAPER={grouped['red']} sh -c" in out
+    assert not log.exists()
+    with pytest.raises(SystemExit, match="--monitor places a saved look's pictures"):
+        main(["theme", "apply", "--monitor", "A=16:9"])
+    with pytest.raises(SystemExit, match="--app with a saved look"):
+        main(["theme", "apply", "--palette", "look", "--app", "kitty"])
+
+
+def test_theme_apply_a_look_without_a_setter(
+    grouped: dict[str, Path],
+    home: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _save_look(home, tmp_path, capsys, [_entry(grouped["red"])])
+    main(["theme", "apply", "--palette", "look", "--monitor", "A=16:9"])
+    assert "no group.setter in the config" in caplog.text
+    assert not (home / ".cache/theme/default/wallpaper").is_symlink()
+
+
+def test_theme_apply_a_look_on_a_monitor_of_another_ratio(
+    look_setup: tuple[Path, str], grouped: dict[str, Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    log, _ = look_setup
+    # No 21:9 file of red, and no terminal to offer a crop: its default file, with a warning.
+    main(["theme", "apply", "--palette", "look", "--monitor", "A=21:9", "--non-interactive"])
+    assert log.read_text().splitlines()[1] == "A red.png"
+    assert f"A: no 21:9 file for {grouped['red']}; using the default file" in caplog.text

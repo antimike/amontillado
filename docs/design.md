@@ -2315,6 +2315,12 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
   monitors than the look has: the rest left out, with a warning. **More monitors**: a warning
   and an offer to fill them with companions of the look's primary, as `amo group` picks them
   (MH 2026-11-22); without a terminal they are filled. A preset (no `look`) applies as today.
+  Settled in the build (amo-0k6.4): the setter runs after the reloads, so a wallpaper hook that
+  sets every monitor does not undo the look; companions are SFW, by `group.max_distance` and
+  `group.order`, never one of the look's own pictures; no monitor known (no `--monitor`, no
+  `current_group`) applies the palette alone with a warning; `--no-activate` sets no pictures
+  (nothing is on screen); `--app` with a look is refused (its pictures re-render every app)
+  unless `--palette-only`.
 - **`--history N`** applies history row number N as a look (its palette, variant, tone and
   pictures). The newest row is the last theme applied, not necessarily what is on screen: a
   regroup without a theme apply, or a setter run outside amo, changes the pictures without a
