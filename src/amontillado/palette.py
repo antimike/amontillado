@@ -82,6 +82,9 @@ _ROLE_KEYS = {
 
 # A monitor's ratio as `amo group --monitor` takes it.
 _ASPECT = re.compile(r"[1-9][0-9]*:[1-9][0-9]*")
+# A palette file's own top-level keys; others are warned about and ignored (a hand-added
+# `notes:`), and `amo theme save --force` carries them over.
+TOP_KEYS = frozenset({"version", "id", "name", "source", "tone", "variants", "look"})
 _LOOK_KEYS = frozenset({"description", "saved", "variant", "tone", "monitors"})
 _MONITOR_KEYS = frozenset({"record", "file", "aspect"})
 
@@ -216,7 +219,7 @@ def palette_from_data(data: object, where: str) -> Palette:
     if not isinstance(name, str) or not name:
         raise PaletteError(f"{where}: name must be a non-empty string")
     source = _mapping(data.get("source", {}), f"{where}: source")
-    for key in data.keys() - {"version", "id", "name", "source", "tone", "variants", "look"}:
+    for key in data.keys() - TOP_KEYS:
         logger.warning("%s: unknown key %r ignored", where, key)
     palette_id = data.get("id")
     if palette_id is not None and not (
