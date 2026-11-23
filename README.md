@@ -46,8 +46,8 @@ themes; v0.7.0 palette-aware grouping: a palette per picture, `amo list --like`,
 group`, one picture per monitor whose colours go together; v0.8.0 your own predicates for `amo
 group` and letterbox detection with a crop to the picture; v0.9.0 Wallhaven tag categories,
 so names from tags pass over artists and brands; v0.10.0 terminal theming under light
-variants; v0.11.0 gentler tones, soft light and dim dark; v0.12.0 GTK3 apps recoloured live
-([CHANGELOG.md](CHANGELOG.md)).
+variants; v0.11.0 gentler tones, soft light and dim dark; v0.12.0 GTK3 apps recoloured live;
+v0.13.0 saved looks, the pictures on screen kept with their theme ([CHANGELOG.md](CHANGELOG.md)).
 `amontillado` and its short alias `amo` are the same command.
 
 ## Install
@@ -91,7 +91,21 @@ amo palette forest                         # a picture's palette, both variants,
 amo theme sync                             # fetch the pinned templates the config uses
 amo theme apply forest                     # theme every configured app from it, reload them
 amo theme apply --tone dark=dim            # the same, gentler: charcoal instead of near-black
+amo theme save iss-morning                 # keep the pictures on screen with their theme
+amo theme apply --palette iss-morning      # ... and bring both back later
 ```
+
+**Saved looks** keep a set of wallpapers, one per monitor, with the theme they were seen with:
+`amo theme save` after an `amo group --apply` and a theme from its primary, `amo theme apply
+--palette NAME` to restore them. See [docs/saved-looks.md](docs/saved-looks.md).
+
+**Experimental** (may change or go in a minor release; kept or removed after use):
+
+- [History](docs/saved-looks.md#history-experimental): `amo theme apply --history N`,
+  `theme.history_size`
+- [`amo theme list`](docs/saved-looks.md#choosing-one-experimental), with `--order` and the
+  rofi format
+- [`amo theme preview`](docs/saved-looks.md#choosing-one-experimental)
 
 `amo COMMAND --help` documents every option. The class thresholds (what counts as dark, busy,
 ...), the record format and the fetcher's behaviour are in [docs/design.md](docs/design.md).
@@ -133,6 +147,8 @@ you configure, never stored by the tool.
   and the soft and dim tones
 - [docs/gtk-theming.md](docs/gtk-theming.md): GTK3 apps recoloured live under adw-gtk3
   (`amo hook gtk3-theme`) and GTK4 apps through `libadwaita-vars`
+- [docs/saved-looks.md](docs/saved-looks.md): saving the pictures on screen with their theme,
+  applying them again, and the experimental history, list and preview
 - [CONTRIBUTING.md](CONTRIBUTING.md): development setup, coding standards, commits and releases
 - [CHANGELOG.md](CHANGELOG.md)
 

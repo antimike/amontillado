@@ -2152,15 +2152,16 @@ Decisions:
 
 ## Saved looks (designed in v0.12)
 
-**Status: agreed with MH 2026-11-22 (amo-0k6), the whole design in one release.** Decisions
-are marked **MH** with their date. Ratings stay deferred (MH 2026-11-21) until there is more use
-of `amo group`. `/project-review` (2026-11-22) recommended shipping only the format, `save` and
-apply, and shelving history, usage, ids, `list` and `preview` until a client existed. MH kept
-them: amontillado's role is exploratory support for MH's theming work in the dotfiles, where a
-feature is evaluated live and then kept or removed, so these ship marked experimental ("Saved
-looks: evaluation"). The review's defects are fixed below (history numbering, the save
-warning, the index invariant, no palette dedupe) and its smaller alternative added to the prior
-art.
+**Status: agreed with MH 2026-11-22 (amo-0k6), the whole design in one release; built in v0.13.0
+(amo-0k6.1-.7), the experimental parts awaiting their evaluation (amo-0k6.8).** User guide:
+[saved-looks.md](saved-looks.md). Decisions are marked **MH** with their date. Ratings stay deferred
+(MH 2026-11-21) until there is more use of `amo group`. `/project-review` (2026-11-22) recommended
+shipping only the format, `save` and apply, and shelving history, usage, ids, `list` and `preview`
+until a client existed. MH kept them: amontillado's role is exploratory support for MH's theming
+work in the dotfiles, where a feature is evaluated live and then kept or removed, so these ship
+marked experimental ("Saved looks: evaluation"). The review's defects are fixed below (history
+numbering, the save warning, the index invariant, no palette dedupe) and its smaller alternative
+added to the prior art.
 
 A *look* is a set of pictures across monitors that the user liked, together with the theme they
 saw: kept by name and applied again later. **MH (2026-11-21):** it holds the whole look,
@@ -2391,7 +2392,7 @@ dropped) or removed, and the decision recorded here.
 
 ### Saved looks: build beads
 
-Under amo-0k6; one release (MH 2026-11-22).
+Under amo-0k6; one release (MH 2026-11-22). 1-7 done, in v0.13.0; 8 open.
 
 1. **State:** `current_group`, `history` (numbered rows, `theme.history_size`) and
    `theme_usage` (index schema 10; kept across rebuilds), written by `amo group --apply` and
