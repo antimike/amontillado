@@ -2142,3 +2142,131 @@ def test_theme_apply_a_look_on_a_monitor_of_another_ratio(
     main(["theme", "apply", "--palette", "look", "--monitor", "A=21:9", "--non-interactive"])
     assert log.read_text().splitlines()[1] == "A red.png"
     assert f"A: no 21:9 file for {grouped['red']}; using the default file" in caplog.text
+
+
+def _group_and_theme(home: Path, primary: Path, *, setter: dict[str, object]) -> None:
+    """amo group --apply of `primary` beside one companion, then its palette applied."""
+    _write_config(home, {"group": {"setter": ': "$AMO_WALLPAPER"', "order": "nearest"}, **setter})
+    main(["group", str(primary), "--monitor", "A=21:9", "--monitor", "B=16:9", "--apply",
+          "--non-interactive"])  # fmt: skip
+    main(["theme", "apply", _id(primary), "--tone", "dark=dim"])
+
+
+def test_theme_save_a_look(
+    grouped: dict[str, Path],
+    home: Path,
+    library: Path,
+    fake_matugen: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    red, maroon = grouped["red"], grouped["maroon"]
+    _group_and_theme(home, red, setter={"on_change": 'cat > "$HOME/payload.json"'})
+    capsys.readouterr()
+    main(["theme", "save", "sunset", "--description", "red and maroon"])
+    target = library / ".amo/palettes/sunset.yaml"
+    assert capsys.readouterr().out.strip() == str(target)
+    data = yamlio.load(target.read_text())
+    profile = yamlio.load((home / ".cache/theme/default/palette.yaml").read_text())
+    assert data["name"] == "sunset" and len(data["id"]) == 32
+    assert data["source"] == profile["source"] and data["variants"] == profile["variants"]
+    look = data["look"]
+    assert look["description"] == "red and maroon" and look["tone"] == {
+        "light": "full",
+        "dark": "dim",
+    }
+    assert look["monitors"] == [
+        {"record": _id(red), "file": "red.png", "aspect": "21:9"},
+        {"record": _id(maroon), "file": "maroon.png", "aspect": "16:9"},
+    ]
+    payload = json.loads((home / "payload.json").read_text())
+    assert payload["command"] == "theme-save"
+    assert payload["changes"] == [{"type": "file", "path": ".amo/palettes/sunset.yaml"}]
+    # A name that exists is refused; --force replaces it and keeps its id.
+    with pytest.raises(SystemExit, match="exists; --force replaces it"):
+        main(["theme", "save", "sunset"])
+    main(["theme", "save", "sunset", "--force"])
+    again = yamlio.load(target.read_text())
+    assert again["id"] == data["id"] and "description" not in again["look"]
+    # A dry run prints the file and writes nothing.
+    capsys.readouterr()
+    main(["theme", "save", "dusk", "--dry-run"])
+    assert yamlio.load(capsys.readouterr().out)["name"] == "dusk"
+    assert not (library / ".amo/palettes/dusk.yaml").exists()
+    # And it applies again by name.
+    main(["theme", "apply", "--palette", "sunset"])
+    assert f"palette sunset: {target}" in caplog.text
+
+
+def test_theme_save_a_preset(
+    grouped: dict[str, Path],
+    home: Path,
+    library: Path,
+    fake_matugen: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    red, maroon = grouped["red"], grouped["maroon"]
+    presets = home / ".config/amontillado/palettes"
+    # No group applied: a preset, with a warning saying why.
+    main(["theme", "apply", _id(red)])
+    main(["theme", "save", "plain", "--description", "ignored"])
+    assert "saved as a preset without pictures: no amo group --apply yet" in caplog.text
+    assert "--description left out" in caplog.text
+    data = yamlio.load((presets / "plain.yaml").read_text())
+    assert "look" not in data and data["source"]["picture"] == _id(red)
+    # The group's primary is not the profile's picture.
+    _group_and_theme(home, red, setter={})
+    main(["theme", "apply", _id(maroon)])
+    caplog.clear()
+    main(["theme", "save", "other"])
+    assert "the current group's primary is not the profile's picture" in caplog.text
+    # --palette-only: a preset, no warning.
+    main(["theme", "apply", _id(red)])
+    caplog.clear()
+    main(["theme", "save", "only", "--palette-only"])
+    assert "without pictures" not in caplog.text
+    assert "look" not in yamlio.load((presets / "only.yaml").read_text())
+    # A look saved under a preset's name shadows it, with a warning.
+    main(["theme", "save", "plain"])
+    assert "will shadow the preset" in caplog.text
+    assert (library / ".amo/palettes/plain.yaml").is_file()
+
+
+def test_theme_save_by_purity(
+    grouped: dict[str, Path],
+    home: Path,
+    library: Path,
+    fake_matugen: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    red, private = grouped["red"], grouped["private"]
+    nsfw = home / ".local/share/amontillado/library-nsfw"
+    main(["theme", "apply", _id(private)])
+    # A preset from a non-sfw picture leaves its source out: the config dir may be public.
+    main(["theme", "save", "dark"])
+    assert "source left out: its picture is not sfw" in caplog.text
+    assert "source" not in yamlio.load(
+        (home / ".config/amontillado/palettes/dark.yaml").read_text()
+    )
+    # A look with a non-sfw picture goes to the NSFW root, whatever the primary's root.
+    from amontillado.index import GroupMonitor, set_current_group
+
+    with closing(connect(home / ".local/state/amontillado/index.sqlite")) as conn:
+        set_current_group(
+            conn,
+            [
+                GroupMonitor("A", "16:9", _id(private), private),
+                GroupMonitor("B", "16:9", _id(red), red),
+            ],
+        )
+    main(["theme", "save", "mixed"])
+    assert (nsfw / ".amo/palettes/mixed.yaml").is_file()
+    assert not (library / ".amo/palettes/mixed.yaml").exists()
+    # The same name in a second library root is refused: lookup could not order them.
+    with closing(connect(home / ".local/state/amontillado/index.sqlite")) as conn:
+        set_current_group(conn, [GroupMonitor("A", "16:9", _id(red), red)])
+    main(["theme", "apply", _id(red)])
+    with pytest.raises(SystemExit, match=r"is saved in .* already; a name in two library roots"):
+        main(["theme", "save", "mixed"])

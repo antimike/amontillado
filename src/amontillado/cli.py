@@ -26,6 +26,7 @@ import tempfile
 from collections.abc import Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from importlib.resources import files as package_files
 from logging import getLogger
 from pathlib import Path
@@ -162,9 +163,13 @@ from amontillado.theme import (
     WALLPAPER_LINK,
     Reload,
     ThemeError,
+    applied_palette,
+    applied_run,
     current_profile,
     find_palette,
+    library_palettes_dir,
     palettes_dir,
+    profile_dir,
     reload_commands,
     repoint_wallpapers,
     run_reloads,
@@ -1094,6 +1099,37 @@ def build_parser() -> argparse.ArgumentParser:
         "change nothing.",
     )
     apply.set_defaults(func=cmd_theme_apply)
+
+    save = theme_commands.add_parser(
+        "save",
+        help="Save the applied theme, with the pictures on screen, under a name.",
+        description="Save the profile's palette, variant and tone as NAME, with the current "
+        "group's pictures (the last amo group --apply, or a look applied) when its primary is "
+        "the profile's picture: a look, in <root>/.amo/palettes/NAME.yaml of the root of its "
+        "most private picture (the NSFW root if any is not sfw, else the primary's). Otherwise, "
+        "or with --palette-only, a preset in $XDG_CONFIG_HOME/amontillado/palettes/, without "
+        "its source when that picture is not sfw. Prints the path written; a write under a "
+        "root goes to on_change. amo theme apply --palette NAME applies it again.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(save, argparse.SUPPRESS)
+    save.add_argument("name", metavar="NAME", help="The name to save it under.")
+    save.add_argument(
+        "--palette-only",
+        action="store_true",
+        help="Save a preset without pictures, whatever is on screen.",
+    )
+    save.add_argument("--description", metavar="TEXT", help="A line saying what the look is.")
+    save.add_argument(
+        "--profile", metavar="P", help=flag_help("theme.profile", "The profile to save")
+    )
+    save.add_argument("--force", action="store_true", help="Replace a file of that name.")
+    save.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the file and where it would go; write nothing.",
+    )
+    save.set_defaults(func=cmd_theme_save)
 
     current = theme_commands.add_parser(
         "current",
@@ -2411,6 +2447,138 @@ def _history_entry(
             if record_id is not None:
                 monitors[0]["record"] = record_id
     return Applied(dump_palette(plan.palette), plan.run_variant, plan.run_tone, monitors, saved)
+
+
+def cmd_theme_save(args: argparse.Namespace) -> None:
+    config = _load_config()
+    profile = args.profile if args.profile is not None else config.theme.profile
+    name = args.name
+    if not name or "/" in name or name.startswith("."):
+        sys.exit(f"amontillado: {name!r} cannot name a palette file")
+    try:
+        check_profile(profile, "--profile")
+        palette = applied_palette(config.theme, profile)
+        variant, tone = applied_run(config.theme, profile)
+    except (ConfigError, ThemeError, PaletteError) as exc:
+        sys.exit(f"amontillado: {exc}")
+    link = profile_dir(config.theme, profile) / WALLPAPER_LINK
+    wallpaper = Path(os.readlink(link)) if link.is_symlink() else None
+    group, why, purities, source_purity = _save_state(config, args, wallpaper, palette)
+    file = f"{name}.yaml"
+    source = dict(palette.source)
+    look = None
+    if group:
+        if any(purity != "sfw" for purity in purities):
+            root = config.nsfw_root
+        else:
+            root = _root_of(config, group[0].path)
+        directory = library_palettes_dir(root)
+        look = SavedLook(
+            tuple(SavedLookMonitor(item.record_id, item.path.name, item.aspect) for item in group),
+            variant,
+            tone,
+            datetime.now(UTC).isoformat(timespec="seconds"),
+            args.description,
+        )
+    else:
+        if why is not None:
+            logger.warning("saved as a preset without pictures: %s", why)
+        if args.description is not None:
+            logger.warning("--description left out: a preset has no look to describe")
+        directory = palettes_dir()
+        if source.get("picture") is not None and source_purity != "sfw":
+            # The config dir is often a public dotfiles repository (docs/design.md).
+            logger.info("source left out: its picture is not sfw")
+            source = {}
+    target = directory / file
+    _check_save_target(config, target, name, force=args.force)
+    palette_id = None
+    if target.is_file():
+        try:
+            palette_id = load_palette(target).id
+        except PaletteError as exc:
+            logger.warning("%s", exc)
+    saved = replace(palette, name=name, id=palette_id or new_id(), source=source, look=look)
+    text = dump_palette(saved)
+    if args.dry_run:
+        logger.info("would write %s", target)
+        print(text, end="")
+        return
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(target, text)
+    except OSError as exc:
+        sys.exit(f"amontillado: {exc}")
+    changes.file_written(target)
+    print(target)
+
+
+def _save_state(
+    config: Config, args: argparse.Namespace, wallpaper: Path | None, palette: Palette
+) -> tuple[list[GroupMonitor], str | None, list[str], str | None]:
+    """What amo theme save reads from the index: the current group when its primary is the
+    profile's picture (the same record), else why not (None with --palette-only); the group's
+    purities; the purity of the palette's source picture (None when unknown)."""
+    if not config.index_path.exists():
+        return [], None if args.palette_only else "no index (run amo index)", [], None
+    try:
+        with closing(connect(config.index_path)) as conn:
+            picture = palette.source.get("picture")
+            source_purity = None
+            if isinstance(picture, str):
+                try:
+                    source_purity = record_purity(conn, picture)
+                except LookupFailed:
+                    pass
+            if args.palette_only:
+                return [], None, [], source_purity
+            if wallpaper is None:
+                return [], "the profile has no picture", [], source_purity
+            group = current_group(conn)
+            if not group:
+                return [], "no amo group --apply yet", [], source_purity
+            try:
+                record_id = find_record(conn, str(wallpaper))
+            except LookupFailed:
+                return [], f"{wallpaper} is not in the index", [], source_purity
+            if group[0].record_id != record_id:
+                why = "the current group's primary is not the profile's picture"
+                return [], why, [], source_purity
+            purities = [record_purity(conn, item.record_id) for item in group]
+    except (sqlite3.Error, IndexDatabaseError, OSError, LookupFailed) as exc:
+        _index_error(config, exc)
+    return group, None, purities, source_purity
+
+
+def _root_of(config: Config, path: Path) -> Path:
+    """The library root (or the NSFW root) holding `path`."""
+    resolved = path.absolute()
+    for root in (*config.library_roots, config.nsfw_root):
+        if resolved.is_relative_to(root) or resolved.resolve().is_relative_to(root.resolve()):
+            return root
+    sys.exit(f"amontillado: {path} is in no library root")
+
+
+def _check_save_target(config: Config, target: Path, name: str, *, force: bool) -> None:
+    """Refuse a save that would replace a file without --force, or put NAME in a second
+    library root (which lookup cannot order); warn when it shadows a preset or is shadowed."""
+    if target.exists() and not force:
+        sys.exit(f"amontillado: {target} exists; --force replaces it")
+    roots = (*config.library_roots, config.nsfw_root)
+    library = [library_palettes_dir(root) / target.name for root in roots]
+    elsewhere = [path for path in library if path != target and path.is_file()]
+    preset = palettes_dir() / target.name
+    if target == preset:
+        for path in elsewhere:
+            logger.warning("palette %s: the saved look %s shadows this preset", name, path)
+        return
+    if elsewhere:
+        sys.exit(
+            f"amontillado: palette {name} is saved in {elsewhere[0]} already; a name in two "
+            "library roots cannot be looked up"
+        )
+    if preset.is_file():
+        logger.warning("palette %s: %s will shadow the preset %s", name, target, preset)
 
 
 def cmd_theme_current(args: argparse.Namespace) -> None:

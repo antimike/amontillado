@@ -130,6 +130,26 @@ def applied_palette(theme: ThemeConfig, profile: str) -> Palette:
     return load_palette(path)
 
 
+def applied_run(theme: ThemeConfig, profile: str) -> tuple[str, dict[str, str]]:
+    """The variant (as asked) and tone per variant of the run that last applied `profile`,
+    from theme.yaml; the config's for a profile applied before theme.yaml kept them."""
+    path = profile_dir(theme, profile) / THEME_FILE
+    try:
+        data = yamlio.load(path.read_text())
+    except FileNotFoundError as exc:
+        raise ThemeError(f"profile {profile} has not been applied") from exc
+    except (OSError, yamlio.YAMLError) as exc:
+        raise ThemeError(f"{path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ThemeError(f"{path}: not a mapping")
+    variant = data.get("variant")
+    tone = data.get("tone")
+    return (
+        variant if isinstance(variant, str) else theme.variant,
+        {str(k): str(v) for k, v in tone.items()} if isinstance(tone, dict) else dict(theme.tone),
+    )
+
+
 def choose_variant(palette: Palette, wanted: str) -> str:
     """`wanted` (auto, dark or light: plan resolves system) as a variant `palette` has; a
     missing one warns."""
