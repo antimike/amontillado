@@ -39,6 +39,7 @@ __all__ = [
     "dump",
     "dump_scalar",
     "flow",
+    "has_comments",
     "load",
     "load_styled",
     "same",
@@ -98,6 +99,30 @@ def load_styled(text: str) -> object:
         return _round_trip().load(text)
     except DuplicateKeyError as exc:
         raise _duplicate(exc) from None
+
+
+def has_comments(text: str) -> bool:
+    """Whether a YAML document holds a comment (blank lines are not ones). Raises YAMLError."""
+    found: list[bool] = []
+
+    def tokens(value: object) -> None:
+        # ruamel keeps comments as tokens, alone or in (nested) lists, on each container's `ca`.
+        if isinstance(value, list):
+            for item in value:
+                tokens(item)
+        elif getattr(value, "value", None) is not None and "#" in str(value.value):
+            found.append(True)
+
+    def walk(node: object) -> None:
+        if isinstance(node, (CommentedMap, CommentedSeq)):
+            tokens(node.ca.comment)
+            for item in node.ca.items.values():
+                tokens(item)
+            for child in node.values() if isinstance(node, CommentedMap) else node:
+                walk(child)
+
+    walk(load_styled(text))
+    return bool(found)
 
 
 def _duplicate(exc: DuplicateKeyError) -> YAMLError:
