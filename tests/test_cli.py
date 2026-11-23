@@ -2365,3 +2365,74 @@ def test_theme_apply_a_history_row(
     assert newest.number == 3 and newest.entry.monitors[0]["record"] == _id(red)
     with pytest.raises(SystemExit, match="no history row 9"):
         main(["theme", "apply", "--history", "9"])
+
+
+def _theme_list(capsys: pytest.CaptureFixture[str], *args: str) -> list[list[str]]:
+    capsys.readouterr()
+    main(["theme", "list", *args])
+    return [line.split("\t") for line in capsys.readouterr().out.splitlines()]
+
+
+def test_theme_list_saved_themes(
+    grouped: dict[str, Path],
+    home: Path,
+    library: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    look_id = _save_look(home, tmp_path, capsys, [_entry(grouped["red"])])
+    saved = library / ".amo/palettes/look.yaml"
+    data = yamlio.load(saved.read_text())
+    preset = {key: value for key, value in data.items() if key not in ("look", "id")}
+    presets = home / ".config/amontillado/palettes"
+    presets.mkdir(parents=True)
+    (presets / "look.yaml").write_text(yamlio.dump(preset))
+    (presets / "plain.yaml").write_text(yamlio.dump(preset))
+    nsfw = home / ".local/share/amontillado/library-nsfw/.amo/palettes"
+    nsfw.mkdir(parents=True)
+    (nsfw / "secret.yaml").write_text(yamlio.dump({**data, "id": "cd" * 16}))
+    assert _theme_list(capsys) == [
+        ["look", "look", str(saved)],
+        ["look", "shadowed", str(presets / "look.yaml")],
+        ["plain", "preset", str(presets / "plain.yaml")],
+    ]
+    # The NSFW root's looks only when --purity asks for them.
+    names = [row[0] for row in _theme_list(capsys, "--purity", "sfw,nsfw")]
+    assert names == ["look", "look", "plain", "secret"]
+    # Counts from the applies; ordered by them.
+    _setter(home, ': "$AMO_WALLPAPER"')
+    main(["theme", "apply", "--palette", "plain"])
+    main(["theme", "apply", "--palette", "plain"])
+    main(["theme", "apply", "--palette", "look", "--palette-only"])
+    order = [row[2] for row in _theme_list(capsys, "--order", "most-applied")]
+    assert order[:2] == [str(presets / "plain.yaml"), str(saved)]
+    order = [row[2] for row in _theme_list(capsys, "--order", "recent", "--limit", "1")]
+    assert order == [str(saved)]
+    capsys.readouterr()
+    main(["theme", "list", "--format", "json"])
+    first = json.loads(capsys.readouterr().out)[0]
+    assert first["id"] == look_id and first["applied_count"] == 1 and first["kind"] == "look"
+    # rofi: each path with its preview card as the icon.
+    capsys.readouterr()
+    main(["theme", "list", "--format", "rofi"])
+    row = capsys.readouterr().out.splitlines()[0]
+    value, options = row.split("\0")
+    _, icon, _, label = options.split("\x1f")
+    assert value == str(saved) and label == "look" and Path(icon).is_file()
+    assert Path(icon).parent == home / ".cache/amontillado/previews"
+
+
+def test_theme_list_history_by_purity(
+    grouped: dict[str, Path], home: Path, fake_matugen: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    red, private = grouped["red"], grouped["private"]
+    main(["theme", "apply", _id(red)])
+    main(["theme", "apply", _id(private)])
+    # The row naming a non-sfw picture is left out unless --purity asks for it.
+    rows = _theme_list(capsys, "--history")
+    assert [(row[0], row[3]) for row in rows] == [("1", str(red))]
+    rows = _theme_list(capsys, "--history", "--purity", "sfw,nsfw")
+    assert [row[0] for row in rows] == ["2", "1"]
+    capsys.readouterr()
+    main(["theme", "list", "--history", "--format", "rofi"])
+    assert capsys.readouterr().out.startswith("1\0icon\x1f")

@@ -23,7 +23,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import closing
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -81,6 +81,7 @@ from amontillado.hook import run_on_change
 from amontillado.index import (
     Applied,
     GroupMonitor,
+    HistoryRow,
     IndexDatabaseError,
     IndexedFile,
     LookupFailed,
@@ -106,6 +107,7 @@ from amontillado.index import (
     saved_snapshot,
     set_current_group,
     site_records,
+    theme_usage,
     usage,
 )
 from amontillado.index import (
@@ -169,6 +171,7 @@ from amontillado.theme import (
     RELOAD_TIMEOUT,
     WALLPAPER_LINK,
     Reload,
+    SavedTheme,
     ThemeError,
     applied_palette,
     applied_run,
@@ -180,6 +183,7 @@ from amontillado.theme import (
     reload_commands,
     repoint_wallpapers,
     run_reloads,
+    saved_themes,
 )
 from amontillado.theme import Plan as ThemePlan
 from amontillado.theme import apply as apply_theme
@@ -1204,6 +1208,45 @@ def build_parser() -> argparse.ArgumentParser:
         "-o", "--output", type=Path, metavar="FILE", help="Write the card to FILE as a PNG."
     )
     preview.set_defaults(func=cmd_theme_preview)
+
+    theme_list = theme_commands.add_parser(
+        "list",
+        help="Experimental: list the saved themes, or the history.",
+        description="Experimental (free to change or go in a minor release). Print the saved "
+        "looks of the SFW library roots and the presets of $XDG_CONFIG_HOME/amontillado/"
+        "palettes/ (a preset a library file of its name hides is marked shadowed); with "
+        "--purity asking for sketchy or nsfw, the NSFW root's looks too. --history prints the "
+        "history instead, newest first, numbered for amo theme apply --history N; a row naming "
+        "a picture that is not sfw only with --purity.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(theme_list, argparse.SUPPRESS)
+    theme_list.add_argument("--history", action="store_true", help="List the history rows.")
+    theme_list.add_argument(
+        "--purity",
+        type=_purities,
+        metavar="LIST",
+        help="Comma-separated purities (sfw, sketchy, nsfw) of the pictures to list (default sfw).",
+    )
+    theme_list.add_argument(
+        "--order",
+        choices=("name", "recent", "most-applied", "least-applied"),
+        help="name (the default for saved themes), recent (last applied first; the default "
+        "for --history), most-applied or least-applied (by how often each saved theme was "
+        "applied).",
+    )
+    theme_list.add_argument("--limit", type=_positive, metavar="N", help="At most N rows.")
+    theme_list.add_argument(
+        "--format",
+        choices=("tsv", "json", "rofi"),
+        default="tsv",
+        help="tsv: NAME<TAB>KIND<TAB>PATH (KIND look, preset or shadowed); with --history, "
+        "NUMBER<TAB>APPLIED<TAB>PALETTE<TAB>PRIMARY FILE. json: the same with the id, "
+        "description and applied_count and last_applied (history: variant, tone, monitors). "
+        "rofi: for rofi -dmenu -show-icons, each row's path (history: its number) with its "
+        "preview card (amo theme preview) as the icon and a display label.",
+    )
+    theme_list.set_defaults(func=cmd_theme_list)
 
     current = theme_commands.add_parser(
         "current",
@@ -2777,24 +2820,226 @@ def _preview_pictures(
                 purity = record_purity(conn, picture.record_id)
                 return [PreviewShown(picture.path, ratio)], purity != "sfw"
             given = list(args.monitors or ())
-            if not given:
-                given = [
-                    Monitor(str(i), _aspect(item.aspect).ratio, item.aspect)
-                    for i, item in enumerate(monitors)
-                ]
-            pairs = list(zip(monitors, given, strict=False))
             try:
-                chosen = [_fit(conn, item, monitor, i) for i, (item, monitor) in enumerate(pairs)]
+                return _look_shown(conn, monitors, given)
             except _LookFailed as exc:
                 sys.exit(f"amontillado: {exc} (--palette-only previews the palette alone)")
-            purities = {record_purity(conn, item.record) for item, _ in pairs}
     except (sqlite3.Error, IndexDatabaseError, OSError, LookupFailed) as exc:
         _index_error(config, exc)
+
+
+def _look_shown(
+    conn: sqlite3.Connection, monitors: Sequence[SavedLookMonitor], given: Sequence[Monitor]
+) -> tuple[list[PreviewShown], bool]:
+    """A look's pictures for its preview, fitted to `given` monitors (default: each at its
+    saved aspect), and whether any is not sfw. Raises _LookFailed or LookupFailed."""
+    if not given:
+        given = [
+            Monitor(str(i), _aspect(item.aspect).ratio, item.aspect)
+            for i, item in enumerate(monitors)
+        ]
+    pairs = list(zip(monitors, given, strict=False))
+    chosen = [_fit(conn, item, monitor, i) for i, (item, monitor) in enumerate(pairs)]
+    purities = {record_purity(conn, item.record) for item, _ in pairs}
     if len(given) > len(monitors):
         names = ", ".join(monitor.name for monitor in given[len(monitors) :])
         logger.warning("the theme has no picture for %s", names)
     shown = [PreviewShown(choice.file.path, choice.monitor.ratio) for choice in chosen]
     return shown, purities != {"sfw"}
+
+
+def cmd_theme_list(args: argparse.Namespace) -> None:
+    config = _load_config()
+    purities = args.purity or frozenset({"sfw"})
+    conn = None
+    try:
+        # No index yet: the saved themes still list, without counts or pictures.
+        conn = connect(config.index_path) if config.index_path.exists() else None
+        counts = theme_usage(conn) if conn is not None else {}
+        if args.history:
+            rows = _history_rows(conn, purities, args.purity is not None)
+            _print_history(config, conn, args, _ordered_history(rows, args.order, counts))
+        else:
+            themes = saved_themes(config, nsfw=bool(purities - {"sfw"}))
+            _print_saved(config, conn, args, _ordered_saved(themes, args.order, counts), counts)
+    except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+        _index_error(config, exc)
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _history_rows(
+    conn: sqlite3.Connection | None, purities: frozenset[str], asked: bool
+) -> list[HistoryRow]:
+    """The history rows whose pictures are all of `purities`; one naming a record no longer
+    indexed only when --purity was given (its purity is not known)."""
+    if conn is None:
+        return []
+    shown = []
+    for row in history(conn):
+        records = [item["record"] for item in row.entry.monitors if item.get("record")]
+        try:
+            ok = all(record_purity(conn, record) in purities for record in records)
+        except LookupFailed:
+            ok = asked
+        if ok:
+            shown.append(row)
+    return shown
+
+
+def _ordered_saved(
+    themes: list[SavedTheme], order: str | None, counts: dict[str, tuple[int, str]]
+) -> list[SavedTheme]:
+    """By name (the library's before a preset of its name), or by --order; recent: the last
+    applied first, never applied ones after, by name."""
+    themes = sorted(themes, key=lambda theme: (theme.name, not theme.in_library))
+    if order == "recent":
+        applied = [theme for theme in themes if theme.key in counts]
+        applied.sort(key=lambda theme: counts[theme.key][1], reverse=True)
+        return applied + [theme for theme in themes if theme.key not in counts]
+    return _by_applied(themes, order, lambda theme: counts.get(theme.key, (0, ""))[0])
+
+
+def _ordered_history(
+    rows: list[HistoryRow], order: str | None, counts: dict[str, tuple[int, str]]
+) -> list[HistoryRow]:
+    """Newest first (recent), or by --order: name by the palette's, most- and least-applied by
+    the count of the saved theme each row applied (none: 0)."""
+    if order == "name":
+        return sorted(rows, key=_row_name)
+    return _by_applied(rows, order, lambda row: counts.get(row.entry.theme or "", (0, ""))[0])
+
+
+def _by_applied(items: list[T], order: str | None, count: Callable[[T], int]) -> list[T]:
+    """`items` by applied count for most- or least-applied, ties kept in order; else as they
+    are."""
+    if order == "most-applied":
+        return sorted(items, key=lambda item: -count(item))
+    if order == "least-applied":
+        return sorted(items, key=count)
+    return items
+
+
+def _row_name(row: HistoryRow) -> str:
+    try:
+        return palette_from_data(yamlio.load(row.entry.palette), "history").name
+    except PaletteError:
+        return ""
+
+
+def _print_saved(
+    config: Config,
+    conn: sqlite3.Connection | None,
+    args: argparse.Namespace,
+    themes: list[SavedTheme],
+    counts: dict[str, tuple[int, str]],
+) -> None:
+    themes = themes[: args.limit] if args.limit else themes
+    if args.format == "json":
+        data = []
+        for theme in themes:
+            count, last = counts.get(theme.key, (0, None))
+            look = theme.palette.look
+            data.append(
+                {
+                    "name": theme.name,
+                    "kind": _kind(theme),
+                    "path": str(theme.path),
+                    "id": theme.palette.id,
+                    "description": look.description if look is not None else None,
+                    "applied_count": count,
+                    "last_applied": last,
+                }
+            )
+        print(json.dumps(data, indent=2))
+        return
+    for theme in themes:
+        if args.format == "tsv":
+            print(f"{theme.name}\t{_kind(theme)}\t{theme.path}")
+            continue
+        look = theme.palette.look
+        label = theme.name + (f" — {look.description}" if look and look.description else "")
+        if theme.shadowed:
+            label += " (shadowed)"
+        monitors = list(look.monitors) if look is not None else []
+        variant = look.variant if look is not None else config.theme.variant
+        tone = {**config.theme.tone, **(look.tone if look is not None else {})}
+        icon = _row_card(config, conn, theme.palette, monitors, variant, tone)
+        print(_rofi_row(str(theme.path), icon, label))
+
+
+def _print_history(
+    config: Config, conn: sqlite3.Connection | None, args: argparse.Namespace, rows: list
+) -> None:
+    rows = rows[: args.limit] if args.limit else rows
+    if args.format == "json":
+        data = [
+            {
+                "number": row.number,
+                "applied": row.applied,
+                "palette": _row_name(row),
+                "theme": row.entry.theme,
+                "variant": row.entry.variant,
+                "tone": row.entry.tone,
+                "monitors": row.entry.monitors,
+            }
+            for row in rows
+        ]
+        print(json.dumps(data, indent=2))
+        return
+    for row in rows:
+        primary = row.entry.monitors[0]["file"] if row.entry.monitors else "-"
+        if args.format == "tsv":
+            print(f"{row.number}\t{row.applied}\t{_row_name(row)}\t{primary}")
+            continue
+        try:
+            palette = palette_from_data(yamlio.load(row.entry.palette), f"history {row.number}")
+        except PaletteError as exc:
+            logger.warning("%s", exc)
+            continue
+        monitors = [_history_monitor(item) for item in row.entry.monitors if item.get("record")]
+        tone = {**config.theme.tone, **row.entry.tone}
+        icon = _row_card(config, conn, palette, monitors, row.entry.variant, tone)
+        label = f"{row.number}  {palette.name}  {row.applied}"
+        print(_rofi_row(str(row.number), icon, label))
+
+
+def _kind(theme: SavedTheme) -> str:
+    if theme.shadowed:
+        return "shadowed"
+    return "look" if theme.palette.look is not None else "preset"
+
+
+def _rofi_row(value: str, icon: Path | None, label: str) -> str:
+    """A row for rofi -dmenu -show-icons: rofi shows the label and the icon, and returns the
+    value."""
+    options = [] if icon is None else ["icon", str(icon)]
+    return f"{value}\0" + "\x1f".join([*options, "display", label])
+
+
+def _row_card(
+    config: Config,
+    conn: sqlite3.Connection | None,
+    palette: Palette,
+    monitors: list[SavedLookMonitor],
+    variant: str,
+    tone: dict[str, str],
+) -> Path | None:
+    """A row's preview card, from the cache; None (with a warning) when it cannot be drawn.
+    A look whose pictures cannot be found shows its palette alone."""
+    try:
+        rows = preview_strip(palette, variant, tone, config.theme.contrast)
+        shown, private = [], False
+        if monitors and conn is not None:
+            try:
+                shown, private = _look_shown(conn, monitors, [])
+            except (_LookFailed, LookupFailed) as exc:
+                logger.warning("%s: %s; its palette alone", palette.name, exc)
+        return preview_cached(shown, rows, private=private)
+    except (PreviewError, ThemeError, PaletteError, OSError) as exc:
+        logger.warning("%s: no preview: %s", palette.name, exc)
+        return None
 
 
 def cmd_theme_current(args: argparse.Namespace) -> None:
