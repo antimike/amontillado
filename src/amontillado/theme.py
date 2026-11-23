@@ -35,7 +35,7 @@ from amontillado.contrast import adjust, apply_contrast, check
 from amontillado.desktop import desktop_variant
 from amontillado.generators import GeneratorError, matugen_render
 from amontillado.matugen import MatugenError, material_view, render_matugen
-from amontillado.palette import Palette, dump_palette, load_palette
+from amontillado.palette import Palette, PaletteError, dump_palette, load_palette
 from amontillado.registry import RegistryError
 from amontillado.render import (
     RenderError,
@@ -109,6 +109,50 @@ def find_palette(value: str, config: Config) -> Path:
     if preset.is_file():
         return preset
     raise ThemeError(f"no palette file {value}, no saved look {value} and no preset {preset}")
+
+
+@dataclass(frozen=True)
+class SavedTheme:
+    """A palette file `amo theme list` shows: a library root's look (or preset saved there),
+    or the config's preset, which a library file of the same name shadows."""
+
+    path: Path
+    palette: Palette
+    in_library: bool
+    shadowed: bool = False
+
+    @property
+    def name(self) -> str:
+        return self.path.stem
+
+    @property
+    def key(self) -> str:
+        """What history and usage know it by: its id, else its resolved path."""
+        return self.palette.id or str(self.path.resolve())
+
+
+def saved_themes(config: Config, *, nsfw: bool) -> list[SavedTheme]:
+    """The saved themes of the SFW library roots (and the NSFW root's, with `nsfw`), then the
+    config's presets, each root's by file name; an unreadable file is warned about and left
+    out. A preset is shadowed by a library file of its name in any root, as lookup finds it."""
+    roots = (*config.library_roots, config.nsfw_root)
+    library_names = {
+        path.stem for root in roots for path in library_palettes_dir(root).glob("*.yaml")
+    }
+    found = []
+    for root in (*config.library_roots, *((config.nsfw_root,) if nsfw else ())):
+        found += [(path, True) for path in sorted(library_palettes_dir(root).glob("*.yaml"))]
+    found += [(path, False) for path in sorted(palettes_dir().glob("*.yaml"))]
+    themes = []
+    for path, in_library in found:
+        try:
+            palette = load_palette(path)
+        except PaletteError as exc:
+            logger.warning("%s", exc)
+            continue
+        shadowed = not in_library and path.stem in library_names
+        themes.append(SavedTheme(path, palette, in_library, shadowed))
+    return themes
 
 
 def profile_dir(theme: ThemeConfig, profile: str) -> Path:

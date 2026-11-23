@@ -45,6 +45,16 @@ All notable changes to amontillado are documented here. The format follows
   `$XDG_CACHE_HOME/amontillado/previews/`, one showing a non-sfw picture only in
   `$XDG_RUNTIME_DIR`.
 
+- *Experimental:* `amo theme apply --history N` applies history row N as a look: its palette,
+  variant, tone and pictures (on `--monitor`, else the current group's monitors).
+
+- *Experimental:* `amo theme list` prints the saved looks and presets (a preset a look hides
+  marked `shadowed`; the NSFW root's looks only with `--purity`), or with `--history` the
+  numbered history rows, newest first (a row naming a non-sfw picture only with `--purity`).
+  `--order name|recent|most-applied|least-applied` from how often each saved theme was
+  applied, `--limit`, `--format tsv|json|rofi`; rofi rows carry each theme's preview card as
+  the icon, for a theme picker.
+
 ### Fixed
 
 - `amo fetch` indexes a new record under its name at once. Before, the index had no name for
