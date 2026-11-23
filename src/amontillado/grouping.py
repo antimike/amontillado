@@ -162,6 +162,7 @@ def companions(
     category: str | None = None,
     accept: Accept | None = None,
     beyond: bool = True,
+    exclude: Sequence[str] = (),
 ) -> list[Choice]:
     """A picture for each of `monitors` (the primary's monitor not among them) from the pool of
     its ratio, other than the primary's record and each other's, not gated off by warmth, and
@@ -169,9 +170,10 @@ def companions(
     pool order (least shown first), or nearest first with `nearest` (ties in pool order); with
     none left, the nearest beyond the bound (unless not `beyond`). `accept`, if given, is asked
     about the candidates in that order and the first it accepts is taken: it is called lazily,
-    never for a candidate after the one taken. Raises GroupError when a monitor has no candidate
-    left (or none accepted)."""
-    used = [primary.record_id]
+    never for a candidate after the one taken. Records in `exclude` are never taken (a saved
+    look's own pictures). Raises GroupError when a monitor has no candidate left (or none
+    accepted)."""
+    used = [primary.record_id, *exclude]
     chosen: list[Choice] = []
     # Monitors of one ratio share a pool: its distances to the primary are computed once.
     measured: dict[float, np.ndarray] = {}

@@ -133,6 +133,12 @@ def test_companions_skip_the_primary_record() -> None:
     assert chosen == [("g20", True), ("g30", True)]
 
 
+def test_companions_leave_out_excluded_records() -> None:
+    # A saved look's own pictures are not companions for its extra monitors.
+    chosen = _companions(["g10", "g20", "g30"], max_distance=0.35, exclude=("g10",))
+    assert chosen == [("g20", False), ("g30", True)]
+
+
 def test_companions_of_a_category() -> None:
     categories = {"g10": "anime", "g20": "general", "g30": "general"}
     chosen = _companions(["g10", "g20", "g30"], categories=categories, category="general")
