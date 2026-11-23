@@ -241,3 +241,9 @@ def test_place(tmp_path: Path) -> None:
     assert recorder.closed
     # Input that ends cancels.
     assert place(preview, _state(), "1x1", _Recorder(), iter(["right"])) is None
+
+
+def test_kitty_image_inline_has_no_id_and_moves_the_cursor() -> None:
+    # A printed preview: a later one must not replace it, and output continues below it.
+    first = kitty_image(b"png", "c=40", inline=True).split(b";")[0]
+    assert first == b"\x1b_Ga=T,f=100,q=2,c=40,m=0"
