@@ -21,7 +21,7 @@ from rich.console import Console
 from amontillado import __version__, cli, yamlio
 from amontillado import library as library_module
 from amontillado.cli import build_parser, get_cli_arguments, main
-from amontillado.index import connect, record_shown, usage
+from amontillado.index import connect, current_group, history, record_shown, theme_usage, usage
 from amontillado.wallhaven import API, Client
 
 
@@ -960,6 +960,12 @@ def test_group_apply_runs_the_setter_per_monitor(
     assert "noise" not in out  # the setter's output goes to stderr
     assert log.read_text() == f"A {red}\nB {grouped['maroon']}\n"
     assert _shown_counts(home) == {_id(grouped["red"]): 1, _id(grouped["maroon"]): 1}
+    with closing(connect(home / ".local/state/amontillado/index.sqlite")) as conn:
+        group = current_group(conn)
+    assert [(g.monitor, g.aspect, g.record_id, g.path) for g in group] == [
+        ("A", "16:9", _id(grouped["red"]), grouped["red"]),
+        ("B", "16:9", _id(grouped["maroon"]), grouped["maroon"]),
+    ]
 
 
 def test_group_apply_fails_after_trying_every_monitor(grouped: dict[str, Path], home: Path) -> None:
@@ -968,6 +974,9 @@ def test_group_apply_fails_after_trying_every_monitor(grouped: dict[str, Path], 
     with pytest.raises(SystemExit, match=r"group\.setter failed for B: exit status 1"):
         main([*args, "--apply", "--non-interactive"])
     assert _shown_counts(home) == {_id(grouped["red"]): 1}
+    # Not what is on screen: the current group is left as it was.
+    with closing(connect(home / ".local/state/amontillado/index.sqlite")) as conn:
+        assert current_group(conn) == []
 
 
 def test_group_apply_needs_a_setter(grouped: dict[str, Path]) -> None:
@@ -1872,3 +1881,58 @@ def test_edit_names_what_it_keeps(
         main(
             ["edit", str(library / "red"), "--extcmd", 'cp "$EDITS/green.png" "$AMO_INPUT"; false']
         )
+
+
+def _state(home: Path) -> tuple[list, dict]:
+    with closing(connect(home / ".local/state/amontillado/index.sqlite")) as conn:
+        return history(conn), theme_usage(conn)
+
+
+def test_theme_apply_keeps_a_history(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, fake_matugen: Path
+) -> None:
+    red, maroon = grouped["red"], grouped["maroon"]
+    _write_config(
+        home,
+        {
+            "group": {"setter": ': "$AMO_WALLPAPER"'},
+            "theme": {"hues": "generator", "variant": "system", "tone": {"light": "soft"}},
+        },
+    )
+    group = ["group", str(red), "--monitor", "A=21:9", "--monitor", "B=16:9"]
+    main([*group, "--order", "nearest", "--apply", "--non-interactive"])
+    main(["theme", "apply", _id(red), "--tone", "dark=dim"])
+    [row], counts = _state(home)
+    assert row.number == 1
+    assert (row.entry.variant, row.entry.tone) == ("system", {"light": "soft", "dark": "dim"})
+    assert row.entry.monitors == [
+        {"monitor": "A", "aspect": "21:9", "record": _id(red), "file": str(red)},
+        {"monitor": "B", "aspect": "16:9", "record": _id(maroon), "file": str(maroon)},
+    ]
+    profile = home / ".cache/theme/default"
+    assert row.entry.palette == (profile / "palette.yaml").read_text()
+    assert row.entry.theme is None and counts == {}  # a picture's palette: no saved theme
+    # Not the group's primary: that picture alone.
+    main(["theme", "apply", _id(maroon)])
+    assert _state(home)[0][0].entry.monitors == [{"file": str(maroon), "record": _id(maroon)}]
+    # A saved theme (a preset, keyed by its path for now) and no picture.
+    preset = tmp_path / "preset.yaml"
+    preset.write_text(row.entry.palette)
+    main(["theme", "apply", "--palette", str(preset)])
+    main(["theme", "apply", "--palette", str(preset), "--no-activate"])
+    main(["theme", "apply", "--palette", str(preset), "--dry-run"])
+    rows, counts = _state(home)
+    assert [r.number for r in rows] == [3, 2, 1]
+    assert rows[0].entry.theme == str(preset) and rows[0].entry.monitors == []
+    assert list(counts) == [str(preset)] and counts[str(preset)][0] == 1
+
+
+def test_theme_apply_history_size(indexed: dict[str, Path], home: Path, fake_matugen: Path) -> None:
+    _write_config(home, {"theme": {"hues": "generator", "history_size": 1}})
+    main(["theme", "apply", _id(indexed["red"])])
+    main(["theme", "apply"])
+    [row] = _state(home)[0]
+    assert row.number == 2
+    _write_config(home, {"theme": {"hues": "generator", "history_size": 0}})
+    main(["theme", "apply"])
+    assert _state(home)[0] == []

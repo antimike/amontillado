@@ -2272,7 +2272,7 @@ is):
 - **`history`**: one row per activated `amo theme apply` (not `--dry-run` or `--no-activate`):
   time, the theme's id (or path) when a saved theme was applied, the palette applied, the run's
   variant and tone, and the current group's monitors if its primary is the picture applied
-  (else just that picture). Each row has a number, increasing and never reused, which `list
+  (the same record: the group may show another file of it; else just that picture). Each row has a number, increasing and never reused, which `list
   --history` prints and `--history N` takes, so a row keeps its number whatever `--purity`
   hides. The palette is stored whole in each row (about 2.3 KB; 200 rows under 0.5 MB).
   `theme.history_size` (default 200,
