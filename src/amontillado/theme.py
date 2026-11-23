@@ -77,16 +77,38 @@ def palettes_dir() -> Path:
     return xdg_dir("XDG_CONFIG_HOME", ".config") / "amontillado" / "palettes"
 
 
-def find_palette(value: str) -> Path:
-    """`--palette` NAME or FILE: a value naming an existing file is that file, else the preset
-    `<palettes dir>/<value>.yaml`."""
+def library_palettes_dir(root: Path) -> Path:
+    """Where a library root keeps its saved looks: under `.amo/`, which `amo index` never
+    searches."""
+    return root / ".amo" / "palettes"
+
+
+def find_palette(value: str, config: Config) -> Path:
+    """`--palette` NAME or FILE: a value naming an existing file is that file, else NAME's
+    file in the library roots' palettes (the NSFW root's too: an explicit name), else the
+    preset in the config's. The library wins a name found in both, with a warning naming both
+    (docs/design.md, "Saved looks"); a name in two library roots is an error."""
     path = Path(value).expanduser()
     if path.is_file():
         return path
-    preset = palettes_dir() / f"{value}.yaml"
+    if not value or "/" in value or value.startswith("."):
+        raise ThemeError(f"no palette file {value}")
+    name = f"{value}.yaml"
+    roots = (*config.library_roots, config.nsfw_root)
+    found = [library_palettes_dir(root) / name for root in roots]
+    found = [path for path in found if path.is_file()]
+    if len(found) > 1:
+        raise ThemeError(
+            f"palette {value} is saved in more than one library root: {', '.join(map(str, found))}"
+        )
+    preset = palettes_dir() / name
+    if found:
+        if preset.is_file():
+            logger.warning("palette %s: %s shadows the preset %s", value, found[0], preset)
+        return found[0]
     if preset.is_file():
         return preset
-    raise ThemeError(f"no palette file {value} and no preset {preset}")
+    raise ThemeError(f"no palette file {value}, no saved look {value} and no preset {preset}")
 
 
 def profile_dir(theme: ThemeConfig, profile: str) -> Path:
@@ -257,7 +279,8 @@ def plan(
     if palette is None:
         palette = applied_palette(theme, profile)
         wallpaper = current_wallpaper
-    palette = apply_contrast(palette, contrast)
+    # A saved look's pictures are not the profile's: what was set is in the index's state.
+    palette = apply_contrast(replace(palette, look=None), contrast)
     names = list(only) or list(theme.apps)
     if not names:
         logger.warning("no apps under theme.apps: only the palette is written")

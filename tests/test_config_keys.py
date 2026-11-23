@@ -244,3 +244,18 @@ def test_config_check_wants_git_annex_for_an_annexed_root(
     assert (
         f"{root} is in a git-annex repository; amo hook git-commit needs git-annex" in caplog.text
     )
+
+
+def test_config_check_hints_at_presets_without_an_id(
+    home: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    presets = home / ".config" / "amontillado" / "palettes"
+    presets.mkdir(parents=True)
+    (presets / "kept.yaml").write_text("version: 1\nid: " + "ab" * 16 + "\nname: kept\n")
+    (presets / "moved.yaml").write_text("version: 1\nname: moved\n")
+    (presets / "broken.yaml").write_text("variants: [")
+    caplog.set_level(logging.INFO)
+    _check(home, "theme: {}\n")  # a hint, not a problem: no exit
+    hints = [r.getMessage() for r in caplog.records if "no id" in r.getMessage()]
+    assert len(hints) == 1
+    assert re.fullmatch(r".*moved\.yaml: no id, .* a line `id: [0-9a-f]{32}` keeps .*", hints[0])

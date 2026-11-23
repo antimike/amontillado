@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from amontillado.palette import (
     complete_variant,
     dump_palette,
     load_palette,
+    new_id,
     palette_from_data,
     palette_from_schemes,
 )
@@ -260,3 +262,75 @@ def test_two_schemes_of_one_variant_are_refused(tmp_path: Path) -> None:
         palette_from_schemes([first, second])
     with pytest.raises(PaletteError, match="one scheme"):
         palette_from_schemes([first, second, first])
+
+
+RECORD = "c2bb9ad4" + "0" * 24
+
+
+def _look_data() -> dict:
+    return {
+        "description": "signs with the ISS morning",
+        "saved": "2026-11-22T12:00:00+00:00",
+        "variant": "system",
+        "tone": {"light": "soft", "dark": "full"},
+        "monitors": [
+            {"record": RECORD, "file": "signs-21x9.jpg", "aspect": "21:9"},
+            {"record": "627f7597" + "1" * 24, "file": "iss.jpg", "aspect": "16:9"},
+        ],
+    }
+
+
+def test_id_and_look_round_trip() -> None:
+    data = {"id": "5e0c1a7b" + "2" * 24, **_palette_data(), "look": _look_data()}
+    palette = palette_from_data(data, "p")
+    assert palette.id == data["id"]
+    assert palette.look is not None
+    assert [m.aspect for m in palette.look.monitors] == ["21:9", "16:9"]
+    assert (palette.look.variant, palette.look.tone) == (
+        "system",
+        {"light": "soft", "dark": "full"},
+    )
+    dumped = dump_palette(palette)
+    assert list(yamlio.load(dumped)) == ["version", "id", "name", "source", "variants", "look"]
+    assert palette_from_data(yamlio.load(dumped), "dumped") == palette
+
+
+def test_a_preset_has_no_id_or_look() -> None:
+    palette = palette_from_data(_palette_data(), "p")
+    assert palette.id is None and palette.look is None
+    assert {"id", "look"}.isdisjoint(yamlio.load(dump_palette(palette)))
+
+
+def test_look_saved_as_an_unquoted_timestamp() -> None:
+    text = yamlio.dump({**_palette_data(), "look": _look_data()}).replace(
+        "'2026-11-22T12:00:00+00:00'", "2026-11-22T12:00:00+00:00"
+    )
+    look = palette_from_data(yamlio.load(text), "p").look
+    assert look is not None and look.saved == "2026-11-22T12:00:00+00:00"
+
+
+def test_new_ids_are_record_shaped() -> None:
+    first, second = new_id(), new_id()
+    assert first != second and re.fullmatch(r"[0-9a-f]{32}", first)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda d: d.update(id="ABC"), "id must be 32 lowercase hex digits"),
+        (lambda d: d["look"].update(monitors=[]), "monitors must list at least one picture"),
+        (lambda d: d["look"].update(variant="dusk"), "variant must be one of"),
+        (lambda d: d["look"].update(tone={"dark": "soft"}), "dark: 'soft' is not a tone"),
+        (lambda d: d["look"].update(colour="red"), "unknown key 'colour'"),
+        (lambda d: d["look"].update(description=3), "description must be a string"),
+        (lambda d: d["look"]["monitors"][0].update(record="x"), r"monitors\[0\]: record must be"),
+        (lambda d: d["look"]["monitors"][1].update(file="a/b.jpg"), "file must be a file name"),
+        (lambda d: d["look"]["monitors"][0].update(aspect="wide"), "aspect must be a quoted"),
+        (lambda d: d["look"]["monitors"][0].update(aspect=1269), "aspect must be a quoted"),
+    ],
+)
+def test_invalid_look(change: object, message: str) -> None:
+    data = {**_palette_data(), "look": _look_data()}
+    change(data)  # type: ignore[operator]
+    with pytest.raises(PaletteError, match=message):
+        palette_from_data(data, "p")

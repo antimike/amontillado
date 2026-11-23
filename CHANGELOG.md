@@ -16,6 +16,12 @@ All notable changes to amontillado are documented here. The format follows
   palette, the run's variant and tone, and the current group's pictures when its primary is
   the picture applied), and each saved theme applied is counted. `theme.history_size` (default
   200; 0 keeps none) bounds the history.
+- Palette files may carry an `id` (written once by amo; `amo palette --from-scheme` writes one)
+  and a `look` block: the pictures a theme was seen with, by monitor position, and the run's
+  variant and tone. `amo config check` hints at presets without an `id`.
+- `amo theme apply --palette NAME` finds NAME in the library roots' `.amo/palettes/` (the NSFW
+  root's too) before the config's `palettes/`, warning when a library file shadows a preset,
+  and logs the file it applies. A name saved in two library roots is an error.
 
 ### Fixed
 

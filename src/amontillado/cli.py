@@ -25,7 +25,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterable
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.resources import files as package_files
 from logging import getLogger
 from pathlib import Path
@@ -141,6 +141,7 @@ from amontillado.palette import (
     PaletteError,
     dump_palette,
     load_palette,
+    new_id,
     palette_from_schemes,
 )
 from amontillado.predicates import Judge, Predicate, PredicateError
@@ -161,6 +162,7 @@ from amontillado.theme import (
     ThemeError,
     current_profile,
     find_palette,
+    palettes_dir,
     reload_commands,
     repoint_wallpapers,
     run_reloads,
@@ -1971,7 +1973,8 @@ def cmd_palette(args: argparse.Namespace) -> None:
                 config, args.picture, generator=args.generator, hues=args.hues
             )
         else:
-            palette = palette_from_schemes(args.from_scheme)
+            # Written for keeps: a preset's id, written once (docs/design.md, "Saved looks").
+            palette = replace(palette_from_schemes(args.from_scheme), id=new_id())
     except (PaletteError, GeneratorError) as exc:
         sys.exit(f"amontillado: {exc}")
     print(dump_palette(apply_contrast(palette, mode)), end="")
@@ -2117,7 +2120,7 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
     if args.picture is not None and args.app:
         sys.exit("amontillado: PICTURE with --app: a new picture re-renders every app")
     picture = None
-    # The saved theme applied: its path, for now (its id once palette files have one).
+    # The saved theme applied: its id, or its path when it has none.
     saved = None
     try:
         check_profile(profile, "--profile")
@@ -2126,9 +2129,10 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
                 config, args.picture, generator=None, hues=args.hues
             )
         elif args.palette is not None:
-            path = find_palette(args.palette)
-            saved = str(path.resolve())
+            path = find_palette(args.palette, config)
+            logger.info("palette %s: %s", args.palette, path)
             palette = load_palette(path)
+            saved = palette.id or str(path.resolve())
         else:
             palette = None
         plan = theme_plan(
@@ -2346,12 +2350,33 @@ def cmd_config_check(args: argparse.Namespace) -> None:
         warning = matugen_tone_warning(name, app, config.theme.tone)
         if warning is not None:
             logger.warning("%s", warning)
+    _hint_preset_ids()
     for problem in problems:
         logger.error("%s", problem)
     count = len(problems) + len(collect.messages)
     if count:
         sys.exit(f"amontillado: {path}: {_count(count, 'problem')}")
     logger.info("%s: ok (%s)", path, _count(len(config.theme.apps), "app"))
+
+
+def _hint_preset_ids() -> None:
+    """A hint, not a problem, for each preset without an id: amo does not edit the user's
+    files, so its statistics follow its path (docs/design.md, "Saved looks", "Identity")."""
+    directory = palettes_dir()
+    if not directory.is_dir():
+        return
+    for path in sorted(directory.glob("*.yaml")):
+        try:
+            data = yamlio.load(path.read_text())
+        except (OSError, yamlio.YAMLError):
+            continue  # amo theme apply says what is wrong with it
+        if isinstance(data, dict) and "id" not in data:
+            logger.info(
+                "%s: no id, so its statistics follow its path; a line `id: %s` keeps them if "
+                "it moves",
+                path,
+                new_id(),
+            )
 
 
 def _check_on_change(config: Config) -> list[str]:
