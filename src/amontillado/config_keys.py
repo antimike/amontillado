@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from amontillado import yamlio
 from amontillado.config import (
     CONTRAST_CHOICES,
+    DEFAULT_HISTORY_SIZE,
     DEFAULT_MAX_DISTANCE,
     FORMATS,
     GENERATORS,
@@ -293,6 +294,13 @@ KEYS: tuple[Key, ...] = (
         "adjust",
         default="adjust",
         choices=CONTRAST_CHOICES,
+    ),
+    Key(
+        "theme.history_size",
+        "Experimental. How many activated amo theme apply runs the history keeps (palette, "
+        "variant, tone and pictures), oldest dropped; 0 keeps none. Each row is about 2.5 KB.",
+        str(DEFAULT_HISTORY_SIZE),
+        default=str(DEFAULT_HISTORY_SIZE),
     ),
     Key("theme.wallpaper", "The wallpaper hook."),
     Key(

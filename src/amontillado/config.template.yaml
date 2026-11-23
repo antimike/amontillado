@@ -214,6 +214,10 @@ theme:
   # little off the source's. Default: adjust.
   # contrast: adjust
 
+  # Experimental. How many activated amo theme apply runs the history keeps (palette, variant, tone
+  # and pictures), oldest dropped; 0 keeps none. Each row is about 2.5 KB. Default: 200.
+  # history_size: 200
+
   # The wallpaper hook.
   wallpaper:
 

@@ -6,6 +6,17 @@ All notable changes to amontillado are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `amo group --apply` keeps the group it set, when the setter set every monitor, as the
+  current group in the index (schema 10; upgraded in place).
+- `theme.yaml` in a profile records the run's `variant` (as asked: `system` and `auto` stay
+  so) and `tone` per variant at the top level.
+- *Experimental:* every activated `amo theme apply` adds a row to a history in the index (the
+  palette, the run's variant and tone, and the current group's pictures when its primary is
+  the picture applied), and each saved theme applied is counted. `theme.history_size` (default
+  200; 0 keeps none) bounds the history.
+
 ### Fixed
 
 - `amo fetch` indexes a new record under its name at once. Before, the index had no name for

@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from logging import getLogger
 from pathlib import Path
@@ -23,6 +23,7 @@ from pathlib import Path
 from amontillado import yamlio
 from amontillado.classes import LIGHT_MIN
 from amontillado.config import (
+    TONE_CHOICES,
     AppConfig,
     Config,
     ThemeConfig,
@@ -222,6 +223,10 @@ class Plan:
     variant: str
     # That variant's tone for an app without its own: the wallpaper hook's AMO_TONE.
     tone: str = FULL
+    # The run's variant as asked (system and auto unresolved) and its tone per variant
+    # (--tone over theme.tone): what theme.yaml, the history and a saved look keep.
+    run_variant: str = "auto"
+    run_tone: dict[str, str] = field(default_factory=dict)
 
 
 def plan(
@@ -241,6 +246,7 @@ def plan(
     `wallpaper` is the picture `palette` was made from, for the profile's wallpaper link.
     Raises ThemeError before anything is written."""
     theme = config.theme
+    asked = variant
     unknown = [name for name in only if name not in theme.apps]
     if unknown:
         raise ThemeError(f"--app {', '.join(unknown)}: not under theme.apps")
@@ -310,6 +316,8 @@ def plan(
         wallpaper,
         resolved,
         tones.get(resolved, FULL) if toning else FULL,
+        asked,
+        {name: tones.get(name, FULL) for name in TONE_CHOICES},
     )
 
 
@@ -363,6 +371,9 @@ def write(plan: Plan, directory: Path) -> None:
     theme = {
         "applied": datetime.now(UTC).isoformat(timespec="seconds"),
         "palette": plan.palette.name,
+        # The run's, as asked: an app's own variant and tone are under apps.
+        "variant": plan.run_variant,
+        "tone": plan.run_tone,
         "apps": plan.apps,
     }
     (directory / THEME_FILE).write_text(yamlio.dump(theme))

@@ -78,6 +78,8 @@ from amontillado.grouping import (
 )
 from amontillado.hook import run_on_change
 from amontillado.index import (
+    Applied,
+    GroupMonitor,
     IndexDatabaseError,
     IndexedFile,
     LookupFailed,
@@ -85,6 +87,7 @@ from amontillado.index import (
     RecordFilter,
     categories,
     connect,
+    current_group,
     files,
     files_with_hash,
     find_record,
@@ -93,11 +96,13 @@ from amontillado.index import (
     names,
     pictures,
     rebuild,
+    record_applied,
     record_location,
     record_name,
     record_purity,
     record_shown,
     saved_snapshot,
+    set_current_group,
     site_records,
     usage,
 )
@@ -151,6 +156,7 @@ from amontillado.sources import sync as sources_sync
 from amontillado.theme import (
     CURRENT,
     RELOAD_TIMEOUT,
+    WALLPAPER_LINK,
     Reload,
     ThemeError,
     current_profile,
@@ -159,6 +165,7 @@ from amontillado.theme import (
     repoint_wallpapers,
     run_reloads,
 )
+from amontillado.theme import Plan as ThemePlan
 from amontillado.theme import apply as apply_theme
 from amontillado.theme import describe as describe_theme
 from amontillado.theme import plan as theme_plan
@@ -1618,8 +1625,9 @@ def cmd_group(args: argparse.Namespace) -> None:
 def _apply_group(
     config: Config, chosen: list[Choice], paths: dict[Path, Path], *, dry_run: bool
 ) -> None:
-    """Run group.setter for each monitor, then count each picture it set as shown. Exits
-    non-zero, after trying every monitor, if the setter failed for one."""
+    """Run group.setter for each monitor, then count each picture it set as shown and, when
+    it set every one, keep the group as the current group. Exits non-zero, after trying every
+    monitor, if the setter failed for one."""
     setter = config.group.setter
     assert setter is not None
     # AMO_* from amo's own environment would be stale: only this run's are set.
@@ -1656,6 +1664,19 @@ def _apply_group(
             with closing(connect(config.index_path)) as conn:
                 for record_id in done:
                     record_shown(conn, record_id)
+                if not failed:
+                    set_current_group(
+                        conn,
+                        [
+                            GroupMonitor(
+                                c.monitor.name,
+                                c.monitor.aspect,
+                                c.file.record_id,
+                                paths[c.file.path],
+                            )
+                            for c in chosen
+                        ],
+                    )
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             _index_error(config, exc)
     if failed:
@@ -2096,6 +2117,8 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
     if args.picture is not None and args.app:
         sys.exit("amontillado: PICTURE with --app: a new picture re-renders every app")
     picture = None
+    # The saved theme applied: its path, for now (its id once palette files have one).
+    saved = None
     try:
         check_profile(profile, "--profile")
         if args.picture is not None:
@@ -2103,7 +2126,9 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
                 config, args.picture, generator=None, hues=args.hues
             )
         elif args.palette is not None:
-            palette = load_palette(find_palette(args.palette))
+            path = find_palette(args.palette)
+            saved = str(path.resolve())
+            palette = load_palette(path)
         else:
             palette = None
         plan = theme_plan(
@@ -2129,15 +2154,50 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
     except (ConfigError, ThemeError, PaletteError, GeneratorError, OSError) as exc:
         sys.exit(f"amontillado: {exc}")
     logger.info("applied %s to profile %s", plan.palette.name, profile)
-    # A picture behind an inactive profile has not been shown.
-    if picture is not None and not args.no_activate:
+    # A theme behind an inactive profile has not been shown.
+    if not args.no_activate:
+        link = directory / WALLPAPER_LINK
+        wallpaper = Path(os.readlink(link)) if link.is_symlink() else None
         try:
             with closing(connect(config.index_path)) as conn:
-                record_shown(conn, picture.record_id)
+                if picture is not None:
+                    record_shown(conn, picture.record_id)
+                entry = _history_entry(conn, plan, wallpaper, saved)
+                record_applied(conn, entry, keep=config.theme.history_size)
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
-            logger.warning("%s: not recorded as shown: %s", picture.name, exc)
+            logger.warning("not recorded as shown or in the history: %s", exc)
     if not args.no_reload and not args.no_activate:
         run_reloads(reload_commands(config, plan, directory))
+
+
+def _history_entry(
+    conn: sqlite3.Connection, plan: ThemePlan, wallpaper: Path | None, saved: str | None
+) -> Applied:
+    """What the history keeps of an apply: the palette and the run's variant and tone, and
+    the current group's monitors when its primary is the profile's picture (the same record),
+    else that picture alone."""
+    monitors: list[dict[str, str]] = []
+    if wallpaper is not None:
+        try:
+            record_id = find_record(conn, str(wallpaper))
+        except LookupFailed:
+            record_id = None
+        group = current_group(conn)
+        if group and record_id is not None and group[0].record_id == record_id:
+            monitors = [
+                {
+                    "monitor": item.monitor,
+                    "aspect": item.aspect,
+                    "record": item.record_id,
+                    "file": str(item.path),
+                }
+                for item in group
+            ]
+        else:
+            monitors = [{"file": str(wallpaper)}]
+            if record_id is not None:
+                monitors[0]["record"] = record_id
+    return Applied(dump_palette(plan.palette), plan.run_variant, plan.run_tone, monitors, saved)
 
 
 def cmd_theme_current(args: argparse.Namespace) -> None:

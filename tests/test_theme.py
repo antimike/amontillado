@@ -58,6 +58,8 @@ def test_apply_writes_a_profile_and_points_current_at_it(tmp_path: Path) -> None
     assert yamlio.load((directory / "palette.yaml").read_text())["name"] == "p"
     theme = yamlio.load((directory / "theme.yaml").read_text())
     assert theme["palette"] == "p"
+    assert theme["variant"] == "auto"
+    assert theme["tone"] == {"light": "full", "dark": "full"}
     assert theme["apps"]["kitty"] == {
         "source": "builtin",
         "template": "kitty",
@@ -597,3 +599,22 @@ def test_render_with_matugen_stays_full_and_warns(
     assert [item.record["tone"] for item in built.rendered] == ["full", "dim"]
     assert "theme.apps.a: render_with: matugen renders matugen's own colours" in caplog.text
     assert "theme.apps.kitty" not in caplog.text
+
+
+def test_theme_yaml_keeps_the_run_as_asked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("amontillado.theme.desktop_variant", lambda: "light")
+    config = _config(tmp_path)
+    config = replace(config, theme=replace(config.theme, tone={"light": "soft", "dark": "dim"}))
+    built = plan(
+        config,
+        _palette(variants=("dark", "light"), lightness=0.3),
+        profile="default",
+        variant="system",
+        contrast="off",
+        tone={"dark": "full"},
+    )
+    assert built.variant == "light"  # resolved for the apps
+    directory = apply(config, built, activate=True)
+    theme = yamlio.load((directory / "theme.yaml").read_text())
+    assert theme["variant"] == "system"
+    assert theme["tone"] == {"light": "soft", "dark": "full"}

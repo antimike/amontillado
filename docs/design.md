@@ -315,7 +315,7 @@ cannot be rebuilt):
   **Rebuilt from the info files** by `amo index`, in one transaction (dropped and recreated, so
   their schema needs no migrations): delete the database and nothing is lost but the usage
   table (from schema 10, the state tables of "Saved looks" too: `current_group`, `history`,
-  `theme_usage`). The database's `PRAGMA user_version` is its schema version (9); a newer one than the
+  `theme_usage`; an upgrade from schema 9 creates them empty). The database's `PRAGMA user_version` is its schema version (10); a newer one than the
   program knows is refused. Schema 2 lacked the hash-cache columns, schemas 2 and 3 the
   thumbnail column, schemas 2 to 4 the `license`, `author` and `title` columns of `records`,
   schemas 2 to 5 its `info` column (the whole info file as JSON, for `amo list --where`),
@@ -2272,7 +2272,7 @@ is):
 - **`history`**: one row per activated `amo theme apply` (not `--dry-run` or `--no-activate`):
   time, the theme's id (or path) when a saved theme was applied, the palette applied, the run's
   variant and tone, and the current group's monitors if its primary is the picture applied
-  (else just that picture). Each row has a number, increasing and never reused, which `list
+  (the same record: the group may show another file of it; else just that picture). Each row has a number, increasing and never reused, which `list
   --history` prints and `--history N` takes, so a row keeps its number whatever `--purity`
   hides. The palette is stored whole in each row (about 2.3 KB; 200 rows under 0.5 MB).
   `theme.history_size` (default 200,
