@@ -136,6 +136,8 @@ from amontillado.library import (
     snapshot_changes,
 )
 from amontillado.metrics import HUE_NAMES, Metrics, measure_file
+from amontillado.palette import Look as SavedLook
+from amontillado.palette import LookMonitor as SavedLookMonitor
 from amontillado.palette import (
     Palette,
     PaletteError,
@@ -1005,7 +1007,10 @@ def build_parser() -> argparse.ArgumentParser:
         "run each app's reload command and the wallpaper hook (a failing reload warns). A "
         "render error changes nothing. Given PICTURE, the palette is generated from it, the "
         "profile's wallpaper link points to it and it is recorded as shown. Without PICTURE or "
-        "--palette, re-render the profile's own palette (after a config change). No network.",
+        "--palette, re-render the profile's own palette (after a config change). A saved look "
+        "(amo theme save) sets its pictures too, as amo group --apply does, after the reloads: "
+        "picture i on monitor i (--monitor, else the last amo group --apply's), and its "
+        "variant and tone unless --variant or --tone. No network.",
         formatter_class=HelpFormatter,
     )
     _add_loglevel(apply, argparse.SUPPRESS)
@@ -1019,7 +1024,30 @@ def build_parser() -> argparse.ArgumentParser:
     apply_input.add_argument(
         "--palette",
         metavar="NAME|FILE",
-        help="A palette file, or a preset in $XDG_CONFIG_HOME/amontillado/palettes/.",
+        help="A palette file, or NAME: a look saved in a library root's .amo/palettes/ (the "
+        "library wins a name found in both), else a preset in "
+        "$XDG_CONFIG_HOME/amontillado/palettes/.",
+    )
+    apply.add_argument(
+        "--monitor",
+        action="append",
+        type=_monitor,
+        dest="monitors",
+        metavar="NAME=W:H",
+        help="A saved look's monitors, the primary first, as for amo group; repeat for each. "
+        "Default: the monitors of the last amo group --apply. Monitors past the look's "
+        "pictures get companions of its primary (offered when a terminal can be asked).",
+    )
+    apply.add_argument(
+        "--palette-only",
+        action="store_true",
+        help="Apply a saved look's palette without setting its pictures.",
+    )
+    apply.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Never ask (as when stdin or stderr is not a terminal): a look's picture without a "
+        "file of its monitor's ratio gets its default file, and extra monitors are filled.",
     )
     _add_hues(apply)
     apply.add_argument(
@@ -1621,15 +1649,17 @@ def cmd_group(args: argparse.Namespace) -> None:
     paths = _group_crops(config, args, chosen)
     _print_group(args.format, chosen, paths, record_names)
     if args.apply:
-        _apply_group(config, chosen, paths, dry_run=args.dry_run)
+        failed = _apply_group(config, chosen, paths, dry_run=args.dry_run)
+        if failed:
+            sys.exit(f"amontillado: group.setter failed for {'; '.join(failed)}")
 
 
 def _apply_group(
     config: Config, chosen: list[Choice], paths: dict[Path, Path], *, dry_run: bool
-) -> None:
+) -> list[str]:
     """Run group.setter for each monitor, then count each picture it set as shown and, when
-    it set every one, keep the group as the current group. Exits non-zero, after trying every
-    monitor, if the setter failed for one."""
+    it set every one, keep the group as the current group. Returns the monitors it failed for,
+    with why, after trying every one."""
     setter = config.group.setter
     assert setter is not None
     # AMO_* from amo's own environment would be stale: only this run's are set.
@@ -1681,8 +1711,7 @@ def _apply_group(
                     )
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             _index_error(config, exc)
-    if failed:
-        sys.exit(f"amontillado: group.setter failed for {'; '.join(failed)}")
+    return failed
 
 
 def _auto_primary(
@@ -2122,6 +2151,8 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
     picture = None
     # The saved theme applied: its id, or its path when it has none.
     saved = None
+    # A saved look's pictures fitted to the monitors, when they are to be set.
+    pictures_set: tuple[list[Choice], dict[Path, Path]] | None = None
     try:
         check_profile(profile, "--profile")
         if args.picture is not None:
@@ -2135,15 +2166,35 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
             saved = palette.id or str(path.resolve())
         else:
             palette = None
+        look = palette.look if palette is not None else None
+        if args.monitors and look is None:
+            sys.exit("amontillado: --monitor places a saved look's pictures; this is no look")
+        if look is not None and not args.palette_only:
+            if args.app:
+                sys.exit(
+                    "amontillado: --app with a saved look: its pictures re-render every app "
+                    "(--palette-only applies its palette alone)"
+                )
+            if args.no_activate:
+                logger.info("behind an inactive profile, the look's pictures are not set")
+            else:
+                pictures_set = _look_pictures(config, args, look)
+        # The look's variant and tone, unless the run gives its own.
+        variant = args.variant or (look.variant if look is not None else None)
+        tone = {**(look.tone if look is not None else {}), **dict(args.tone)}
+        wallpaper = None if picture is None else picture.path
+        if pictures_set is not None:
+            chosen, paths = pictures_set
+            wallpaper = paths[chosen[0].file.path]
         plan = theme_plan(
             config,
             palette,
             profile=profile,
-            variant=args.variant or config.theme.variant,
+            variant=variant or config.theme.variant,
             contrast=mode,
-            tone=dict(args.tone),
+            tone=tone,
             only=args.app,
-            wallpaper=None if picture is None else picture.path,
+            wallpaper=wallpaper,
         )
         if args.dry_run:
             directory = Path(tempfile.mkdtemp(prefix="amo-theme-"))
@@ -2153,11 +2204,18 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
             print(directory)
             for reload in reload_commands(config, plan, directory):
                 print(f"would run: {reload}")
+            if pictures_set is not None:
+                for reload in _setter_runs(config, *pictures_set):
+                    print(f"would run: {reload}")
             return
         directory = apply_theme(config, plan, activate=not args.no_activate)
     except (ConfigError, ThemeError, PaletteError, GeneratorError, OSError) as exc:
         sys.exit(f"amontillado: {exc}")
     logger.info("applied %s to profile %s", plan.palette.name, profile)
+    if not args.no_reload and not args.no_activate:
+        run_reloads(reload_commands(config, plan, directory))
+    # Last, so that a wallpaper hook setting every monitor does not undo them.
+    failed = _apply_group(config, *pictures_set, dry_run=False) if pictures_set else []
     # A theme behind an inactive profile has not been shown.
     if not args.no_activate:
         link = directory / WALLPAPER_LINK
@@ -2170,8 +2228,153 @@ def cmd_theme_apply(args: argparse.Namespace) -> None:
                 record_applied(conn, entry, keep=config.theme.history_size)
         except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
             logger.warning("not recorded as shown or in the history: %s", exc)
-    if not args.no_reload and not args.no_activate:
-        run_reloads(reload_commands(config, plan, directory))
+    if failed:
+        sys.exit(f"amontillado: group.setter failed for {'; '.join(failed)}")
+
+
+def _setter_runs(config: Config, chosen: list[Choice], paths: dict[Path, Path]) -> list[Reload]:
+    """What group.setter would run for each monitor."""
+    assert config.group.setter is not None
+    return [
+        Reload(
+            config.group.setter,
+            {"AMO_MONITOR": choice.monitor.name, "AMO_WALLPAPER": str(paths[choice.file.path])},
+        )
+        for choice in chosen
+    ]
+
+
+class _LookFailed(Exception):
+    """A saved look's pictures cannot be set; the message says why."""
+
+
+def _look_pictures(
+    config: Config, args: argparse.Namespace, look: SavedLook
+) -> tuple[list[Choice], dict[Path, Path]] | None:
+    """A saved look's pictures fitted to the monitors (--monitor, else the current group's):
+    position i gets picture i, its saved file if of the monitor's ratio, else the record's
+    file for that ratio (with amo group's crop offer). Extra monitors get companions of the
+    primary, offered when a terminal can be asked. None, with a warning, when there is no
+    setter or no monitor is known. Exits naming a missing record or absent content."""
+    if config.group.setter is None:
+        logger.warning(
+            "no group.setter in the config: the look's palette is applied without its pictures"
+        )
+        return None
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    try:
+        with closing(connect(config.index_path)) as conn:
+            monitors = list(args.monitors or ())
+            if not monitors:
+                monitors = [
+                    Monitor(item.monitor, _aspect(item.aspect).ratio, item.aspect)
+                    for item in current_group(conn)
+                ]
+            if not monitors:
+                logger.warning(
+                    "no monitors known (no --monitor, and no amo group --apply yet): the "
+                    "look's palette is applied without its pictures"
+                )
+                return None
+            try:
+                chosen = [
+                    _fit(conn, item, monitor, position)
+                    for position, (item, monitor) in enumerate(
+                        zip(look.monitors, monitors, strict=False)
+                    )
+                ]
+            except _LookFailed as exc:
+                sys.exit(f"amontillado: {exc} (--palette-only applies the palette alone)")
+            if len(monitors) < len(look.monitors):
+                left = len(look.monitors) - len(monitors)
+                logger.warning(
+                    "the look has %s for %s: the last %s left out",
+                    _count(len(look.monitors), "picture"),
+                    _count(len(monitors), "monitor"),
+                    left,
+                )
+            extra = monitors[len(look.monitors) :]
+            if extra:
+                chosen += _extra_monitors(config, args, conn, chosen[0].file, extra, look)
+    except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+        _index_error(config, exc)
+    return chosen, _group_crops(config, args, chosen)
+
+
+def _fit(
+    conn: sqlite3.Connection, item: SavedLookMonitor, monitor: Monitor, position: int
+) -> Choice:
+    """A look's picture for one monitor. Raises _LookFailed."""
+    rows = files(conn, item.record)
+    where = f"the look's picture {position + 1} (record {item.record})"
+    if not rows:
+        raise _LookFailed(f"{where}: not in the index")
+    saved = next((row for row in rows if row.path.name == item.file), None)
+    if saved is not None and has_aspect(saved.width, saved.height, monitor.ratio):
+        row = saved
+    else:
+        if saved is None:
+            logger.warning(
+                "%s: %s is gone; taking its file for %s", where, item.file, monitor.aspect
+            )
+        row = _pick(rows, monitor.ratio)
+    if row.absent or annex_absent(row.path) or not row.path.is_file():
+        raise _LookFailed(f"{row.path}: its content is not here (`git annex get` it)")
+    return Choice(monitor, row, 0.0)
+
+
+def _extra_monitors(
+    config: Config,
+    args: argparse.Namespace,
+    conn: sqlite3.Connection,
+    primary: IndexedFile,
+    extra: list[Monitor],
+    look: SavedLook,
+) -> list[Choice]:
+    """Companions of a look's primary for the monitors it has no picture for, as amo group
+    picks them (SFW, group.max_distance, group.order), never the look's own pictures; offered
+    when a terminal can be asked, else taken. None when declined or none can be found."""
+    names = ", ".join(monitor.name for monitor in extra)
+    logger.warning("the look has no picture for %s", names)
+    if _may_ask(args) and not args.dry_run and not _ask_yes(f"fill {names} with companions"):
+        return []
+    if not primary.metrics.palette:
+        logger.warning(
+            "%s has no palette yet (amo index): %s left as they are", primary.path, names
+        )
+        return []
+    shown = usage(conn)
+    by_record: dict[str, list[IndexedFile]] = {}
+    for row in files(conn):
+        if not row.absent and row.purity == "sfw" and not row.nsfw_root:
+            by_record.setdefault(row.record_id, []).append(row)
+    order = [row.record_id for row in _least_shown([g[0] for g in by_record.values()], shown)]
+
+    def usable(file: IndexedFile) -> bool:
+        return (
+            bool(file.metrics.palette)
+            and not file.path.resolve().is_relative_to(config.nsfw_root)
+            and file.path.is_file()
+            and not annex_absent(file.path)
+        )
+
+    pools = {
+        ratio: Pool([f for r in order if usable(f := _pick(by_record[r], ratio))])
+        for ratio in {monitor.ratio for monitor in extra}
+    }
+    try:
+        return companions(
+            primary,
+            extra,
+            pools,
+            max_distance=config.group.max_distance,
+            nearest=config.group.order == "nearest",
+            exclude=[item.record for item in look.monitors],
+        )
+    except GroupError as exc:
+        logger.warning("%s left as they are: %s", names, exc)
+        return []
 
 
 def _history_entry(
