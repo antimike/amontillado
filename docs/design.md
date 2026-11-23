@@ -2363,6 +2363,14 @@ amo theme preview [PICTURE | --palette NAME|FILE | --history N] [--monitor NAME=
   `$XDG_CACHE_HOME/amontillado/previews/`; one showing a non-sfw picture in
   `$XDG_RUNTIME_DIR/amontillado/previews/` (tmpfs: never backed up, gone at logout), since it
   copies the picture's pixels out of the NSFW root.
+- **Settled in the build (amo-0k6.5):** each thumbnail is the file cropped about its centre to
+  the monitor's ratio; strip rows are 24 px (*initial*); a preset's card is one 16:9 thumbnail
+  wide, its strip rows sharing the card's height; the cache key hashes each file's path, size
+  and modification time with the ratios and the strip's colours (not the pixels: hashing every
+  picture on each draw is slow); without `XDG_RUNTIME_DIR` a non-sfw card is refused (`-o`
+  still writes one); a history row's single picture shows at its own ratio; in kitty the card
+  is printed inline (no image id, so a later one does not replace it), at most the terminal's
+  width and half its height.
 
 ### Saved looks: evaluation
 

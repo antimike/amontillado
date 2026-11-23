@@ -258,16 +258,19 @@ _CHUNK = 4096
 _IMAGE_ID = 1
 
 
-def kitty_image(png: bytes, placement: str) -> bytes:
+def kitty_image(png: bytes, placement: str, *, inline: bool = False) -> bytes:
     """The escape sequences that transmit and show `png` as image 1 (`placement` sizes it in
-    cells: `c=COLUMNS` or `r=ROWS`), the cursor kept where it is, no reply wanted."""
+    cells: `c=COLUMNS` or `r=ROWS`), the cursor kept where it is, no reply wanted. `inline`:
+    an image without an id (one shown later does not replace it), the cursor moved past it,
+    as printed output."""
     data = base64.standard_b64encode(png)
     chunks = [data[i : i + _CHUNK] for i in range(0, len(data), _CHUNK)] or [b""]
     out = []
     for index, chunk in enumerate(chunks):
         more = int(index < len(chunks) - 1)
         if index == 0:
-            control = f"a=T,f=100,i={_IMAGE_ID},q=2,C=1,{placement},m={more}"
+            shown = "q=2" if inline else f"i={_IMAGE_ID},q=2,C=1"
+            control = f"a=T,f=100,{shown},{placement},m={more}"
         else:
             control = f"m={more}"
         out.append(b"\x1b_G" + control.encode() + b";" + chunk + b"\x1b\\")
@@ -277,7 +280,7 @@ def kitty_image(png: bytes, placement: str) -> bytes:
 KITTY_DELETE = f"\x1b_Ga=d,d=I,i={_IMAGE_ID},q=2\x1b\\".encode()
 
 
-def _cells(fd: int) -> tuple[int, int, float]:
+def cells(fd: int) -> tuple[int, int, float]:
     """The terminal's columns, rows and cell aspect (width / height; 0.5 if not reported)."""
     try:
         rows, columns, x_pixels, y_pixels = struct.unpack(
@@ -306,7 +309,7 @@ class KittyRenderer:
         self.out.write(b"\x1b[?1049h\x1b[?25l")
 
     def show(self, frame: Image.Image, text: str) -> None:
-        columns, rows, cell_aspect = _cells(self.fd)
+        columns, rows, cell_aspect = cells(self.fd)
         png = io.BytesIO()
         frame.save(png, "PNG", compress_level=1)
         where = placement(columns, rows - 1, cell_aspect, frame.width / frame.height)
@@ -336,7 +339,7 @@ class ViewerRenderer:
         start: Callable[[list[str], dict[str, str]], object] | None = None,
     ) -> None:
         self.command, self.path, self.status = command, path, status
-        self.start = start or _start_viewer
+        self.start = start or start_viewer
         self.started = False
 
     def show(self, frame: Image.Image, text: str) -> None:
@@ -356,7 +359,7 @@ class ViewerRenderer:
         self.path.unlink(missing_ok=True)
 
 
-def _start_viewer(command: list[str], env: dict[str, str]) -> object:
+def start_viewer(command: list[str], env: dict[str, str]) -> object:
     try:
         return subprocess.Popen(
             command,

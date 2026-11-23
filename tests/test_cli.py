@@ -2270,3 +2270,72 @@ def test_theme_save_by_purity(
     main(["theme", "apply", _id(red)])
     with pytest.raises(SystemExit, match=r"is saved in .* already; a name in two library roots"):
         main(["theme", "save", "mixed"])
+
+
+def test_theme_preview_of_a_look(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    red, maroon = grouped["red"], grouped["maroon"]
+    _save_look(home, tmp_path, capsys, [_entry(red), _entry(maroon, "21:9")])
+    out = tmp_path / "card.png"
+    main(["theme", "preview", "--palette", "look", "-o", str(out)])
+    with Image.open(out) as card:
+        # 16:9 beside 21:9 at 160 px, over one strip row (a dark-only palette).
+        assert card.size == (284 + 373, 160 + 24)
+        assert card.getpixel((10, 10)) == (255, 0, 0)
+        assert card.getpixel((300, 10)) == (128, 0, 0)
+        assert card.getpixel((2, 170)) == (0x10, 0x10, 0x10)  # base00
+    # Fitted to the monitors given: one monitor, the primary alone.
+    main(["theme", "preview", "--palette", "look", "--monitor", "A=16:9", "-o", str(out)])
+    with Image.open(out) as card:
+        assert card.size == (284, 184)
+    # The strip alone fills a preset's card.
+    main(["theme", "preview", "--palette", "look", "--palette-only", "-o", str(out)])
+    with Image.open(out) as card:
+        assert card.size == (284, 184) and card.getpixel((2, 10)) == (0x10, 0x10, 0x10)
+
+
+def test_theme_preview_caches_by_purity(
+    grouped: dict[str, Path],
+    home: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[str] = []
+    monkeypatch.setattr(cli, "start_viewer", lambda command, env: started.append(env["AMO_FILE"]))
+    _write_config(home, {"crop": {"preview": "viewer"}})
+    runtime = tmp_path / "run"
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    _save_look(home, tmp_path, capsys, [_entry(grouped["red"])])
+    main(["theme", "preview", "--palette", "look"])
+    main(["theme", "preview", "--palette", "look"])  # again: the same cached card
+    previews = home / ".cache/amontillado/previews"
+    assert started[0] == started[1] and Path(started[0]).parent == previews
+    assert len(list(previews.iterdir())) == 1
+    # A card showing a non-sfw picture is kept in the runtime dir only.
+    _save_look(home, tmp_path, capsys, [_entry(grouped["private"])])
+    main(["theme", "preview", "--palette", "look"])
+    assert Path(started[2]).parent == runtime / "amontillado/previews"
+    assert len(list(previews.iterdir())) == 1
+    monkeypatch.delenv("XDG_RUNTIME_DIR")
+    with pytest.raises(SystemExit, match="XDG_RUNTIME_DIR is not set"):
+        main(["theme", "preview", "--palette", "look"])
+
+
+def test_theme_preview_of_a_picture_and_history(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, fake_matugen: Path
+) -> None:
+    red = grouped["red"]
+    out = tmp_path / "card.png"
+    main(["theme", "preview", _id(red), "-o", str(out), "--variant", "dark"])
+    with Image.open(out) as card:
+        assert card.size == (round(160 * 64 / 36), 184)
+        assert card.getpixel((10, 10)) == (255, 0, 0)
+    main(["theme", "apply", _id(red), "--variant", "auto"])
+    main(["theme", "preview", "--history", "1", "-o", str(out)])
+    with Image.open(out) as card:
+        # auto: dark over light.
+        assert card.size == (round(160 * 64 / 36), 160 + 48)
+    with pytest.raises(SystemExit, match="no history row 9"):
+        main(["theme", "preview", "--history", "9"])

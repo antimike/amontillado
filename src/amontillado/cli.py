@@ -23,7 +23,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import closing
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -61,7 +61,7 @@ from amontillado.config import (
 )
 from amontillado.config_keys import flag_help
 from amontillado.contrast import apply_contrast, check, fixed_colours
-from amontillado.cropper import chooser
+from amontillado.cropper import cells, chooser, kitty_image, placement, preview_mode, start_viewer
 from amontillado.edit import EditError, plan_edit, run_edit
 from amontillado.fetch import SITE, TEST_SET, FetchError, fetch, name_from_tags, refresh_tags
 from amontillado.fetch import Options as FetchOptions
@@ -92,6 +92,7 @@ from amontillado.index import (
     files,
     files_with_hash,
     find_record,
+    history,
     known_hashes,
     matching_records,
     names,
@@ -145,9 +146,15 @@ from amontillado.palette import (
     dump_palette,
     load_palette,
     new_id,
+    palette_from_data,
     palette_from_schemes,
 )
 from amontillado.predicates import Judge, Predicate, PredicateError
+from amontillado.preview import PreviewError
+from amontillado.preview import Shown as PreviewShown
+from amontillado.preview import cached as preview_cached
+from amontillado.preview import card as preview_card
+from amontillado.preview import strip as preview_strip
 from amontillado.record import RecordError, sha256_file, write_text_atomic
 from amontillado.registry import RegistryError, registry
 from amontillado.registry import text as registry_text
@@ -1130,6 +1137,66 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the file and where it would go; write nothing.",
     )
     save.set_defaults(func=cmd_theme_save)
+
+    preview = theme_commands.add_parser(
+        "preview",
+        help="Experimental: show a theme's preview card before applying it.",
+        description="Experimental (free to change or go in a minor release). Draw the preview "
+        "card of a saved theme, a history row, or PICTURE (the palette it would give, beside "
+        "it): each monitor's picture at its aspect, the primary first, over a strip of "
+        "base00-base0F per variant the theme would apply, after tone. A preset is the strip "
+        "alone. Shown in the terminal with the kitty graphics protocol, else by crop.viewer "
+        "(crop.preview decides); -o writes a PNG. Cards are cached in "
+        "$XDG_CACHE_HOME/amontillado/previews/, one showing a non-sfw picture in "
+        "$XDG_RUNTIME_DIR/amontillado/previews/.",
+        formatter_class=HelpFormatter,
+    )
+    _add_loglevel(preview, argparse.SUPPRESS)
+    preview_input = preview.add_mutually_exclusive_group(required=True)
+    preview_input.add_argument(
+        "picture",
+        nargs="?",
+        metavar="PICTURE",
+        help="A record's file, directory, name or id (or prefix).",
+    )
+    preview_input.add_argument(
+        "--palette", metavar="NAME|FILE", help="A saved look or preset, as for amo theme apply."
+    )
+    preview_input.add_argument(
+        "--history",
+        type=int,
+        metavar="N",
+        help="History row N (experimental; amo theme list --history numbers them).",
+    )
+    preview.add_argument(
+        "--monitor",
+        action="append",
+        type=_monitor,
+        dest="monitors",
+        metavar="NAME=W:H",
+        help="Fit a look's pictures to these monitors, as apply would; default: each at the "
+        "aspect it was saved with.",
+    )
+    preview.add_argument(
+        "--variant",
+        choices=VARIANT_CHOICES,
+        help="The variant to show (default: the theme's, else theme.variant).",
+    )
+    preview.add_argument(
+        "--tone",
+        type=_tone,
+        action="append",
+        default=[],
+        metavar="VARIANT=TONE",
+        help="VARIANT's tone to show (default: the theme's, else theme.tone); repeatable.",
+    )
+    preview.add_argument(
+        "--palette-only", action="store_true", help="The strip alone, without pictures."
+    )
+    preview.add_argument(
+        "-o", "--output", type=Path, metavar="FILE", help="Write the card to FILE as a PNG."
+    )
+    preview.set_defaults(func=cmd_theme_preview)
 
     current = theme_commands.add_parser(
         "current",
@@ -2579,6 +2646,130 @@ def _check_save_target(config: Config, target: Path, name: str, *, force: bool) 
         )
     if preset.is_file():
         logger.warning("palette %s: %s will shadow the preset %s", name, target, preset)
+
+
+def cmd_theme_preview(args: argparse.Namespace) -> None:
+    config = _load_config()
+    theme = config.theme
+    variant, tone, monitors = theme.variant, dict(theme.tone), []
+    picture = None
+    try:
+        if args.picture is not None:
+            palette, picture = _picture_palette(config, args.picture, generator=None, hues=None)
+        elif args.history is not None:
+            row = _history_row(config, args.history)
+            palette = palette_from_data(yamlio.load(row.palette), f"history {args.history}")
+            variant, tone = row.variant, {**tone, **row.tone}
+            monitors = [_history_monitor(item) for item in row.monitors if item.get("record")]
+        else:
+            path = find_palette(args.palette, config)
+            logger.info("palette %s: %s", args.palette, path)
+            palette = load_palette(path)
+            if palette.look is not None:
+                variant, tone = palette.look.variant, {**tone, **palette.look.tone}
+                monitors = list(palette.look.monitors)
+        rows = preview_strip(
+            palette, args.variant or variant, {**tone, **dict(args.tone)}, theme.contrast
+        )
+    except (ConfigError, ThemeError, PaletteError, GeneratorError) as exc:
+        sys.exit(f"amontillado: {exc}")
+    shown, private = _preview_pictures(config, args, picture, monitors)
+    try:
+        if args.output is not None:
+            preview_card(shown, rows).save(args.output, "PNG")
+            print(args.output)
+            return
+        path = preview_cached(shown, rows, private=private)
+    except (PreviewError, OSError, ValueError) as exc:
+        sys.exit(f"amontillado: {exc}")
+    if preview_mode(config.crop) == "kitty" and sys.stdout.isatty():
+        columns, rows, cell_aspect = cells(sys.stdout.fileno())
+        with Image.open(path) as image:
+            ratio = image.width / image.height
+        # At most the terminal's width and half its height.
+        where = placement(columns, max(rows // 2, 1), cell_aspect, ratio)
+        sys.stdout.flush()
+        sys.stdout.buffer.write(kitty_image(path.read_bytes(), where, inline=True))
+        sys.stdout.buffer.write(b"\n")
+        sys.stdout.buffer.flush()
+        return
+    try:
+        start_viewer(["sh", "-c", config.crop.viewer], {**os.environ, "AMO_FILE": str(path)})
+    except OSError as exc:
+        sys.exit(f"amontillado: {exc}")
+    print(path)
+
+
+def _history_row(config: Config, number: int) -> Applied:
+    """History row `number`'s entry; exits when there is none."""
+    if not config.index_path.exists():
+        sys.exit(f"amontillado: no index at {config.index_path}; run `amo index` first")
+    try:
+        with closing(connect(config.index_path)) as conn:
+            rows = history(conn)
+    except (sqlite3.Error, IndexDatabaseError, OSError) as exc:
+        _index_error(config, exc)
+    found = next((row for row in rows if row.number == number), None)
+    if found is None:
+        sys.exit(f"amontillado: no history row {number} (amo theme list --history)")
+    return found.entry
+
+
+def _history_monitor(item: Mapping[str, str]) -> SavedLookMonitor:
+    """A history row's picture as a look's: its record, file and aspect (the file's own ratio
+    when it was shown alone)."""
+    path = Path(item["file"])
+    aspect = item.get("aspect")
+    if aspect is None:
+        try:
+            with Image.open(path) as image:
+                divisor = math.gcd(image.width, image.height)
+                aspect = f"{image.width // divisor}:{image.height // divisor}"
+        except OSError:
+            aspect = "16:9"
+    return SavedLookMonitor(item["record"], path.name, aspect)
+
+
+def _preview_pictures(
+    config: Config,
+    args: argparse.Namespace,
+    picture: _Picture | None,
+    monitors: list[SavedLookMonitor],
+) -> tuple[list[PreviewShown], bool]:
+    """The pictures a preview shows, fitted as apply would fit them (--monitor, else each at
+    its saved aspect), and whether any is not sfw."""
+    if args.palette_only:
+        return [], False
+    if picture is None and not monitors:
+        if args.monitors:
+            logger.warning("--monitor left out: this theme has no pictures")
+        return [], False
+    try:
+        with closing(connect(config.index_path)) as conn:
+            if picture is not None:
+                with Image.open(picture.path) as image:
+                    ratio = image.width / image.height
+                purity = record_purity(conn, picture.record_id)
+                return [PreviewShown(picture.path, ratio)], purity != "sfw"
+            given = list(args.monitors or ())
+            if not given:
+                given = [
+                    Monitor(str(i), _aspect(item.aspect).ratio, item.aspect)
+                    for i, item in enumerate(monitors)
+                ]
+            pairs = list(zip(monitors, given, strict=False))
+            try:
+                chosen = [_fit(conn, item, monitor, i) for i, (item, monitor) in enumerate(pairs)]
+            except _LookFailed as exc:
+                sys.exit(f"amontillado: {exc} (--palette-only previews the palette alone)")
+            purities = {record_purity(conn, item.record) for item, _ in pairs}
+    except (sqlite3.Error, IndexDatabaseError, OSError, LookupFailed) as exc:
+        _index_error(config, exc)
+    if len(given) > len(monitors):
+        names = ", ".join(monitor.name for monitor in given[len(monitors) :])
+        logger.warning("the theme has no picture for %s", names)
+    shown = [PreviewShown(choice.file.path, choice.monitor.ratio) for choice in chosen]
+    return shown, purities != {"sfw"}
 
 
 def cmd_theme_current(args: argparse.Namespace) -> None:

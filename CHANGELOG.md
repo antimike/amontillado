@@ -37,6 +37,14 @@ All notable changes to amontillado are documented here. The format follows
   its `source` when that picture is not sfw. `--description`, `--force` (keeps the file's id),
   `--dry-run`; the path written is printed and goes to `on_change`.
 
+- *Experimental:* `amo theme preview` draws a theme's preview card: a saved look's pictures
+  at their monitors' aspects (or `--monitor`'s), a history row's (`--history N`), or PICTURE
+  with the palette it would give, over a swatch strip of each variant it would apply, after
+  tone; a preset is the strip alone. Shown in the terminal with the kitty graphics protocol,
+  else by `crop.viewer`; `-o FILE` writes a PNG. Cards are cached in
+  `$XDG_CACHE_HOME/amontillado/previews/`, one showing a non-sfw picture only in
+  `$XDG_RUNTIME_DIR`.
+
 ### Fixed
 
 - `amo fetch` indexes a new record under its name at once. Before, the index had no name for
