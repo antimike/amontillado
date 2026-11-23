@@ -25,8 +25,9 @@ All notable changes to amontillado are documented here. The format follows
 - `amo theme apply --palette NAME` of a saved look sets its pictures too, through
   `group.setter` after the reloads: picture *i* on monitor *i* (`--monitor`, else the last
   `amo group --apply`'s), its saved file when of the monitor's ratio, else the record's file
-  for it (with `amo group`'s crop offer); extra monitors get companions of its primary (offered
-  in a terminal, `--non-interactive` fills them). The look's variant and tone apply unless
+  for it (with `amo group`'s crop offer); extra monitors get companions of its primary, of the
+  purities the look's own pictures have (offered in a terminal, `--non-interactive` fills
+  them). The look's variant and tone apply unless
   `--variant` or `--tone` is given; `--palette-only` applies its palette alone.
 
 ### Fixed

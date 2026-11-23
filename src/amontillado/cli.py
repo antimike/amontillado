@@ -1036,7 +1036,8 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME=W:H",
         help="A saved look's monitors, the primary first, as for amo group; repeat for each. "
         "Default: the monitors of the last amo group --apply. Monitors past the look's "
-        "pictures get companions of its primary (offered when a terminal can be asked).",
+        "pictures get companions of its primary, of the purities the look's pictures have "
+        "(offered when a terminal can be asked).",
     )
     apply.add_argument(
         "--palette-only",
@@ -2333,8 +2334,10 @@ def _extra_monitors(
     look: SavedLook,
 ) -> list[Choice]:
     """Companions of a look's primary for the monitors it has no picture for, as amo group
-    picks them (SFW, group.max_distance, group.order), never the look's own pictures; offered
-    when a terminal can be asked, else taken. None when declined or none can be found."""
+    picks them (group.max_distance, group.order), of the purities the look's own pictures have
+    (an all-sfw look takes SFW ones only, never from the NSFW root), never the look's own
+    pictures; offered when a terminal can be asked, else taken. None when declined or none can
+    be found."""
     names = ", ".join(monitor.name for monitor in extra)
     logger.warning("the look has no picture for %s", names)
     if _may_ask(args) and not args.dry_run and not _ask_yes(f"fill {names} with companions"):
@@ -2344,17 +2347,20 @@ def _extra_monitors(
             "%s has no palette yet (amo index): %s left as they are", primary.path, names
         )
         return []
+    purities = {record_purity(conn, item.record) for item in look.monitors}
+    sfw_only = purities == {"sfw"}
     shown = usage(conn)
     by_record: dict[str, list[IndexedFile]] = {}
     for row in files(conn):
-        if not row.absent and row.purity == "sfw" and not row.nsfw_root:
+        if not row.absent and row.purity in purities and not (sfw_only and row.nsfw_root):
             by_record.setdefault(row.record_id, []).append(row)
     order = [row.record_id for row in _least_shown([g[0] for g in by_record.values()], shown)]
 
     def usable(file: IndexedFile) -> bool:
+        # Checked against the current config and through symlinks too, as _matches does.
         return (
             bool(file.metrics.palette)
-            and not file.path.resolve().is_relative_to(config.nsfw_root)
+            and not (sfw_only and file.path.resolve().is_relative_to(config.nsfw_root))
             and file.path.is_file()
             and not annex_absent(file.path)
         )

@@ -2035,6 +2035,35 @@ def test_theme_apply_a_look_on_fewer_or_more_monitors(
     assert lines[3].startswith("C ") and lines[3] not in ("C red.png", "C maroon.png")
 
 
+def test_theme_apply_a_look_fills_by_its_purity(
+    grouped: dict[str, Path], home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An NSFW record nearest red: an extra monitor takes it only for a look with a non-sfw
+    # picture (MH 2026-11-23: companions follow the look's purity).
+    nsfw = home / ".local/share/amontillado/library-nsfw"
+    _record(nsfw / "secret", (250, 0, 0), "secret.png")
+    main(["index"])
+    log = tmp_path / "set.log"
+    _write_config(
+        home,
+        {
+            "group": {
+                "setter": f'echo "$AMO_MONITOR $(basename "$AMO_WALLPAPER")" >> {log}',
+                "order": "nearest",
+            }
+        },
+    )
+    monitors = ["--monitor", "A=16:9", "--monitor", "B=16:9", "--monitor", "C=16:9"]
+    apply = ["theme", "apply", "--palette", "look", *monitors, "--non-interactive"]
+    _save_look(home, tmp_path, capsys, [_entry(grouped["red"]), _entry(grouped["white"])])
+    main(apply)
+    assert log.read_text().splitlines()[2] == "C maroon.png"
+    log.unlink()
+    _save_look(home, tmp_path, capsys, [_entry(grouped["red"]), _entry(grouped["private"])])
+    main(apply)
+    assert log.read_text().splitlines()[2] == "C secret.png"
+
+
 def test_theme_apply_a_look_whose_file_is_gone(
     grouped: dict[str, Path],
     home: Path,
