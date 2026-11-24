@@ -47,9 +47,10 @@ remote: never add one pointing at this repo. bd-track's daily cleanup timer cove
 
 The current epic's prompt (replace it when an epic closes):
 
-> Next: build amo-0k6 (saved looks, accepted in full 2026-11-22: docs/design.md "Saved looks"),
-> beads amo-0k6.1-.7 in dependency order (`bd ready`; Opus for .1 and .4), extras marked
-> experimental; amo-0k6.8 evaluates them after MH's use. Fix amo-0jw (fetch indexes records
-> without their name) first. amo-n0o (hand-changed record ids) is a v0.12.x candidate. amo-yyu
-> (review dim's blue, D3) is due after 1-2 weeks of MH using dim (from about 2026-12-05).
+> Saved looks (amo-0k6) shipped in v0.13.0 (2026-11-23); chezmoi has a pin ticket and the
+> theme-picker ticket. Next: process the inbox with `/triage` when chezmoi's feedback arrives.
+> amo-0k6.8 evaluates the experimental parts (history, list, preview, `--order`, rofi) after
+> a week or two of MH's use (from about 2026-12-07): keep each (drop the label) or remove it,
+> recorded in design.md "Saved looks: evaluation". amo-yyu (review dim's blue, D3) is due from
+> about 2026-12-05. amo-n0o (hand-changed record ids) is a candidate for the next minor.
 > amo-abc stays parked. Outside: amo-mdi, amo-tyy, amo-dvv (P4, design open).
